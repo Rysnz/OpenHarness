@@ -1,0 +1,84 @@
+[package]
+name = "openharness-desktop"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+description = "OpenHarness Desktop Application (Tauri)"
+
+[lib]
+name = "openharness_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "openharness-desktop"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { workspace = true }
+serde_json = { workspace = true }
+
+[dependencies]
+# Internal crates
+openharness-core = { path = "../../crates/core", features = ["ssh-remote"] }
+openharness-transport = { path = "../../crates/transport", features = ["tauri-adapter"] }
+openharness-webdriver = { path = "../../crates/webdriver" }
+
+# Tauri
+tauri = { workspace = true }
+tauri-plugin-opener = { workspace = true }
+tauri-plugin-dialog = { workspace = true }
+tauri-plugin-fs = { workspace = true }
+tauri-plugin-log = { workspace = true }
+tauri-plugin-autostart = { workspace = true }
+tauri-plugin-notification = { workspace = true }
+
+# Inherited from workspace
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+log = { workspace = true }
+chrono = { workspace = true }
+regex = { workspace = true }
+dirs = { workspace = true }
+dark-light = { workspace = true }
+similar = { workspace = true }
+ignore = { workspace = true }
+urlencoding = { workspace = true }
+reqwest = { workspace = true }
+thiserror = "1.0"
+futures = { workspace = true }
+async-trait = { workspace = true }
+screenshots = "0.8"
+enigo = "0.2"
+image = { version = "0.24", default-features = false, features = ["png", "jpeg"] }
+resvg = { version = "0.47.0", default-features = false }
+fontdue = "0.9"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation = "0.9"
+core-graphics = "0.23"
+dispatch = "0.2"
+objc2 = "0.6"
+objc2-foundation = "0.3"
+objc2-app-kit = "0.3"
+objc2-vision = { version = "0.3.2", features = ["VNRecognizeTextRequest", "VNRequest", "VNObservation", "VNRequestHandler", "VNUtils", "VNTypes", "objc2-core-foundation"] }
+
+[target.'cfg(windows)'.dependencies]
+win32job = { workspace = true }
+windows = { version = "0.61.3", features = [
+  "Foundation",
+  "Globalization",
+  "Graphics_Imaging",
+  "Media_Ocr",
+  "Storage_Streams",
+  "Win32_Foundation",
+  "Win32_System_Com",
+  "Win32_UI_Accessibility",
+  "Win32_UI_WindowsAndMessaging",
+] }
+windows-core = "0.61.2"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+atspi = "0.29"
+leptess = "0.14.0"

@@ -1,0 +1,182 @@
+/**
+ * OpenHarness main layout styles (SCSS).
+ * Token-driven application shell with a consistent dark background.
+ * Follows BEM naming and design tokens.
+ */
+
+@use '../../component-library/styles/tokens.scss' as *;
+
+// ==================== CSS reset ====================
+// Note: keep box-sizing !important for global consistency.
+*, *::before, *::after {
+  box-sizing: border-box !important;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100vh;
+  width: 100vw;
+  background: var(--color-bg-primary);
+  overflow: hidden;
+}
+
+#root {
+  margin: 0;
+  padding: 0;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+}
+
+// ==================== Main layout container ====================
+.openharness-app-layout {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+  
+  // Use theme background
+  background: var(--color-bg-primary);
+  
+  color: var(--color-text-primary);
+  font-family: $font-family-sans;
+  position: relative;
+
+  // Ensure layout stability
+  min-height: 100vh;
+  max-height: 100vh;
+
+  // Font rendering
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+
+  // All children
+  * {
+    box-sizing: border-box;
+  }
+
+  // Focus management
+  *:focus-visible {
+    outline: 2px solid var(--color-accent-500);
+    outline-offset: 2px;
+    border-radius: $size-radius-sm;
+  }
+  
+  // ==================== Startup mode ====================
+  &--startup-mode {
+    background: var(--color-bg-primary);
+  }
+  
+  // ==================== Transitioning ====================
+  &--transitioning {
+    // Styles during transition
+    .openharness-app-main-workspace {
+      // Content transition handled by child components
+    }
+  }
+
+  // ==================== Modifier - loading ====================
+  &--loading {
+    pointer-events: none;
+    opacity: var(--opacity-focus);
+  }
+
+  // ==================== Modifier - error ====================
+  &--error {
+    .openharness-app-header {
+      border-bottom-color: var(--color-error);
+      background: linear-gradient(135deg, 
+        var(--color-error-bg) 0%, 
+        var(--element-bg-base) 100%);
+    }
+  }
+
+  // ==================== Modifier - modal open ====================
+  &--modal-open {
+    overflow: hidden;
+
+    .openharness-app-main {
+      filter: blur(2px);
+      pointer-events: none;
+    }
+  }
+
+}
+
+// ==================== Main content area (full height, no TitleBar) ====================
+.openharness-app-main-workspace {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  margin-top: 0;
+  width: 100%;
+  overflow: hidden;
+  position: relative;
+  background: var(--color-bg-flowchat);
+}
+
+// ==================== Scrollbar styles ====================
+// Moved to global scrollbar.css for shared management.
+
+// ==================== Responsive ====================
+@media (max-width: 1024px) {
+  .openharness-app-layout {
+    --header-height: 34px;
+  }
+}
+
+@media (max-width: 768px) {
+  .openharness-app-layout {
+    --header-height: 32px;
+  }
+}
+
+// ==================== Dark theme tweaks ====================
+@media (prefers-color-scheme: dark) {
+  .openharness-app-layout {
+    background: var(--color-bg-flowchat);
+  }
+}
+
+// ==================== High-contrast mode ====================
+@media (prefers-contrast: high) {
+  .openharness-app-layout {
+    background: var(--color-bg-flowchat);
+  }
+}
+
+// ==================== Reduced motion preference ====================
+@media (prefers-reduced-motion: reduce) {
+  .openharness-app-layout * {
+    transition: none;
+    animation: none;
+  }
+}
+
+// ==================== Animations ====================
+@keyframes shimmer {
+  0%, 100% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(100%);
+  }
+}
+
+// Startup sweep glow: icy blue band from left to right, no delay.
+@keyframes header-sweep-glow {
+  0% {
+    transform: translateX(-100%);
+    opacity: 1;
+  }
+  95% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(300%);
+    opacity: 0;
+  }
+}

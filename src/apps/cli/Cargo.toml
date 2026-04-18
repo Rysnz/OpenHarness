@@ -1,0 +1,51 @@
+[package]
+name = "openharness-cli"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+description = "OpenHarness CLI - Terminal User Interface"
+
+[[bin]]
+name = "openharness-cli"
+path = "src/main.rs"
+
+[dependencies]
+# Internal crates
+openharness-core = { path = "../../crates/core" }
+openharness-events = { path = "../../crates/events" }
+
+# CLI framework
+clap = { version = "4", features = ["derive"] }
+
+# TUI framework (Terminal User Interface)
+ratatui = "0.28"
+crossterm = "0.28"
+
+# Config and serialization
+dirs = { workspace = true }
+toml = { workspace = true }
+
+# Session management
+uuid = { workspace = true }
+chrono = { workspace = true }
+
+# Async trait
+async-trait = { workspace = true }
+
+# Unicode width calculation (for correct wide-char handling)
+unicode-width = "0.1"
+
+# Markdown parsing and rendering
+pulldown-cmark = "0.11"
+
+# Inherited from workspace
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[features]
+default = []
+

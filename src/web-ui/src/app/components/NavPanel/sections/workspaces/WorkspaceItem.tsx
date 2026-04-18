@@ -1,0 +1,746 @@
+import React, { useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { Folder, FolderOpen, MoreHorizontal, GitBranch, FolderSearch, Plus, ChevronDown, Trash2, RotateCcw, Copy, FileText } from 'lucide-react';
+import { ConfirmDialog, Tooltip } from '@/component-library';
+import { useI18n } from '@/infrastructure/i18n';
+import { i18nService } from '@/infrastructure/i18n';
+import { useWorkspaceContext } from '@/infrastructure/contexts/WorkspaceContext';
+import {
+  createWorktreeWorkspace,
+  deleteWorktreeWorkspace,
+} from '@/infrastructure/services/business/worktreeWorkspaceService';
+import { useNavSceneStore } from '@/app/stores/navSceneStore';
+import { useApp } from '@/app/hooks/useApp';
+import { useGitBasicInfo } from '@/tools/git/hooks/useGitState';
+import { workspaceAPI } from '@/infrastructure/api';
+import { notificationService } from '@/shared/notification-system';
+import { flowChatManager } from '@/flow_chat/services/FlowChatManager';
+import { openMainSession } from '@/flow_chat/services/openBtwSession';
+import { findReusableEmptySessionId } from '@/app/utils/projectSessionWorkspace';
+import { BranchSelectModal, type BranchSelectResult } from '../../../panels/BranchSelectModal';
+import SessionsSection from '../sessions/SessionsSection';
+import {
+  WorkspaceKind,
+  isLinkedWorktreeWorkspace,
+  isRemoteWorkspace,
+  type WorkspaceInfo,
+} from '@/shared/types';
+import { SSHContext } from '@/features/ssh-remote/SSHRemoteContext';
+
+interface WorkspaceItemProps {
+  workspace: WorkspaceInfo;
+  isActive: boolean;
+  isSingle?: boolean;
+  draggable?: boolean;
+  isDragging?: boolean;
+  onDragStart?: React.DragEventHandler<HTMLDivElement>;
+  onDragEnd?: React.DragEventHandler<HTMLDivElement>;
+}
+
+const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
+  workspace,
+  isActive,
+  isSingle = false,
+  draggable = false,
+  isDragging = false,
+  onDragStart,
+  onDragEnd,
+}) => {
+  const { t } = useI18n('common');
+  const {
+    openWorkspace,
+    setActiveWorkspace,
+    closeWorkspaceById,
+    deletePartnerWorkspace,
+    resetPartnerWorkspace,
+  } = useWorkspaceContext();
+  const { switchLeftPanelTab } = useApp();
+  const openNavScene = useNavSceneStore(s => s.openNavScene);
+  const { isRepository, currentBranch } = useGitBasicInfo(workspace.rootPath);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [worktreeModalOpen, setWorktreeModalOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteWorktreeDialogOpen, setDeleteWorktreeDialogOpen] = useState(false);
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const [isDeletingPartner, setIsDeletingPartner] = useState(false);
+  const [isDeletingWorktree, setIsDeletingWorktree] = useState(false);
+  const [isResettingWorkspace, setIsResettingWorkspace] = useState(false);
+  const [sessionsCollapsed, setSessionsCollapsed] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const menuAnchorRef = useRef<HTMLDivElement>(null);
+  const menuPopoverRef = useRef<HTMLDivElement>(null);
+  const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
+  const isNamedPartnerWorkspace =
+    workspace.workspaceKind === WorkspaceKind.Partner &&
+    Boolean(workspace.partnerId);
+  const isDefaultPartnerWorkspace =
+    workspace.workspaceKind === WorkspaceKind.Partner &&
+    !workspace.partnerId;
+  const workspaceDisplayName =
+    workspace.workspaceKind === WorkspaceKind.Partner
+      ? workspace.identity?.name?.trim() || workspace.name
+      : workspace.name;
+  const isLinkedWorktree = isLinkedWorktreeWorkspace(workspace);
+
+  // Remote connection status — optional: safe if not inside SSHRemoteProvider
+  const sshContext = useContext(SSHContext);
+  const remoteConnStatus = workspace.connectionId && sshContext
+    ? (sshContext.workspaceStatuses[workspace.connectionId] ?? 'connecting')
+    : undefined;
+
+  const updateMenuPosition = useCallback(() => {
+    const anchor = menuAnchorRef.current;
+    if (!anchor) return;
+
+    const rect = anchor.getBoundingClientRect();
+    const viewportPadding = 8;
+    const estimatedWidth = 240;
+    const maxLeft = window.innerWidth - estimatedWidth - viewportPadding;
+
+    setMenuPosition({
+      top: Math.max(viewportPadding, rect.bottom + 6),
+      left: Math.max(viewportPadding, Math.min(rect.left, maxLeft)),
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handleOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      const isInsideTriggerArea = menuRef.current?.contains(target);
+      const isInsidePopover = menuPopoverRef.current?.contains(target);
+      if (!isInsideTriggerArea && !isInsidePopover) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [menuOpen]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+
+    updateMenuPosition();
+
+    const handleViewportChange = () => updateMenuPosition();
+    window.addEventListener('resize', handleViewportChange);
+    window.addEventListener('scroll', handleViewportChange, true);
+
+    return () => {
+      window.removeEventListener('resize', handleViewportChange);
+      window.removeEventListener('scroll', handleViewportChange, true);
+    };
+  }, [menuOpen, updateMenuPosition]);
+
+  const handleActivate = useCallback(async () => {
+    if (!isActive) {
+      await setActiveWorkspace(workspace.id);
+    }
+  }, [isActive, setActiveWorkspace, workspace.id]);
+
+  const handleCollapseToggle = useCallback(() => {
+    setSessionsCollapsed(prev => !prev);
+  }, []);
+
+  const handleCardNameClick = useCallback(async () => {
+    if (!isActive) {
+      await setActiveWorkspace(workspace.id);
+    } else {
+      setSessionsCollapsed(prev => !prev);
+    }
+  }, [isActive, setActiveWorkspace, workspace.id]);
+
+  const handleCloseWorkspace = useCallback(async () => {
+    setMenuOpen(false);
+    try {
+      await closeWorkspaceById(workspace.id);
+    } catch (error) {
+      notificationService.error(
+        error instanceof Error ? error.message : t('nav.workspaces.closeFailed'),
+        { duration: 4000 }
+      );
+    }
+  }, [closeWorkspaceById, t, workspace.id]);
+
+  const handleRequestDeletePartner = useCallback(() => {
+    setMenuOpen(false);
+    setDeleteDialogOpen(true);
+  }, []);
+
+  const handleRequestResetWorkspace = useCallback(() => {
+    setMenuOpen(false);
+    setResetDialogOpen(true);
+  }, []);
+
+  const handleConfirmDeletePartner = useCallback(async () => {
+    if (!isNamedPartnerWorkspace || isDeletingPartner) {
+      return;
+    }
+
+    setIsDeletingPartner(true);
+    try {
+      await deletePartnerWorkspace(workspace.id);
+      notificationService.success(t('nav.workspaces.partnerDeleted'), { duration: 2500 });
+    } catch (error) {
+      notificationService.error(
+        error instanceof Error ? error.message : t('nav.workspaces.deletePartnerFailed'),
+        { duration: 4000 }
+      );
+    } finally {
+      setIsDeletingPartner(false);
+    }
+  }, [deletePartnerWorkspace, isDeletingPartner, isNamedPartnerWorkspace, t, workspace.id]);
+
+  const handleConfirmResetWorkspace = useCallback(async () => {
+    if (!isDefaultPartnerWorkspace || isResettingWorkspace) {
+      return;
+    }
+
+    setIsResettingWorkspace(true);
+    try {
+      await resetPartnerWorkspace(workspace.id);
+      await flowChatManager.resetWorkspaceSessions(workspace, {
+        reinitialize: isActive,
+        preferredMode: 'Partner',
+        ensurePartnerBootstrap:
+          isActive && workspace.workspaceKind === WorkspaceKind.Partner,
+      });
+      notificationService.success(t('nav.workspaces.workspaceReset'), { duration: 2500 });
+    } catch (error) {
+      notificationService.error(
+        error instanceof Error ? error.message : t('nav.workspaces.resetWorkspaceFailed'),
+        { duration: 4000 }
+      );
+    } finally {
+      setIsResettingWorkspace(false);
+    }
+  }, [isActive, isDefaultPartnerWorkspace, isResettingWorkspace, resetPartnerWorkspace, t, workspace]);
+
+  const handleReveal = useCallback(async () => {
+    setMenuOpen(false);
+    if (isRemoteWorkspace(workspace)) return;
+    try {
+      await workspaceAPI.revealInExplorer(workspace.rootPath);
+    } catch (error) {
+      notificationService.error(
+        error instanceof Error ? error.message : t('nav.workspaces.revealFailed'),
+        { duration: 4000 }
+      );
+    }
+  }, [t, workspace]);
+
+  const handleCopyWorkspacePath = useCallback(async () => {
+    setMenuOpen(false);
+    const path = workspace.rootPath;
+    if (!path) return;
+    try {
+      await navigator.clipboard.writeText(path);
+      notificationService.success(t('contextMenu.status.copyPathSuccess'), { duration: 2000 });
+    } catch (error) {
+      notificationService.error(
+        error instanceof Error ? error.message : t('nav.workspaces.copyPathFailed'),
+        { duration: 4000 }
+      );
+    }
+  }, [t, workspace.rootPath]);
+
+  const handleCreateSession = useCallback(async (mode?: 'agentic' | 'Cowork' | 'Partner') => {
+    setMenuOpen(false);
+    const resolvedMode = mode ?? (workspace.workspaceKind === WorkspaceKind.Partner ? 'Partner' : undefined);
+    try {
+      const reusableId = findReusableEmptySessionId(workspace, resolvedMode);
+      if (reusableId) {
+        await openMainSession(reusableId, {
+          workspaceId: workspace.id,
+          activateWorkspace: setActiveWorkspace,
+        });
+        return;
+      }
+      await flowChatManager.createChatSession(
+        {
+          workspacePath: workspace.rootPath,
+          ...(isRemoteWorkspace(workspace) && workspace.connectionId
+            ? { remoteConnectionId: workspace.connectionId }
+            : {}),
+        },
+        resolvedMode
+      );
+      await setActiveWorkspace(workspace.id);
+    } catch (error) {
+      notificationService.error(
+        error instanceof Error ? error.message : t('nav.workspaces.createSessionFailed'),
+        { duration: 4000 }
+      );
+    }
+  }, [
+    setActiveWorkspace,
+    t,
+    workspace,
+  ]);
+
+  const handleCreateCodeSession = useCallback(() => {
+    void handleCreateSession('agentic');
+  }, [handleCreateSession]);
+
+  const handleCreateCoworkSession = useCallback(() => {
+    void handleCreateSession('Cowork');
+  }, [handleCreateSession]);
+
+  const handleCreateInitSession = useCallback(async () => {
+    setMenuOpen(false);
+
+    try {
+      const sessionId = await flowChatManager.createChatSession(
+        {
+          workspacePath: workspace.rootPath,
+          ...(isRemoteWorkspace(workspace) && workspace.connectionId
+            ? { remoteConnectionId: workspace.connectionId }
+            : {}),
+          ...(isRemoteWorkspace(workspace) && workspace.sshHost
+            ? { remoteSshHost: workspace.sshHost }
+            : {}),
+        },
+        'Init'
+      );
+
+      await openMainSession(sessionId, {
+        workspaceId: workspace.id,
+        activateWorkspace: setActiveWorkspace,
+      });
+
+      const initPrompt = i18nService.t('flow-chat:chatInput.initPrompt', {
+        defaultValue: 'Please generate or update AGENTS.md so it matches the current project. Write it in English and keep the English version complete.',
+      });
+
+      await flowChatManager.sendMessage(initPrompt, sessionId, initPrompt, 'Init');
+    } catch (error) {
+      notificationService.error(
+        error instanceof Error ? error.message : t('nav.workspaces.initSessionFailed'),
+        { duration: 4000 }
+      );
+    }
+  }, [setActiveWorkspace, t, workspace]);
+
+  const handleCreateWorktree = useCallback(async (result: BranchSelectResult) => {
+    try {
+      const created = await createWorktreeWorkspace({
+        repositoryPath: workspace.rootPath,
+        branch: result.branch,
+        isNew: result.isNew,
+        openAfterCreate: result.openAfterCreate,
+        openWorkspace,
+      });
+      notificationService.success(
+        created.openedWorkspace
+          ? t('nav.workspaces.worktreeCreatedAndOpened')
+          : t('nav.workspaces.worktreeCreated'),
+        { duration: 2500 },
+      );
+    } catch (error) {
+      notificationService.error(
+        t(
+          result.openAfterCreate
+            ? 'nav.workspaces.worktreeCreateOrOpenFailed'
+            : 'nav.workspaces.worktreeCreateFailed',
+          {
+          error: error instanceof Error ? error.message : String(error),
+          },
+        ),
+        { duration: 4000 }
+      );
+    }
+  }, [openWorkspace, t, workspace.rootPath]);
+
+  const handleRequestDeleteWorktree = useCallback(() => {
+    setMenuOpen(false);
+    setDeleteWorktreeDialogOpen(true);
+  }, []);
+
+  const handleConfirmDeleteWorktree = useCallback(async () => {
+    if (!isLinkedWorktree || isDeletingWorktree) {
+      return;
+    }
+
+    setIsDeletingWorktree(true);
+    try {
+      await deleteWorktreeWorkspace({
+        workspace,
+        closeWorkspaceById,
+      });
+      notificationService.success(t('nav.workspaces.worktreeDeleted'), { duration: 2500 });
+    } catch (error) {
+      notificationService.error(
+        error instanceof Error ? error.message : t('nav.workspaces.deleteWorktreeFailed'),
+        { duration: 4000 },
+      );
+    } finally {
+      setIsDeletingWorktree(false);
+    }
+  }, [closeWorkspaceById, isDeletingWorktree, isLinkedWorktree, t, workspace]);
+
+  const handleOpenFiles = useCallback(async () => {
+    try {
+      await handleActivate();
+      switchLeftPanelTab('files');
+      openNavScene('file-viewer');
+    } catch (error) {
+      notificationService.error(
+        error instanceof Error ? error.message : t('nav.workspaces.revealFailed'),
+        { duration: 4000 }
+      );
+    }
+  }, [handleActivate, openNavScene, switchLeftPanelTab, t]);
+
+  if (workspace.workspaceKind === WorkspaceKind.Partner) {
+    return (
+      <div className={[
+        'openharness-nav-panel__partner-item',
+        isActive && 'is-active',
+        isDragging && 'is-dragging',
+        menuOpen && 'is-menu-open',
+        sessionsCollapsed && 'is-sessions-collapsed',
+        isSingle && 'is-single',
+      ].filter(Boolean).join(' ')}
+      aria-grabbed={draggable ? isDragging : undefined}>
+        <div
+          className="openharness-nav-panel__partner-item-card"
+          draggable={draggable}
+          onDragStart={onDragStart}
+          onDragEnd={onDragEnd}
+        >
+          <button
+            type="button"
+            className="openharness-nav-panel__partner-item-collapse-btn"
+            onClick={handleCollapseToggle}
+            aria-label={sessionsCollapsed ? t('nav.workspaces.expandSessions') : t('nav.workspaces.collapseSessions')}
+            aria-expanded={!sessionsCollapsed}
+          >
+            <span className="openharness-nav-panel__partner-item-avatar" aria-hidden="true">
+              <span className="openharness-nav-panel__partner-item-avatar-letter">
+                {workspaceDisplayName.charAt(0)}
+              </span>
+              <span className={`openharness-nav-panel__partner-item-icon-toggle${sessionsCollapsed ? ' is-collapsed' : ''}`}>
+                <ChevronDown size={12} />
+              </span>
+            </span>
+          </button>
+          <button
+            type="button"
+            className="openharness-nav-panel__partner-item-name-btn"
+            onClick={() => { void handleCardNameClick(); }}
+          >
+            <span className="openharness-nav-panel__partner-item-label">{workspaceDisplayName}</span>
+            {isDefaultPartnerWorkspace ? (
+              <span
+                className="openharness-nav-panel__partner-item-badge"
+                title={t('nav.workspaces.primaryPartner')}
+              >
+                {t('nav.workspaces.primaryPartner')}
+              </span>
+            ) : null}
+          </button>
+
+          <div className="openharness-nav-panel__partner-item-menu" ref={menuRef}>
+            <Tooltip content={t('nav.items.project')} placement="right" followCursor>
+              <button
+                type="button"
+                className="openharness-nav-panel__partner-item-menu-trigger"
+                onClick={() => { void handleOpenFiles(); }}
+              >
+                <Folder size={14} />
+              </button>
+            </Tooltip>
+            <div ref={menuAnchorRef}>
+              <button
+                type="button"
+                className={`openharness-nav-panel__partner-item-menu-trigger${menuOpen ? ' is-open' : ''}`}
+                onClick={() => setMenuOpen(prev => !prev)}
+              >
+                <MoreHorizontal size={14} />
+              </button>
+            </div>
+
+            {menuOpen && menuPosition && createPortal(
+              <div
+                ref={menuPopoverRef}
+                className="openharness-nav-panel__workspace-item-menu-popover"
+                role="menu"
+                style={{ top: `${menuPosition.top}px`, left: `${menuPosition.left}px` }}
+              >
+                <button type="button" className="openharness-nav-panel__workspace-item-menu-item" onClick={() => { void handleCreateSession(); }}>
+                  <Plus size={13} />
+                  <span className="openharness-nav-panel__workspace-item-menu-label">{t('nav.workspaces.actions.newSession')}</span>
+                </button>
+                <div className="openharness-nav-panel__workspace-item-menu-divider" />
+                <button
+                  type="button"
+                  className="openharness-nav-panel__workspace-item-menu-item"
+                  onClick={() => { void handleCopyWorkspacePath(); }}
+                  disabled={!workspace.rootPath}
+                >
+                  <Copy size={13} />
+                  <span className="openharness-nav-panel__workspace-item-menu-label">{t('nav.workspaces.actions.copyPath')}</span>
+                </button>
+                <button
+                  type="button"
+                  className="openharness-nav-panel__workspace-item-menu-item"
+                  onClick={() => { void handleReveal(); }}
+                  disabled={isRemoteWorkspace(workspace)}
+                >
+                  <FolderSearch size={13} />
+                  <span className="openharness-nav-panel__workspace-item-menu-label">{t('nav.workspaces.actions.reveal')}</span>
+                </button>
+                {(isDefaultPartnerWorkspace || isNamedPartnerWorkspace) ? (
+                  <>
+                    <div className="openharness-nav-panel__workspace-item-menu-divider" />
+                    {isDefaultPartnerWorkspace ? (
+                      <button
+                        type="button"
+                        className="openharness-nav-panel__workspace-item-menu-item is-danger"
+                        onClick={handleRequestResetWorkspace}
+                        disabled={isResettingWorkspace}
+                      >
+                        <RotateCcw size={13} />
+                        <span className="openharness-nav-panel__workspace-item-menu-label">{t('nav.workspaces.actions.resetWorkspace')}</span>
+                      </button>
+                    ) : null}
+                    {isNamedPartnerWorkspace ? (
+                      <button
+                        type="button"
+                        className="openharness-nav-panel__workspace-item-menu-item is-danger"
+                        onClick={handleRequestDeletePartner}
+                        disabled={isDeletingPartner}
+                      >
+                        <Trash2 size={13} />
+                        <span className="openharness-nav-panel__workspace-item-menu-label">{t('nav.workspaces.actions.deletePartner')}</span>
+                      </button>
+                    ) : null}
+                  </>
+                ) : null}
+              </div>,
+              document.body
+            )}
+          </div>
+        </div>
+
+        <div className={`openharness-nav-panel__partner-item-sessions${sessionsCollapsed ? ' is-collapsed' : ''}`}>
+          <SessionsSection
+            workspaceId={workspace.id}
+            workspacePath={workspace.rootPath}
+            remoteConnectionId={isRemoteWorkspace(workspace) ? workspace.connectionId : null}
+            remoteSshHost={isRemoteWorkspace(workspace) ? workspace.sshHost : null}
+            isActiveWorkspace={isActive}
+            partnerLabel={workspaceDisplayName}
+          />
+        </div>
+
+        <ConfirmDialog
+          isOpen={deleteDialogOpen}
+          onClose={() => setDeleteDialogOpen(false)}
+          onConfirm={() => { void handleConfirmDeletePartner(); }}
+          title={t('nav.workspaces.deletePartnerDialog.title', { name: workspaceDisplayName })}
+          message={t('nav.workspaces.deletePartnerDialog.message')}
+          confirmText={t('nav.workspaces.actions.deletePartner')}
+          cancelText={t('actions.cancel')}
+          confirmDanger
+        />
+        <ConfirmDialog
+          isOpen={resetDialogOpen}
+          onClose={() => setResetDialogOpen(false)}
+          onConfirm={() => { void handleConfirmResetWorkspace(); }}
+          title={t('nav.workspaces.resetWorkspaceDialog.title', { name: workspaceDisplayName })}
+          message={t('nav.workspaces.resetWorkspaceDialog.message')}
+          confirmText={t('nav.workspaces.actions.resetWorkspace')}
+          cancelText={t('actions.cancel')}
+          confirmDanger
+          preview={`${t('nav.workspaces.resetWorkspaceDialog.pathLabel')}\n${workspace.rootPath}`}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className={[
+      'openharness-nav-panel__workspace-item',
+      isActive && 'is-active',
+      isDragging && 'is-dragging',
+      menuOpen && 'is-menu-open',
+      sessionsCollapsed && 'is-sessions-collapsed',
+      isSingle && 'is-single',
+    ].filter(Boolean).join(' ')}
+    aria-grabbed={draggable ? isDragging : undefined}>
+      <div
+        className="openharness-nav-panel__workspace-item-card"
+        draggable={draggable}
+        onDragStart={onDragStart}
+        onDragEnd={onDragEnd}
+      >
+        <button
+          type="button"
+          className="openharness-nav-panel__workspace-item-collapse-btn"
+          onClick={handleCollapseToggle}
+          aria-label={sessionsCollapsed ? t('nav.workspaces.expandSessions') : t('nav.workspaces.collapseSessions')}
+          aria-expanded={!sessionsCollapsed}
+        >
+          <span className="openharness-nav-panel__workspace-item-icon" aria-hidden="true">
+            <span className="openharness-nav-panel__workspace-item-icon-default">
+              <FolderOpen size={14} />
+            </span>
+            <span className={`openharness-nav-panel__workspace-item-icon-toggle${sessionsCollapsed ? ' is-collapsed' : ''}`}>
+              <ChevronDown size={14} />
+            </span>
+          </span>
+        </button>
+        <button
+          type="button"
+          className="openharness-nav-panel__workspace-item-name-btn"
+          onClick={() => { void handleCardNameClick(); }}
+        >
+          <span className={`openharness-nav-panel__workspace-item-title${isRemoteWorkspace(workspace) ? ' is-remote' : ''}`}>
+            <span className="openharness-nav-panel__workspace-item-label">{workspaceDisplayName}</span>
+            {isRemoteWorkspace(workspace) && (
+              <span className="openharness-nav-panel__workspace-item-subtitle">
+                <span
+                  className={`openharness-nav-panel__workspace-item-status-dot is-${remoteConnStatus ?? 'connecting'}`}
+                  aria-label={remoteConnStatus ?? 'connecting'}
+                />
+                <span>{workspace.connectionName}</span>
+              </span>
+            )}
+          </span>
+          {!isRemoteWorkspace(workspace) && currentBranch ? (
+            <span className="openharness-nav-panel__workspace-item-branch">
+              <GitBranch size={11} />
+              <span>{currentBranch}</span>
+            </span>
+          ) : null}
+        </button>
+
+        <div className="openharness-nav-panel__workspace-item-menu" ref={menuRef}>
+          <Tooltip content={t('nav.items.project')} placement="right" followCursor>
+            <button
+              type="button"
+              className="openharness-nav-panel__workspace-item-menu-trigger"
+              onClick={() => { void handleOpenFiles(); }}
+            >
+              <Folder size={14} />
+            </button>
+          </Tooltip>
+          <div ref={menuAnchorRef}>
+            <button
+              type="button"
+              className={`openharness-nav-panel__workspace-item-menu-trigger${menuOpen ? ' is-open' : ''}`}
+              onClick={() => setMenuOpen(prev => !prev)}
+            >
+              <MoreHorizontal size={14} />
+            </button>
+          </div>
+
+          {menuOpen && menuPosition && createPortal(
+            <div
+              ref={menuPopoverRef}
+              className="openharness-nav-panel__workspace-item-menu-popover"
+              role="menu"
+              style={{ top: `${menuPosition.top}px`, left: `${menuPosition.left}px` }}
+            >
+              <button type="button" className="openharness-nav-panel__workspace-item-menu-item" onClick={handleCreateCodeSession}>
+                <Plus size={13} />
+                <span className="openharness-nav-panel__workspace-item-menu-label">{t('nav.sessions.newCodeSessionShort')}</span>
+              </button>
+              <button type="button" className="openharness-nav-panel__workspace-item-menu-item" onClick={handleCreateCoworkSession}>
+                <Plus size={13} />
+                <span className="openharness-nav-panel__workspace-item-menu-label">{t('nav.sessions.newCoworkSessionShort')}</span>
+              </button>
+              <button type="button" className="openharness-nav-panel__workspace-item-menu-item" onClick={() => { void handleCreateInitSession(); }}>
+                <FileText size={13} />
+                <span className="openharness-nav-panel__workspace-item-menu-label">{t('nav.workspaces.actions.initAgents')}</span>
+              </button>
+              <div className="openharness-nav-panel__workspace-item-menu-divider" />
+              {isLinkedWorktree ? (
+                <button
+                  type="button"
+                  className="openharness-nav-panel__workspace-item-menu-item is-danger"
+                  onClick={handleRequestDeleteWorktree}
+                  disabled={isDeletingWorktree}
+                >
+                  <Trash2 size={13} />
+                  <span className="openharness-nav-panel__workspace-item-menu-label">{t('nav.workspaces.actions.deleteWorktree')}</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="openharness-nav-panel__workspace-item-menu-item"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setWorktreeModalOpen(true);
+                  }}
+                  disabled={!isRepository}
+                >
+                  <GitBranch size={13} />
+                  <span className="openharness-nav-panel__workspace-item-menu-label">{t('nav.workspaces.actions.newWorktree')}</span>
+                </button>
+              )}
+              <button
+                type="button"
+                className="openharness-nav-panel__workspace-item-menu-item"
+                onClick={() => { void handleCopyWorkspacePath(); }}
+                disabled={!workspace.rootPath}
+              >
+                <Copy size={13} />
+                <span className="openharness-nav-panel__workspace-item-menu-label">{t('nav.workspaces.actions.copyPath')}</span>
+              </button>
+              <button
+                type="button"
+                className="openharness-nav-panel__workspace-item-menu-item"
+                onClick={() => { void handleReveal(); }}
+                disabled={isRemoteWorkspace(workspace)}
+              >
+                <FolderSearch size={13} />
+                <span className="openharness-nav-panel__workspace-item-menu-label">{t('nav.workspaces.actions.reveal')}</span>
+              </button>
+              <div className="openharness-nav-panel__workspace-item-menu-divider" />
+              <button type="button" className="openharness-nav-panel__workspace-item-menu-item is-danger" onClick={() => { void handleCloseWorkspace(); }}>
+                <FolderOpen size={13} />
+                <span className="openharness-nav-panel__workspace-item-menu-label">{t('nav.workspaces.actions.close')}</span>
+              </button>
+            </div>,
+            document.body
+          )}
+        </div>
+      </div>
+
+      <div className={`openharness-nav-panel__workspace-item-sessions${sessionsCollapsed ? ' is-collapsed' : ''}`}>
+        <SessionsSection
+          workspaceId={workspace.id}
+          workspacePath={workspace.rootPath}
+          remoteConnectionId={isRemoteWorkspace(workspace) ? workspace.connectionId : null}
+          remoteSshHost={isRemoteWorkspace(workspace) ? workspace.sshHost : null}
+          isActiveWorkspace={isActive}
+        />
+      </div>
+
+      <BranchSelectModal
+        isOpen={worktreeModalOpen}
+        onClose={() => setWorktreeModalOpen(false)}
+        onSelect={(result) => { void handleCreateWorktree(result); }}
+        repositoryPath={workspace.rootPath}
+        title={t('nav.workspaces.actions.newWorktree')}
+        showOpenAfterCreate
+        defaultOpenAfterCreate
+      />
+      <ConfirmDialog
+        isOpen={deleteWorktreeDialogOpen}
+        onClose={() => setDeleteWorktreeDialogOpen(false)}
+        onConfirm={() => { void handleConfirmDeleteWorktree(); }}
+        title={t('nav.workspaces.deleteWorktreeDialog.title', { name: workspaceDisplayName })}
+        message={t('nav.workspaces.deleteWorktreeDialog.message')}
+        confirmText={t('nav.workspaces.actions.deleteWorktree')}
+        cancelText={t('actions.cancel')}
+        confirmDanger
+        preview={`${t('nav.workspaces.deleteWorktreeDialog.pathLabel')}\n${workspace.rootPath}`}
+      />
+    </div>
+  );
+};
+
+export default WorkspaceItem;

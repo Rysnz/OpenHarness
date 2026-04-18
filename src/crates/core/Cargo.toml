@@ -1,0 +1,142 @@
+[package]
+name = "openharness-core"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+description = "OpenHarness Core Library - Platform-agnostic business logic"
+
+[lib]
+name = "openharness_core"
+crate-type = ["rlib"]
+
+[dependencies]
+# Inherit shared dependencies from workspace
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+tokio-util = { workspace = true }
+async-trait = { workspace = true }
+futures = { workspace = true }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+log = { workspace = true }
+
+uuid = { workspace = true }
+chrono = { workspace = true }
+chrono-tz = { workspace = true }
+cron = { workspace = true }
+regex = { workspace = true }
+base64 = { workspace = true }
+image = { workspace = true }
+md5 = { workspace = true }
+aes = "0.8"
+hex = "0.4"
+dashmap = { workspace = true }
+indexmap = { workspace = true }
+
+reqwest = { workspace = true }
+
+# Debug Log HTTP Server
+axum = { workspace = true }
+tower-http = { workspace = true }
+
+glob = { workspace = true }
+ignore = { workspace = true }
+notify = { workspace = true }
+dirs = { workspace = true }
+dunce = { workspace = true }
+filetime = { workspace = true }
+zip = { workspace = true }
+flate2 = { workspace = true }
+include_dir = { workspace = true }
+
+git2 = { workspace = true }
+
+# Command detection (cross-platform)
+which = { workspace = true }
+similar = { workspace = true }
+urlencoding = { workspace = true }
+
+grep-searcher = { workspace = true }
+grep-regex = { workspace = true }
+globset = { workspace = true }
+
+eventsource-stream = { workspace = true }
+
+# MCP Streamable HTTP client (official rust-sdk used by Codex)
+rmcp = { version = "0.12.0", default-features = false, features = [
+    "auth",
+    "base64",
+    "client",
+    "macros",
+    "schemars",
+    "server",
+    "transport-streamable-http-client-reqwest",
+] }
+sse-stream = "0.2.1"
+
+# AI stream processor - local sub-crate
+ai_stream_handlers = { path = "src/infrastructure/ai/ai_stream_handlers" }
+
+# Tool runtime
+tool-runtime = { path = "src/agentic/tools/implementations/tool-runtime" }
+
+# terminal
+terminal-core = { path = "src/service/terminal" }
+
+# I18n internationalization
+fluent-bundle = { workspace = true }
+unic-langid = { workspace = true }
+
+# Encryption (Remote Connect E2E)
+x25519-dalek = { workspace = true }
+aes-gcm = { workspace = true }
+sha2 = { workspace = true }
+rand = { workspace = true }
+
+# Device/Network info (Remote Connect)
+mac_address = { workspace = true }
+local-ip-address = { workspace = true }
+hostname = { workspace = true }
+
+# QR code generation
+qrcode = { workspace = true }
+
+# WebSocket client
+tokio-tungstenite = { workspace = true }
+
+# SSH - Remote SSH support (optional feature)
+russh = { version = "0.45", optional = true }
+russh-sftp = { version = "2.1", optional = true }
+russh-keys = { version = "0.45", optional = true }
+shellexpand = { version = "3", optional = true }
+ssh_config = { version = "0.1", optional = true }
+
+# Relay server shared library (embedded relay reuses standalone relay logic)
+openharness-relay-server = { path = "../../apps/relay-server" }
+
+# Event layer dependency (lowest layer)
+openharness-events = { path = "../events" }
+
+# Transport layer dependency
+openharness-transport = { path = "../transport" }
+
+# Tauri dependency (optional, enabled only when needed)
+tauri = { workspace = true, optional = true }
+
+# Non-Windows: vendored OpenSSL for libgit2 (no system install).
+[target.'cfg(not(windows))'.dependencies]
+git2 = { workspace = true, features = ["vendored-openssl"] }
+
+[target.'cfg(windows)'.dependencies]
+win32job = { workspace = true }
+
+[features]
+default = ["ssh-remote"]
+tauri-support = ["tauri"]  # Optional tauri support
+ssh-remote = ["russh", "russh-sftp", "russh-keys", "shellexpand", "ssh_config"]  # russh-keys pure-Rust crypto backend (no openssl)

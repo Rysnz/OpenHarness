@@ -1,0 +1,17 @@
+If macOS says "OpenHarness is damaged and can't be opened", follow these steps:
+
+1. Drag OpenHarness.app into the Applications folder
+2. Open Terminal (found in Applications > Utilities)
+3. Paste the following command and press Enter:
+
+   xattr -d com.apple.quarantine /Applications/OpenHarness.app
+
+4. Open OpenHarness again — it should launch normally
+
+---
+
+Why this happens:
+macOS Gatekeeper adds a quarantine flag to apps downloaded from the internet.
+Because OpenHarness is not yet notarized by Apple, the system incorrectly reports
+it as "damaged". The command above removes the quarantine flag and does not
+affect your system security.

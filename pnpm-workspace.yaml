@@ -1,0 +1,5 @@
+packages:
+  - "src/web-ui"
+  - "src/mobile-web"
+  - "OpenHarness-Installer"
+  - "tests/e2e"

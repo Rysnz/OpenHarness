@@ -1,0 +1,81 @@
+@use '../../../../component-library/styles/tokens' as *;
+
+.openharness-config-collection-section__content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-gap-4, 16px);
+  padding: var(--size-gap-4, 16px);
+}
+
+.openharness-config-collection-section__toolbar,
+.openharness-config-collection-section__filters,
+.openharness-config-collection-section__editor,
+.openharness-config-collection-section__list {
+  min-width: 0;
+}
+
+.openharness-config-collection-section__toolbar {
+  padding-bottom: var(--size-gap-2, 8px);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.openharness-config-collection-section__filters {
+  padding-bottom: var(--size-gap-2, 8px);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.openharness-config-collection-section__editor {
+  background: var(--element-bg-subtle);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--size-radius-md, 10px);
+  padding: var(--size-gap-3, 12px);
+}
+
+.openharness-config-collection-section--with-editor .openharness-config-collection-section__content {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 340px);
+  grid-template-areas:
+    'toolbar toolbar'
+    'filters filters'
+    'list editor';
+  align-items: start;
+}
+
+.openharness-config-collection-section--with-editor .openharness-config-collection-section__toolbar {
+  grid-area: toolbar;
+}
+
+.openharness-config-collection-section--with-editor .openharness-config-collection-section__filters {
+  grid-area: filters;
+}
+
+.openharness-config-collection-section--with-editor .openharness-config-collection-section__list {
+  grid-area: list;
+}
+
+.openharness-config-collection-section--with-editor .openharness-config-collection-section__editor {
+  grid-area: editor;
+  position: sticky;
+  top: var(--size-gap-2, 8px);
+}
+
+@container config-panel (max-width: 520px) {
+  .openharness-config-collection-section__content {
+    gap: var(--size-gap-3, 12px);
+    padding: var(--size-gap-3, 12px);
+  }
+
+  .openharness-config-collection-section__editor {
+    padding: var(--size-gap-2, 8px);
+  }
+
+  .openharness-config-collection-section--with-editor .openharness-config-collection-section__content {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .openharness-config-collection-section__toolbar,
+  .openharness-config-collection-section__filters {
+    padding-bottom: var(--size-gap-2, 8px);
+  }
+}

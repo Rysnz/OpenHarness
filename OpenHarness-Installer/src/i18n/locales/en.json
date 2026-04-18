@@ -1,0 +1,231 @@
+{
+  "lang": {
+    "title": "Language",
+    "subtitle": "Select your preferred language",
+    "continue": "Continue"
+  },
+  "errors": {
+    "install": {
+      "failed": "Installation failed"
+    },
+    "installPath": {
+      "notAbsolute": "The installation path must be an absolute path (for example C:\\…).",
+      "filesystemRoot": "Cannot install to a drive root. Choose a folder inside the drive.",
+      "pathNotDirectory": "The selected path exists but is not a folder.",
+      "directoryMustBeEmptyOrOpenHarness": "The installation folder must be empty, or already contain a OpenHarness installation.",
+      "inspectDirectoryFailed": "Could not read the installation folder. Check permissions and try again.",
+      "directoryNotWritable": "The installation folder is not writable. Choose another location or run the installer as administrator (see below).",
+      "parentNotWritable": "The parent folder is not writable. System folders such as Program Files often require administrator rights (see below).",
+      "adminHint": "To install under protected locations (for example C:\\Program Files), close this installer, right‑click the installer executable, choose \"Run as administrator\", then try again. Alternatively install under your user profile, for example %LOCALAPPDATA%\\Programs, which does not require elevation."
+    }
+  },
+  "options": {
+    "title": "Options",
+    "subtitle": "Review install location and preferences",
+    "quickSetup": "Quick setup",
+    "appLanguage": "App language",
+    "theme": "Theme",
+    "themeDark": "Dark",
+    "themeSlate": "Slate",
+    "changeLanguage": "Change language",
+    "pathLabel": "Installation Path",
+    "pathPlaceholder": "Select directory...",
+    "browse": "Browse",
+    "required": "Required",
+    "available": "Available",
+    "insufficientSpace": "Insufficient space",
+    "optionsLabel": "Options",
+    "desktopShortcut": "Create desktop shortcut",
+    "startMenu": "Add to Start Menu",
+    "contextMenu": "Add right-click context menu",
+    "addToPath": "Add to system PATH",
+    "launchAfterInstall": "Launch OpenHarness after setup",
+    "back": "Back",
+    "install": "Install",
+    "installing": "Preparing…",
+    "nextModel": "Next: Configure model"
+  },
+  "model": {
+    "title": "Model",
+    "subtitle": "Installation complete. Continue with model and theme setup",
+    "installDone": "Installation complete",
+    "provider": "Provider",
+    "config": "Connection",
+    "modelName": "Model name (e.g. deepseek-chat)",
+    "apiKey": "API key",
+    "back": "Back",
+    "skip": "Skip for now",
+    "nextTheme": "Next: Theme",
+    "description": "Configure and manage AI model providers",
+    "providerLabel": "Select Model Provider",
+    "selectProvider": "or select a preset provider",
+    "customProvider": "Custom Configuration",
+    "getApiKey": "Get API Key",
+    "modelNamePlaceholder": "Enter model name...",
+    "baseUrlPlaceholder": "e.g., https://open.bigmodel.cn/api/paas/v4/chat/completions",
+    "customRequestBodyPlaceholder": "{\n  \"temperature\": 0.8,\n  \"top_p\": 0.9\n}",
+    "jsonValid": "JSON format is valid",
+    "jsonInvalid": "Invalid JSON format, please check syntax",
+    "skipSslVerify": "Skip SSL Certificate Verification",
+    "customHeadersModeMerge": "Merge Override",
+    "customHeadersModeReplace": "Replace All",
+    "addHeader": "Add Field",
+    "headerKey": "key",
+    "headerValue": "value",
+    "advancedShow": "Show advanced settings",
+    "advancedHide": "Hide advanced settings",
+    "providers": {
+      "openopenharness": {
+        "name": "OpenOpenHarness",
+        "description": "OpenOpenHarness Model Platform"
+      },
+      "gemini": {
+        "name": "Google Gemini",
+        "description": "Google Gemini series models"
+      },
+      "anthropic": {
+        "name": "Anthropic Claude",
+        "description": "Anthropic Claude series models"
+      },
+      "minimax": {
+        "name": "MiniMax",
+        "description": "MiniMax series models",
+        "urlOptions": {
+          "default": "Anthropic Format - Default",
+          "openai": "OpenAI Compatible Format"
+        }
+      },
+      "moonshot": {
+        "name": "Moonshot AI",
+        "description": "Moonshot Kimi series models"
+      },
+      "deepseek": {
+        "name": "DeepSeek",
+        "description": "DeepSeek series models"
+      },
+      "zhipu": {
+        "name": "Zhipu AI",
+        "description": "Zhipu AI GLM series models",
+        "urlOptions": {
+          "default": "OpenAI Format - Default",
+          "anthropic": "Anthropic Format",
+          "codingPlan": "OpenAI Format - CodingPlan"
+        }
+      },
+      "qwen": {
+        "name": "Qwen",
+        "description": "Alibaba Cloud Bailian Model Platform",
+        "urlOptions": {
+          "default": "OpenAI Format - Default",
+          "codingPlan": "OpenAI Format - Coding Plan",
+          "codingPlanAnthropic": "Anthropic Format - Coding Plan"
+        }
+      },
+      "volcengine": {
+        "name": "Volcano Engine",
+        "description": "ByteDance Volcano Engine Model Platform"
+      },
+      "siliconflow": {
+        "name": "SiliconFlow",
+        "description": "SiliconFlow Model Platform",
+        "urlOptions": {
+          "default": "OpenAI Format - Default",
+          "anthropic": "Anthropic Format"
+        }
+      },
+      "nvidia": {
+        "name": "NVIDIA",
+        "description": "NVIDIA NIM Model Platform"
+      },
+      "openrouter": {
+        "name": "OpenRouter",
+        "description": "OpenRouter Model Platform"
+      }
+    },
+    "modelNameSelectPlaceholder": "Select model",
+    "customModel": "Press Enter to use",
+    "testConnection": "Test Connection",
+    "testing": "Testing...",
+    "testSuccess": "Test successful",
+    "testFailed": "Test failed",
+    "modelSearchPlaceholder": "Search or enter model name...",
+    "modelNoResults": "No matching models",
+    "fillApiKeyBeforeFetch": "Enter the API key before fetching models",
+    "fetchingModels": "Fetching model list...",
+    "fetchFailedFallback": "Failed to fetch model list, fell back to common preset models",
+    "fetchEmptyFallback": "Provider returned no models, fell back to common preset models",
+    "usingPresetModels": "Currently showing common preset models",
+    "addCustomModel": "Add Custom Model",
+    "form": {
+      "baseUrl": "API URL",
+      "apiKey": "API Key",
+      "apiKeyPlaceholder": "Enter your API Key",
+      "provider": "Request Format",
+      "providerPlaceholder": "Select request format",
+      "modelSelection": "Select Models",
+      "modelName": "Model Name",
+      "resolvedUrlLabel": "Request URL: "
+    },
+    "formats": {
+      "openaiCompatible": "OpenAI Compatible",
+      "responsesApi": "OpenAI Responses API",
+      "claudeApi": "Claude API",
+      "geminiApi": "Gemini GenerateContent API"
+    },
+    "showSecret": "Show",
+    "hideSecret": "Hide"
+  },
+  "progress": {
+    "title": "Installing",
+    "installing": "Installing...",
+    "prepare": "Preparing",
+    "extract": "Extracting Files",
+    "registry": "Registering Application",
+    "shortcuts": "Creating Shortcuts",
+    "contextMenu": "Context Menu",
+    "path": "Updating PATH",
+    "config": "Applying startup preferences",
+    "complete": "Finishing Up",
+    "starting": "Starting...",
+    "failed": "Installation Failed",
+    "confirmContinue": "Continue setup"
+  },
+  "themeSetup": {
+    "title": "Theme & Launch",
+    "subtitle": "Choose your startup theme, then launch",
+    "followSystem": "Match system",
+    "skip": "Skip theme and launch",
+    "themeNames": {
+      "openharness-dark": "Dark",
+      "openharness-light": "Light",
+      "openharness-midnight": "Midnight",
+      "openharness-china-style": "Ink Charm",
+      "openharness-china-night": "Ink Night",
+      "openharness-cyber": "Cyber",
+      "openharness-slate": "Slate"
+    }
+  },
+  "complete": {
+    "title": "Complete",
+    "heading": "Installation Complete",
+    "ready": "OpenHarness is ready to use.",
+    "autoLaunch": " It will launch automatically.",
+    "launchFinish": "Launch OpenHarness",
+    "finish": "Finish"
+  },
+  "uninstall": {
+    "title": "Uninstall OpenHarness",
+    "subtitle": "This removes OpenHarness and related integrations (shortcuts, context menu, PATH).",
+    "installPath": "Install path",
+    "inlineHint": "Will remove integration and install directory",
+    "pathUnknown": "Install path not detected",
+    "confirm": "Start uninstall",
+    "uninstalling": "Uninstalling...",
+    "completed": "Uninstall completed. You can close this window.",
+    "cancel": "Cancel",
+    "close": "Close"
+  },
+  "titlebar": {
+    "default": "OpenHarness"
+  }
+}

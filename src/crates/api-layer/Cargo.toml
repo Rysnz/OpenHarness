@@ -1,0 +1,21 @@
+[package]
+name = "openharness-api-layer"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+description = "OpenHarness API Layer - Platform-agnostic business handlers"
+
+[lib]
+name = "openharness_api_layer"
+
+[dependencies]
+# Internal crates
+openharness-transport = { path = "../transport" }
+
+# Inherited from workspace
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+log = { workspace = true }
+uuid = { workspace = true }

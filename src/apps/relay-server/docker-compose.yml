@@ -1,0 +1,38 @@
+services:
+  relay-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: openharness-relay
+    restart: unless-stopped
+    ports:
+      - "${RELAY_HOST_BIND_IP:-0.0.0.0}:9700:9700"
+    environment:
+      - RELAY_PORT=9700
+      - RELAY_STATIC_DIR=/app/static
+      - RELAY_ROOM_WEB_DIR=/app/room-web
+      - RELAY_ROOM_TTL=3600
+    volumes:
+      - ./static:/app/static:ro
+      - room-web:/app/room-web
+
+  # Optional: Caddy reverse proxy for automatic HTTPS.
+  # Uncomment if you need HTTPS / domain-based access.
+  # caddy:
+  #   image: caddy:2-alpine
+  #   container_name: openharness-caddy
+  #   restart: unless-stopped
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./Caddyfile:/etc/caddy/Caddyfile
+  #     - caddy-data:/data
+  #     - caddy-config:/config
+  #   depends_on:
+  #     - relay-server
+
+volumes:
+  room-web:
+  # caddy-data:
+  # caddy-config:

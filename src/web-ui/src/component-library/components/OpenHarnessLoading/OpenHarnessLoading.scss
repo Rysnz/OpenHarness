@@ -1,0 +1,27 @@
+.openharness-loading {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: currentColor;
+
+  .openharness-logo {
+    filter: drop-shadow(0 4px 12px rgba(17, 167, 156, 0.16));
+  }
+
+  &__text {
+    font-size: 12px;
+    color: currentColor;
+    opacity: 0.76;
+    white-space: nowrap;
+  }
+
+  &--small {
+    gap: 4px;
+  }
+
+  &--large {
+    gap: 10px;
+  }
+}

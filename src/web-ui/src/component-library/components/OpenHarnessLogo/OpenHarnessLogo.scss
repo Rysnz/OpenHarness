@@ -1,0 +1,165 @@
+.openharness-logo {
+  display: inline-block;
+  flex-shrink: 0;
+  color: currentColor;
+  overflow: visible;
+
+  &__backplate {
+    fill: #0f1216;
+  }
+
+  &__loop {
+    fill: none;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+
+    &--base {
+      stroke: #c8d0d8;
+      stroke-width: 8;
+      opacity: 0.84;
+    }
+
+    &--flow {
+      stroke: #f7fbff;
+      stroke-width: 8;
+      stroke-dasharray: 14 26 30 134;
+      stroke-dashoffset: 0;
+      filter: drop-shadow(0 0 5px rgba(240, 246, 255, 0.7));
+    }
+
+    &--sheen {
+      stroke: rgba(255, 255, 255, 0.92);
+      stroke-width: 3;
+      stroke-dasharray: 4 18 16 166;
+      stroke-dashoffset: -80;
+      filter: drop-shadow(0 0 7px rgba(238, 244, 255, 0.72));
+    }
+  }
+
+  &__bridge {
+    fill: none;
+    stroke: #e9eef3;
+    stroke-width: 8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    filter: drop-shadow(0 0 3px rgba(235, 241, 248, 0.28));
+  }
+
+  &__anchor {
+    fill: #0f1216;
+    stroke: #edf2f7;
+    stroke-width: 4;
+  }
+
+  &__anchor--center {
+    fill: #f8fbff;
+    stroke: #0f1216;
+    stroke-width: 3;
+    filter: drop-shadow(0 0 6px rgba(240, 246, 255, 0.75));
+  }
+
+  &__opening {
+    fill: none;
+    stroke: #f8fbff;
+    stroke-width: 7;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    filter: drop-shadow(0 0 5px rgba(240, 246, 255, 0.65));
+  }
+
+  &--animated {
+    .openharness-logo__backplate {
+      animation: openharness-logo-breathe 2.6s ease-in-out infinite;
+      transform-origin: 60px 60px;
+    }
+
+    .openharness-logo__loop--flow {
+      animation: openharness-logo-flow 2.35s linear infinite;
+    }
+
+    .openharness-logo__loop--sheen {
+      animation: openharness-logo-sheen 3.1s linear infinite;
+    }
+
+    .openharness-logo__anchor--center {
+      animation: openharness-logo-anchor 2s ease-in-out infinite;
+      transform-origin: 60px 60px;
+    }
+
+    .openharness-logo__opening {
+      animation: openharness-logo-opening 2.6s ease-in-out infinite;
+      transform-origin: 88px 22px;
+    }
+  }
+}
+
+:root[data-theme-type="light"] {
+  .openharness-logo__backplate {
+    fill: #f2f5f8;
+  }
+
+  .openharness-logo__bridge {
+    stroke: #69737d;
+  }
+
+  .openharness-logo__anchor {
+    fill: #f2f5f8;
+    stroke: #69737d;
+  }
+
+  .openharness-logo__anchor--center {
+    fill: #ffffff;
+    stroke: #f2f5f8;
+  }
+}
+
+@keyframes openharness-logo-flow {
+  100% {
+    stroke-dashoffset: -204;
+  }
+}
+
+@keyframes openharness-logo-sheen {
+  100% {
+    stroke-dashoffset: -284;
+  }
+}
+
+@keyframes openharness-logo-anchor {
+  0%, 100% {
+    transform: scale(1);
+  }
+  45% {
+    transform: scale(1.16);
+  }
+}
+
+@keyframes openharness-logo-breathe {
+  0%, 100% {
+    transform: scale(0.98);
+  }
+  50% {
+    transform: scale(1.02);
+  }
+}
+
+@keyframes openharness-logo-opening {
+  0%, 100% {
+    transform: rotate(0deg);
+  }
+  50% {
+    transform: rotate(5deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .openharness-logo--animated {
+    .openharness-logo__backplate,
+    .openharness-logo__loop--flow,
+    .openharness-logo__loop--sheen,
+    .openharness-logo__anchor--center,
+    .openharness-logo__opening {
+      animation: none;
+    }
+  }
+}

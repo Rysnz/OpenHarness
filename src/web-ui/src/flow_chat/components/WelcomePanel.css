@@ -1,0 +1,508 @@
+/*
+ * WelcomePanel — mirrors WelcomeScene layout:
+ *   container centered in viewport, content block left-aligned.
+ */
+
+.welcome-panel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 32px 24px;
+  box-sizing: border-box;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  animation: wp-fadeIn 0.35s ease-out;
+}
+
+.welcome-panel__content {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  width: 100%;
+  max-width: 520px;
+}
+
+/* ── Greeting ── */
+
+.welcome-panel__greeting {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.welcome-panel__greeting-inner {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 16px;
+}
+
+.welcome-panel__greeting-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.welcome-panel__greeting-text--mtc {
+  align-items: center;
+  text-align: center;
+}
+
+/* ── Panda mascot ── */
+
+.welcome-panel__panda {
+  position: relative;
+  flex-shrink: 0;
+  width: 88px;
+  user-select: none;
+  image-rendering: pixelated;
+  cursor: default;
+}
+
+.welcome-panel__panda-frame {
+  display: block;
+  width: 100%;
+  height: auto;
+  image-rendering: pixelated;
+  transition: opacity 0.12s steps(1, end);
+}
+
+.welcome-panel__panda-frame--1 {
+  opacity: 1;
+}
+
+.welcome-panel__panda-frame--2 {
+  position: absolute;
+  top: 0;
+  left: 0;
+  opacity: 0;
+}
+
+.welcome-panel__panda:hover .welcome-panel__panda-frame--1 {
+  opacity: 0;
+}
+
+.welcome-panel__panda:hover .welcome-panel__panda-frame--2 {
+  opacity: 1;
+}
+
+.welcome-panel__heading {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.welcome-panel__heading--hidden {
+  display: none;
+}
+
+.welcome-panel__heading--mtc {
+  width: 100%;
+  min-height: 42px;
+  color: #1f2330;
+  font-size: 34px;
+  font-weight: 760;
+  line-height: 1.12;
+}
+
+.welcome-panel__mtc-title {
+  position: relative;
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: center;
+  max-width: 100%;
+  color: #232631;
+  white-space: nowrap;
+}
+
+.welcome-panel__mtc-word {
+  display: inline-flex;
+  align-items: baseline;
+  min-width: 0;
+  overflow: visible;
+  margin-right: 0;
+  animation: wp-mtc-word-space 0.46s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.welcome-panel__mtc-word--more {
+  animation-delay: 0.58s;
+}
+
+.welcome-panel__mtc-word--than {
+  animation-delay: 0.58s;
+}
+
+.welcome-panel__mtc-word--coding {
+  margin-right: 0;
+  animation-name: none;
+}
+
+.welcome-panel__mtc-letter {
+  color: #7264f4;
+  text-shadow: 0 0 18px rgba(114, 100, 244, 0.2);
+  animation: wp-mtc-letter-glow 0.7s ease both;
+}
+
+.welcome-panel__mtc-word--more .welcome-panel__mtc-letter {
+  animation-delay: 0.24s;
+}
+
+.welcome-panel__mtc-word--than .welcome-panel__mtc-letter {
+  animation-delay: 0.24s;
+}
+
+.welcome-panel__mtc-word--coding .welcome-panel__mtc-letter {
+  animation-delay: 0.24s;
+}
+
+.welcome-panel__mtc-tail {
+  display: inline-block;
+  max-width: 0;
+  overflow: hidden;
+  color: #232631;
+  opacity: 0;
+  transform: translateY(2px);
+  animation: wp-mtc-tail-reveal 0.64s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.welcome-panel__mtc-word--more .welcome-panel__mtc-tail {
+  animation-delay: 0.58s;
+}
+
+.welcome-panel__mtc-word--than .welcome-panel__mtc-tail {
+  animation-delay: 0.58s;
+}
+
+.welcome-panel__mtc-word--coding .welcome-panel__mtc-tail {
+  animation-delay: 0.58s;
+}
+
+.welcome-panel__tagline {
+  margin: 6px 0 0;
+  font-size: 15px;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+}
+
+.welcome-panel__greeting-text--mtc .welcome-panel__tagline {
+  max-width: 420px;
+  animation: wp-mtc-subtitle-in 0.45s ease both;
+  animation-delay: 1.08s;
+}
+
+/* ── Divider ── */
+
+.welcome-panel__divider {
+  height: 1px;
+  background: var(--border-subtle);
+}
+
+/* ── Narrative ── */
+
+.welcome-panel__narrative {
+  position: relative;
+}
+
+.welcome-panel__narrative-text {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--color-text-muted);
+}
+
+/* Lead text, chips, and trail text share one typographic line (baseline-aligned) */
+.welcome-panel__narrative-sentence {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  column-gap: 0.35em;
+  row-gap: 0.25em;
+}
+
+.welcome-panel__narrative-sentence__text {
+  line-height: inherit;
+}
+
+.welcome-panel__inline-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 5px;
+  margin: 0 1px;
+  background: none;
+  border: none;
+  border-radius: 5px;
+  color: var(--color-text-primary);
+  font-size: inherit;
+  font-family: inherit;
+  font-weight: 600;
+  line-height: inherit;
+  cursor: default;
+  vertical-align: baseline;
+  transition: background 0.15s;
+}
+
+.welcome-panel__inline-btn--interactive {
+  cursor: pointer;
+}
+
+.welcome-panel__inline-btn--interactive:hover:not(:disabled) {
+  background: var(--element-bg-subtle);
+}
+
+.welcome-panel__inline-btn--active {
+  background: var(--element-bg-subtle);
+}
+
+.welcome-panel__inline-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.welcome-panel__inline-icon {
+  flex-shrink: 0;
+  display: block;
+}
+
+.welcome-panel__inline-chevron {
+  opacity: 0.5;
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+  display: block;
+}
+
+.welcome-panel__inline-chevron--open {
+  transform: rotate(180deg);
+}
+
+.welcome-panel__narrative-clean {
+  color: var(--color-text-secondary);
+}
+
+/* ── Context row: workspace + branch always on the same line ── */
+
+.welcome-panel__context-row {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: nowrap;
+  margin: 0 1px;
+}
+
+.welcome-panel__context-sep {
+  padding: 0 2px;
+  line-height: inherit;
+  color: var(--color-text-muted);
+  opacity: 0.4;
+  font-weight: 400;
+  user-select: none;
+}
+
+/* ── Workspace anchor (inline position reference for dropdown) ── */
+
+.welcome-panel__workspace-anchor {
+  position: relative;
+  display: inline-flex;
+  align-items: baseline;
+}
+
+/* Git status line: tight follow-up under workspace sentence (avoid <br> full line-gap) */
+.welcome-panel__narrative-git {
+  display: block;
+  margin-top: 0.28em;
+}
+
+/* ── Dropdown ── */
+
+.welcome-panel__dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 100;
+  min-width: 210px;
+  max-width: 300px;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--border-base);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+  overflow: hidden;
+  animation: wp-dropdownIn 0.15s ease-out;
+}
+
+.welcome-panel__dropdown-current {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.welcome-panel__dropdown-current svg:first-child {
+  color: var(--color-accent-500);
+}
+
+.welcome-panel__dropdown-sep {
+  height: 1px;
+  margin: 2px 0;
+  background: var(--border-subtle);
+}
+
+.welcome-panel__dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 14px;
+  box-sizing: border-box;
+  background: transparent;
+  border: 0;
+  color: var(--color-text-secondary);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.welcome-panel__dropdown-item:hover {
+  background: var(--element-bg-soft);
+  color: var(--color-text-primary);
+}
+
+.welcome-panel__dropdown-item:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.welcome-panel__dropdown-item--accent {
+  color: var(--color-accent-500);
+}
+
+.welcome-panel__dropdown-item--accent:hover {
+  background: var(--color-accent-100);
+  color: var(--color-accent-600);
+}
+
+.welcome-panel__dropdown-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Cowork ── */
+
+.welcome-panel__cowork {
+  width: 100%;
+}
+
+/* ── Animations ── */
+
+@keyframes wp-fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes wp-dropdownIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes wp-mtc-tail-reveal {
+  0% {
+    max-width: 0;
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  28% {
+    opacity: 1;
+  }
+  100% {
+    max-width: 86px;
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes wp-mtc-word-space {
+  from { margin-right: 0; }
+  to { margin-right: 8px; }
+}
+
+@keyframes wp-mtc-letter-glow {
+  0% {
+    filter: none;
+    transform: translateY(0);
+  }
+  48% {
+    filter: drop-shadow(0 0 12px rgba(114, 100, 244, 0.34));
+    transform: translateY(-1px);
+  }
+  100% {
+    filter: none;
+    transform: translateY(0);
+  }
+}
+
+@keyframes wp-mtc-subtitle-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── Responsive ── */
+
+@media (max-width: 480px) {
+  .welcome-panel {
+    padding: 20px 16px;
+  }
+
+  .welcome-panel__heading {
+    font-size: 22px;
+  }
+
+  .welcome-panel__heading--mtc {
+    font-size: 26px;
+  }
+
+  .welcome-panel__dropdown {
+    min-width: min(240px, calc(100vw - 40px));
+    max-width: min(300px, calc(100vw - 40px));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .welcome-panel {
+    animation: none;
+  }
+
+  .welcome-panel__mtc-word,
+  .welcome-panel__mtc-letter,
+  .welcome-panel__mtc-tail,
+  .welcome-panel__greeting-text--mtc .welcome-panel__tagline {
+    animation: none;
+  }
+
+  .welcome-panel__mtc-word:not(.welcome-panel__mtc-word--coding) {
+    margin-right: 8px;
+  }
+
+  .welcome-panel__mtc-tail {
+    max-width: 86px;
+    opacity: 1;
+    transform: none;
+  }
+}

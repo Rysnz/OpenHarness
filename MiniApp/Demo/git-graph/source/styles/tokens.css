@@ -1,0 +1,44 @@
+/* Git Graph MiniApp — theme tokens (host --openharness-* when running in OpenHarness) */
+:root {
+  --bg:          var(--openharness-bg, #0d1117);
+  --bg-surface:  var(--openharness-bg-secondary, #161b22);
+  --bg-hover:    var(--openharness-element-hover, #1c2333);
+  --bg-active:   var(--openharness-element-bg, #1f2a3d);
+  --border:      var(--openharness-border, #30363d);
+  --border-light: var(--openharness-border-subtle, #21262d);
+  --text:        var(--openharness-text, #e6edf3);
+  --text-sec:    var(--openharness-text-secondary, #8b949e);
+  --text-dim:    var(--openharness-text-muted, #484f58);
+  --accent:      var(--openharness-accent, #58a6ff);
+  --accent-dim:  var(--openharness-accent-hover, #1f6feb);
+  --green:       var(--openharness-success, #3fb950);
+  --red:         var(--openharness-error, #f85149);
+  --orange:      var(--openharness-warning, #d29922);
+  --purple:      var(--openharness-info, #bc8cff);
+  --branch-1:    var(--openharness-accent, #58a6ff);
+  --branch-2:    var(--openharness-success, #3fb950);
+  --branch-3:    var(--openharness-info, #bc8cff);
+  --branch-4:    var(--openharness-warning, #f0883e);
+  --branch-5:    #f778ba;
+  --branch-6:    #79c0ff;
+  --branch-7:    #56d364;
+  --radius:      var(--openharness-radius, 6px);
+  --radius-lg:   var(--openharness-radius-lg, 10px);
+  --graph-node-stroke: var(--openharness-bg, #0d1117);
+  --graph-uncommitted: var(--text-dim, #808080);
+  --graph-lane-width: 18px;
+  --graph-row-height: 28px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--openharness-font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif);
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg);
+  min-height: 100vh;
+  overflow: hidden;
+}
+
+#app { display: flex; flex-direction: column; height: 100vh; }

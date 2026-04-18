@@ -1,0 +1,1731 @@
+//! Workspace service - advanced workspace management API
+//!
+//! Provides comprehensive workspace management functionality.
+
+use super::manager::{
+    ScanOptions, WorkspaceIdentity, WorkspaceInfo, WorkspaceKind, WorkspaceManager,
+    WorkspaceManagerConfig, WorkspaceManagerStatistics, WorkspaceOpenOptions, WorkspaceStatus,
+    WorkspaceSummary, WorkspaceType,
+};
+use crate::agentic::persistence::{PersistenceManager, SessionWorkspaceMaintenanceService};
+use crate::infrastructure::storage::{PersistenceService, StorageOptions};
+use crate::infrastructure::{try_get_path_manager_arc, PathManager};
+use crate::service::bootstrap::initialize_workspace_persona_files;
+use crate::service::remote_ssh::workspace_state::local_workspace_roots_equal;
+use crate::util::errors::*;
+use log::{info, warn};
+
+use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use tokio::fs;
+use tokio::sync::RwLock;
+
+/// Workspace service.
+pub struct WorkspaceService {
+    manager: Arc<RwLock<WorkspaceManager>>,
+    #[allow(dead_code)]
+    config: WorkspaceManagerConfig,
+    persistence: Arc<PersistenceService>,
+    path_manager: Arc<PathManager>,
+    session_workspace_maintenance: Arc<SessionWorkspaceMaintenanceService>,
+}
+
+/// Workspace creation options.
+#[derive(Debug, Clone)]
+pub struct WorkspaceCreateOptions {
+    pub scan_options: ScanOptions,
+    pub auto_set_current: bool,
+    pub add_to_recent: bool,
+    pub workspace_kind: WorkspaceKind,
+    pub partner_id: Option<String>,
+    pub display_name: Option<String>,
+    pub description: Option<String>,
+    pub tags: Vec<String>,
+    /// See [`crate::service::workspace::manager::WorkspaceOpenOptions::remote_connection_id`].
+    pub remote_connection_id: Option<String>,
+    /// SSH `host` from connection config; used for `~/.openharness/remote_ssh/...` and stable remote ids.
+    pub remote_ssh_host: Option<String>,
+    /// Deterministic id for [`WorkspaceKind::Remote`] (host + remote path hash).
+    pub stable_workspace_id: Option<String>,
+}
+
+impl Default for WorkspaceCreateOptions {
+    fn default() -> Self {
+        Self {
+            scan_options: ScanOptions::default(),
+            auto_set_current: true,
+            add_to_recent: true,
+            workspace_kind: WorkspaceKind::Normal,
+            partner_id: None,
+            display_name: None,
+            description: None,
+            tags: Vec::new(),
+            remote_connection_id: None,
+            remote_ssh_host: None,
+            stable_workspace_id: None,
+        }
+    }
+}
+
+/// Batch import result.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BatchImportResult {
+    pub successful: Vec<String>,
+    pub failed: Vec<(String, String)>, // (path, error_message)
+    pub total_processed: usize,
+    pub skipped: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceIdentityChangedEvent {
+    pub workspace_id: String,
+    pub workspace_path: String,
+    pub name: String,
+    pub identity: Option<WorkspaceIdentity>,
+    pub changed_fields: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+struct PartnerWorkspaceDescriptor {
+    path: PathBuf,
+    partner_id: Option<String>,
+    display_name: String,
+}
+
+impl WorkspaceService {
+    async fn maintain_workspace_sessions_best_effort(&self, workspace_path: &Path, trigger: &str) {
+        match self
+            .session_workspace_maintenance
+            .ensure_workspace_maintained(workspace_path)
+            .await
+        {
+            Ok(report) if report.skipped || report.deleted_sessions == 0 => {}
+            Ok(report) => {
+                info!(
+                    "Workspace session maintenance finished: trigger={}, workspace_path={}, scanned_sessions={}, hidden_sessions={}, deleted_sessions={}",
+                    trigger,
+                    workspace_path.display(),
+                    report.scanned_sessions,
+                    report.hidden_sessions,
+                    report.deleted_sessions
+                );
+            }
+            Err(e) => {
+                warn!(
+                    "Failed to maintain workspace sessions: trigger={}, workspace_path={}, error={}",
+                    trigger,
+                    workspace_path.display(),
+                    e
+                );
+            }
+        }
+    }
+
+    /// Creates a new workspace service.
+    pub async fn new() -> OpenHarnessResult<Self> {
+        let config = WorkspaceManagerConfig::default();
+        Self::with_config(config).await
+    }
+
+    /// Creates a workspace service with a custom configuration.
+    pub async fn with_config(config: WorkspaceManagerConfig) -> OpenHarnessResult<Self> {
+        let path_manager = try_get_path_manager_arc()?;
+
+        path_manager.initialize_user_directories().await?;
+
+        let persistence = Arc::new(
+            PersistenceService::new_user_level(path_manager.clone())
+                .await
+                .map_err(|e| {
+                    OpenHarnessError::service(format!(
+                        "Failed to create persistence service: {}",
+                        e
+                    ))
+                })?,
+        );
+
+        let manager = WorkspaceManager::new(config.clone());
+        let session_workspace_maintenance = Arc::new(SessionWorkspaceMaintenanceService::new(
+            Arc::new(PersistenceManager::new(path_manager.clone())?),
+        ));
+
+        let service = Self {
+            manager: Arc::new(RwLock::new(manager)),
+            config,
+            persistence,
+            path_manager,
+            session_workspace_maintenance,
+        };
+
+        if let Err(e) = service.load_workspace_history_only().await {
+            warn!("Failed to load workspace history on startup: {}", e);
+        }
+
+        if let Err(e) = service.remap_legacy_partner_workspace_records().await {
+            warn!(
+                "Failed to remap legacy partner workspace records on startup: {}",
+                e
+            );
+        }
+
+        if let Err(e) = service.ensure_partner_workspaces().await {
+            warn!("Failed to ensure partner workspaces on startup: {}", e);
+        }
+
+        Ok(service)
+    }
+
+    /// Returns the path manager.
+    pub fn path_manager(&self) -> &Arc<PathManager> {
+        &self.path_manager
+    }
+
+    /// Returns the persistence service.
+    pub fn persistence(&self) -> &Arc<PersistenceService> {
+        &self.persistence
+    }
+
+    /// Opens a workspace.
+    pub async fn open_workspace(&self, path: PathBuf) -> OpenHarnessResult<WorkspaceInfo> {
+        self.open_workspace_with_options(path, WorkspaceCreateOptions::default())
+            .await
+    }
+
+    /// Opens a workspace with explicit workspace metadata.
+    pub async fn open_workspace_with_options(
+        &self,
+        path: PathBuf,
+        options: WorkspaceCreateOptions,
+    ) -> OpenHarnessResult<WorkspaceInfo> {
+        let options = self.normalize_workspace_options_for_path(&path, options);
+        let result = {
+            let mut manager = self.manager.write().await;
+            manager
+                .open_workspace_with_options(path, Self::to_manager_open_options(&options))
+                .await
+        };
+
+        if result.is_ok() {
+            if let Err(e) = self.save_workspace_data().await {
+                warn!("Failed to save workspace data after opening: {}", e);
+            }
+        }
+
+        if let Ok(workspace) = result.as_ref() {
+            self.maintain_workspace_sessions_best_effort(&workspace.root_path, "workspace_opened")
+                .await;
+        }
+
+        result
+    }
+
+    /// Quickly opens a workspace (using default options).
+    pub async fn quick_open(&self, path: &str) -> OpenHarnessResult<WorkspaceInfo> {
+        let path_buf = PathBuf::from(path);
+        self.open_workspace(path_buf).await
+    }
+
+    /// Creates a workspace (for a new project).
+    pub async fn create_workspace(
+        &self,
+        path: PathBuf,
+        options: WorkspaceCreateOptions,
+    ) -> OpenHarnessResult<WorkspaceInfo> {
+        if !path.exists() {
+            tokio::fs::create_dir_all(&path).await.map_err(|e| {
+                OpenHarnessError::service(format!("Failed to create workspace directory: {}", e))
+            })?;
+        }
+
+        let mut workspace = self
+            .open_workspace_with_options(path, options.clone())
+            .await?;
+
+        if let Some(description) = options.description {
+            workspace.description = Some(description);
+        }
+
+        workspace.tags = options.tags;
+
+        {
+            let mut manager = self.manager.write().await;
+            manager
+                .get_workspaces_mut()
+                .insert(workspace.id.clone(), workspace.clone());
+        }
+
+        self.save_workspace_data().await?;
+
+        Ok(workspace)
+    }
+
+    /// Creates and opens a new partner workspace, then sets it as current.
+    pub async fn create_partner_workspace(
+        &self,
+        partner_id: Option<String>,
+    ) -> OpenHarnessResult<WorkspaceInfo> {
+        let partner_id = match partner_id {
+            Some(id) if !id.trim().is_empty() => id.trim().to_string(),
+            _ => self.generate_partner_workspace_id().await?,
+        };
+        let display_name = Self::partner_display_name(Some(&partner_id));
+        let path = self.path_manager.partner_workspace_dir(&partner_id, None);
+        let options = WorkspaceCreateOptions {
+            auto_set_current: true,
+            add_to_recent: false,
+            workspace_kind: WorkspaceKind::Partner,
+            partner_id: Some(partner_id),
+            display_name: Some(display_name),
+            ..Default::default()
+        };
+
+        if !path.exists() {
+            fs::create_dir_all(&path).await.map_err(|e| {
+                OpenHarnessError::service(format!(
+                    "Failed to create partner workspace directory '{}': {}",
+                    path.display(),
+                    e
+                ))
+            })?;
+        }
+
+        // New partner dirs get persona files at creation; coordinator also fills missing files when opening.
+        initialize_workspace_persona_files(&path).await?;
+
+        self.create_workspace(path, options).await
+    }
+
+    /// Closes the current workspace.
+    pub async fn close_current_workspace(&self) -> OpenHarnessResult<()> {
+        let result = {
+            let mut manager = self.manager.write().await;
+            manager.close_current_workspace()
+        };
+
+        if result.is_ok() {
+            if let Err(e) = self.save_workspace_data().await {
+                warn!("Failed to save workspace data after closing: {}", e);
+            }
+        }
+
+        result
+    }
+
+    /// Closes the specified workspace.
+    pub async fn close_workspace(&self, workspace_id: &str) -> OpenHarnessResult<()> {
+        let result = {
+            let mut manager = self.manager.write().await;
+            manager.close_workspace(workspace_id)
+        };
+
+        if result.is_ok() {
+            if let Err(e) = self.save_workspace_data().await {
+                warn!("Failed to save workspace data after closing: {}", e);
+            }
+        }
+
+        result
+    }
+
+    /// Sets the active workspace from the opened workspace list.
+    pub async fn set_active_workspace(&self, workspace_id: &str) -> OpenHarnessResult<()> {
+        let result = {
+            let mut manager = self.manager.write().await;
+            manager.set_active_workspace(workspace_id)
+        };
+
+        if result.is_ok() {
+            if let Err(e) = self.save_workspace_data().await {
+                warn!(
+                    "Failed to save workspace data after switching active workspace: {}",
+                    e
+                );
+            }
+        }
+
+        if result.is_ok() {
+            if let Some(workspace) = self.get_workspace(workspace_id).await {
+                self.maintain_workspace_sessions_best_effort(
+                    &workspace.root_path,
+                    "workspace_activated",
+                )
+                .await;
+            }
+        }
+
+        result
+    }
+
+    /// Reorders the opened workspaces without changing active or recent state.
+    pub async fn reorder_opened_workspaces(
+        &self,
+        workspace_ids: Vec<String>,
+    ) -> OpenHarnessResult<()> {
+        let current_ids = {
+            let manager = self.manager.read().await;
+            manager.get_opened_workspace_ids().clone()
+        };
+
+        if workspace_ids.len() != current_ids.len() {
+            return Err(OpenHarnessError::service(format!(
+                "Opened workspace count mismatch: expected {}, got {}",
+                current_ids.len(),
+                workspace_ids.len()
+            )));
+        }
+
+        let requested_ids = workspace_ids.iter().cloned().collect::<HashSet<_>>();
+        if requested_ids.len() != workspace_ids.len() {
+            return Err(OpenHarnessError::service(
+                "Opened workspace order contains duplicate ids".to_string(),
+            ));
+        }
+
+        let current_id_set = current_ids.iter().cloned().collect::<HashSet<_>>();
+        if requested_ids != current_id_set {
+            return Err(OpenHarnessError::service(
+                "Opened workspace order must contain exactly the currently opened workspace ids"
+                    .to_string(),
+            ));
+        }
+
+        {
+            let mut manager = self.manager.write().await;
+            manager.set_opened_workspace_ids(workspace_ids.clone());
+        }
+
+        if let Err(error) = self.save_workspace_data().await {
+            let mut manager = self.manager.write().await;
+            manager.set_opened_workspace_ids(current_ids);
+            return Err(error);
+        }
+
+        Ok(())
+    }
+
+    /// Switches to the specified workspace.
+    pub async fn switch_to_workspace(&self, workspace_id: &str) -> OpenHarnessResult<()> {
+        self.set_active_workspace(workspace_id).await
+    }
+
+    /// Returns the current workspace.
+    pub async fn get_current_workspace(&self) -> Option<WorkspaceInfo> {
+        let manager = self.manager.read().await;
+        manager.get_current_workspace().cloned()
+    }
+
+    /// Best-effort synchronous read for contexts that cannot `await`.
+    pub fn try_get_current_workspace_path(&self) -> Option<PathBuf> {
+        self.manager.try_read().ok().and_then(|manager| {
+            manager
+                .get_current_workspace()
+                .map(|workspace| workspace.root_path.clone())
+        })
+    }
+
+    /// Returns workspace details.
+    pub async fn get_workspace(&self, workspace_id: &str) -> Option<WorkspaceInfo> {
+        let manager = self.manager.read().await;
+        manager.get_workspace(workspace_id).cloned()
+    }
+
+    /// Returns workspace details by root path.
+    pub async fn get_workspace_by_path(&self, path: &Path) -> Option<WorkspaceInfo> {
+        let manager = self.manager.read().await;
+        manager
+            .get_workspaces()
+            .values()
+            .find(|workspace| {
+                if workspace.workspace_kind == WorkspaceKind::Remote {
+                    workspace.root_path == path
+                } else {
+                    local_workspace_roots_equal(&workspace.root_path, path)
+                }
+            })
+            .cloned()
+    }
+
+    /// Returns all currently opened workspaces.
+    pub async fn get_opened_workspaces(&self) -> Vec<WorkspaceInfo> {
+        let manager = self.manager.read().await;
+        manager
+            .get_opened_workspace_infos()
+            .into_iter()
+            .cloned()
+            .collect()
+    }
+
+    /// All tracked workspaces with full metadata (insights, maintenance, etc.).
+    pub async fn list_workspace_infos(&self) -> Vec<WorkspaceInfo> {
+        let manager = self.manager.read().await;
+        manager.get_workspaces().values().cloned().collect()
+    }
+
+    /// `metadata["sshHost"]` for a remote workspace matching `connection_id` and normalized remote root.
+    ///
+    /// Used when session APIs receive `remote_connection_id` but the client omitted `remote_ssh_host`:
+    /// session files live under `~/.openharness/remote_ssh/{sshHost}/...`, not the legacy per-connection tree.
+    /// This reads only persisted workspace records (no filesystem guessing, no DNS).
+    pub async fn remote_ssh_host_for_remote_workspace(
+        &self,
+        connection_id: &str,
+        remote_workspace_path: &str,
+    ) -> Option<String> {
+        use crate::service::remote_ssh::normalize_remote_workspace_path;
+        let cid = connection_id.trim();
+        if cid.is_empty() {
+            return None;
+        }
+        let want = normalize_remote_workspace_path(remote_workspace_path);
+        let manager = self.manager.read().await;
+        for w in manager.get_workspaces().values() {
+            if w.workspace_kind != WorkspaceKind::Remote {
+                continue;
+            }
+            let wcid = w.remote_ssh_connection_id()?;
+            if wcid != cid {
+                continue;
+            }
+            let root = normalize_remote_workspace_path(&w.root_path.to_string_lossy());
+            if root != want {
+                continue;
+            }
+            let host = w
+                .metadata
+                .get("sshHost")
+                .and_then(|v| v.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())?;
+            return Some(host.to_string());
+        }
+        None
+    }
+
+    /// Returns all tracked partner workspaces, including inactive ones.
+    pub async fn get_partner_workspaces(&self) -> Vec<WorkspaceInfo> {
+        let manager = self.manager.read().await;
+        manager
+            .get_workspaces()
+            .values()
+            .filter(|workspace| workspace.workspace_kind == WorkspaceKind::Partner)
+            .cloned()
+            .collect()
+    }
+
+    /// Lists all workspaces.
+    pub async fn list_workspaces(&self) -> Vec<WorkspaceSummary> {
+        let manager = self.manager.read().await;
+        manager.list_workspaces()
+    }
+
+    /// Lists workspaces by type.
+    pub async fn list_workspaces_by_type(
+        &self,
+        workspace_type: WorkspaceType,
+    ) -> Vec<WorkspaceSummary> {
+        let manager = self.manager.read().await;
+        manager
+            .list_workspaces()
+            .into_iter()
+            .filter(|ws| ws.workspace_type == workspace_type)
+            .collect()
+    }
+
+    /// Lists workspaces by status.
+    pub async fn list_workspaces_by_status(
+        &self,
+        status: WorkspaceStatus,
+    ) -> Vec<WorkspaceSummary> {
+        let manager = self.manager.read().await;
+        manager
+            .list_workspaces()
+            .into_iter()
+            .filter(|ws| ws.status == status)
+            .collect()
+    }
+
+    /// Returns recently accessed workspaces.
+    pub async fn get_recent_workspaces(&self) -> Vec<WorkspaceInfo> {
+        let manager = self.manager.read().await;
+        let recent_ids = manager.get_recent_workspaces();
+        let mut recent_workspaces = Vec::new();
+
+        for workspace_id in recent_ids {
+            if let Some(workspace) = manager.get_workspaces().get(workspace_id) {
+                recent_workspaces.push(workspace.clone());
+            }
+        }
+
+        recent_workspaces
+    }
+
+    /// Returns recently accessed partner workspaces.
+    pub async fn get_recent_partner_workspaces(&self) -> Vec<WorkspaceInfo> {
+        let manager = self.manager.read().await;
+        let recent_ids = manager.get_recent_partner_workspaces();
+        let mut recent_workspaces = Vec::new();
+
+        for workspace_id in recent_ids {
+            if let Some(workspace) = manager.get_workspaces().get(workspace_id) {
+                recent_workspaces.push(workspace.clone());
+            }
+        }
+
+        recent_workspaces
+    }
+
+    /// Drops a workspace from recent lists only (workspace record and open state unchanged).
+    pub async fn remove_workspace_from_recent(&self, workspace_id: &str) -> OpenHarnessResult<()> {
+        let changed = {
+            let mut manager = self.manager.write().await;
+            manager.remove_from_recent_workspaces_only(workspace_id)
+        };
+        if changed {
+            self.save_workspace_data().await?;
+        }
+        Ok(())
+    }
+
+    /// Searches workspaces.
+    pub async fn search_workspaces(&self, query: &str) -> Vec<WorkspaceSummary> {
+        let manager = self.manager.read().await;
+        manager.search_workspaces(query)
+    }
+
+    /// Removes a workspace.
+    pub async fn remove_workspace(&self, workspace_id: &str) -> OpenHarnessResult<()> {
+        let result = {
+            let mut manager = self.manager.write().await;
+            manager.remove_workspace(workspace_id)
+        };
+
+        if result.is_ok() {
+            if let Err(e) = self.save_workspace_data().await {
+                warn!("Failed to save workspace data after removal: {}", e);
+            }
+        }
+
+        result
+    }
+
+    /// Removes workspaces in batch.
+    pub async fn batch_remove_workspaces(
+        &self,
+        workspace_ids: Vec<String>,
+    ) -> OpenHarnessResult<BatchRemoveResult> {
+        let mut result = BatchRemoveResult {
+            successful: Vec::new(),
+            failed: Vec::new(),
+            total_processed: workspace_ids.len(),
+        };
+
+        for workspace_id in workspace_ids {
+            match self.remove_workspace(&workspace_id).await {
+                Ok(_) => result.successful.push(workspace_id),
+                Err(e) => result.failed.push((workspace_id, e.to_string())),
+            }
+        }
+
+        Ok(result)
+    }
+
+    /// Rescans a workspace.
+    pub async fn rescan_workspace(&self, workspace_id: &str) -> OpenHarnessResult<WorkspaceInfo> {
+        let workspace_path = {
+            let manager = self.manager.read().await;
+            if let Some(workspace) = manager.get_workspace(workspace_id) {
+                workspace.root_path.clone()
+            } else {
+                return Err(OpenHarnessError::service(format!(
+                    "Workspace not found: {}",
+                    workspace_id
+                )));
+            }
+        };
+
+        let existing_workspace = {
+            let manager = self.manager.read().await;
+            manager.get_workspace(workspace_id).cloned()
+        };
+        let Some(existing_workspace) = existing_workspace else {
+            return Err(OpenHarnessError::service(format!(
+                "Workspace not found: {}",
+                workspace_id
+            )));
+        };
+        let new_workspace = WorkspaceInfo::new(
+            workspace_path,
+            WorkspaceOpenOptions {
+                scan_options: ScanOptions::default(),
+                auto_set_current: existing_workspace.status == WorkspaceStatus::Active,
+                add_to_recent: false,
+                workspace_kind: existing_workspace.workspace_kind.clone(),
+                partner_id: existing_workspace.partner_id.clone(),
+                display_name: Some(existing_workspace.name.clone()),
+                remote_connection_id: existing_workspace
+                    .remote_ssh_connection_id()
+                    .map(str::to_string),
+                remote_ssh_host: existing_workspace
+                    .metadata
+                    .get("sshHost")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string()),
+                stable_workspace_id: None,
+            },
+        )
+        .await?;
+        let mut new_workspace = new_workspace;
+        new_workspace.id = existing_workspace.id.clone();
+        new_workspace.opened_at = existing_workspace.opened_at;
+        new_workspace.description = existing_workspace.description.clone();
+        new_workspace.tags = existing_workspace.tags.clone();
+        new_workspace.metadata = existing_workspace.metadata.clone();
+
+        {
+            let mut manager = self.manager.write().await;
+            manager
+                .get_workspaces_mut()
+                .insert(workspace_id.to_string(), new_workspace.clone());
+        }
+
+        if let Err(e) = self.save_workspace_data().await {
+            warn!("Failed to save workspace data after rescan: {}", e);
+        }
+
+        Ok(new_workspace)
+    }
+
+    /// Refreshes the parsed `IDENTITY.md` content for an partner workspace.
+    pub async fn refresh_workspace_identity(
+        &self,
+        workspace_id: &str,
+    ) -> OpenHarnessResult<Option<WorkspaceIdentityChangedEvent>> {
+        let workspace = {
+            let manager = self.manager.read().await;
+            manager.get_workspace(workspace_id).cloned()
+        }
+        .ok_or_else(|| {
+            OpenHarnessError::service(format!("Workspace not found: {}", workspace_id))
+        })?;
+
+        if workspace.workspace_kind != WorkspaceKind::Partner {
+            return Ok(None);
+        }
+
+        let updated_identity =
+            match WorkspaceIdentity::load_from_workspace_root(&workspace.root_path).await {
+                Ok(identity) => identity,
+                Err(error) => {
+                    warn!(
+                        "Failed to refresh workspace identity: workspace_id={} path={} error={}",
+                        workspace_id,
+                        workspace.root_path.display(),
+                        error
+                    );
+                    return Ok(None);
+                }
+            };
+
+        let changed_fields = WorkspaceIdentity::collect_changed_fields(
+            workspace.identity.as_ref(),
+            updated_identity.as_ref(),
+        );
+        let fallback_name = Self::partner_display_name(workspace.partner_id.as_deref());
+        let updated_name = updated_identity
+            .as_ref()
+            .and_then(|identity| identity.name.clone())
+            .unwrap_or(fallback_name);
+
+        if changed_fields.is_empty() && workspace.name == updated_name {
+            return Ok(None);
+        }
+
+        {
+            let mut manager = self.manager.write().await;
+            let workspace = manager
+                .get_workspaces_mut()
+                .get_mut(workspace_id)
+                .ok_or_else(|| {
+                    OpenHarnessError::service(format!("Workspace not found: {}", workspace_id))
+                })?;
+
+            workspace.identity = updated_identity.clone();
+            workspace.name = updated_name.clone();
+        }
+
+        if let Err(e) = self.save_workspace_data().await {
+            warn!(
+                "Failed to save workspace data after identity refresh: workspace_id={} error={}",
+                workspace_id, e
+            );
+        }
+
+        Ok(Some(WorkspaceIdentityChangedEvent {
+            workspace_id: workspace.id,
+            workspace_path: workspace.root_path.to_string_lossy().to_string(),
+            name: updated_name,
+            identity: updated_identity,
+            changed_fields,
+        }))
+    }
+
+    /// Updates workspace information.
+    pub async fn update_workspace_info(
+        &self,
+        workspace_id: &str,
+        updates: WorkspaceInfoUpdates,
+    ) -> OpenHarnessResult<()> {
+        let mut manager = self.manager.write().await;
+
+        if let Some(workspace) = manager.get_workspaces_mut().get_mut(workspace_id) {
+            if let Some(name) = updates.name {
+                workspace.name = name;
+            }
+
+            if let Some(description) = updates.description {
+                workspace.description = Some(description);
+            }
+
+            if let Some(tags) = updates.tags {
+                workspace.tags = tags;
+            }
+
+            workspace.last_accessed = chrono::Utc::now();
+
+            Ok(())
+        } else {
+            Err(OpenHarnessError::service(format!(
+                "Workspace not found: {}",
+                workspace_id
+            )))
+        }
+    }
+
+    /// Imports workspaces in batch.
+    pub async fn batch_import_workspaces(
+        &self,
+        paths: Vec<String>,
+    ) -> OpenHarnessResult<BatchImportResult> {
+        let mut result = BatchImportResult {
+            successful: Vec::new(),
+            failed: Vec::new(),
+            total_processed: paths.len(),
+            skipped: Vec::new(),
+        };
+
+        for path_str in paths {
+            let path = PathBuf::from(&path_str);
+
+            if !path.exists() {
+                result
+                    .failed
+                    .push((path_str, "Path does not exist".to_string()));
+                continue;
+            }
+
+            if !path.is_dir() {
+                result
+                    .failed
+                    .push((path_str, "Path is not a directory".to_string()));
+                continue;
+            }
+
+            {
+                let manager = self.manager.read().await;
+                if manager.get_workspaces().values().any(|w| {
+                    if w.workspace_kind == WorkspaceKind::Remote {
+                        w.root_path == path
+                    } else {
+                        local_workspace_roots_equal(&w.root_path, &path)
+                    }
+                }) {
+                    result.skipped.push(path_str);
+                    continue;
+                }
+            }
+
+            match self.open_workspace(path).await {
+                Ok(workspace) => {
+                    result.successful.push(workspace.id);
+                }
+                Err(e) => {
+                    result.failed.push((path_str, e.to_string()));
+                }
+            }
+        }
+
+        Ok(result)
+    }
+
+    /// Cleans up invalid workspaces.
+    pub async fn cleanup_invalid_workspaces(&self) -> OpenHarnessResult<usize> {
+        let result = {
+            let mut manager = self.manager.write().await;
+            manager.cleanup_invalid_workspaces().await
+        };
+
+        if result.is_ok() {
+            if let Err(e) = self.save_workspace_data().await {
+                warn!("Failed to save workspace data after cleanup: {}", e);
+            }
+        }
+
+        result
+    }
+
+    /// Returns statistics.
+    pub async fn get_statistics(&self) -> WorkspaceManagerStatistics {
+        let manager = self.manager.read().await;
+        manager.get_statistics()
+    }
+
+    /// Returns the workspace count.
+    pub async fn get_workspace_count(&self) -> usize {
+        let manager = self.manager.read().await;
+        manager.get_workspace_count()
+    }
+
+    /// Runs a health check.
+    pub async fn health_check(&self) -> OpenHarnessResult<WorkspaceHealthStatus> {
+        let stats = self.get_statistics().await;
+
+        let mut warnings = Vec::new();
+        let mut issues = Vec::new();
+
+        if stats.total_workspaces == 0 {
+            warnings.push("No workspaces found".to_string());
+        }
+
+        if stats.active_workspaces == 0 {
+            warnings.push("No active workspaces".to_string());
+        }
+
+        if stats.inactive_workspaces > stats.active_workspaces * 3 {
+            issues.push("Too many inactive workspaces, consider cleanup".to_string());
+        }
+
+        let current_workspace_valid = match self.get_current_workspace().await {
+            Some(current) => current.is_valid().await,
+            None => true,
+        };
+
+        if !current_workspace_valid {
+            issues.push("Current workspace path is invalid".to_string());
+        }
+
+        let healthy = issues.is_empty() && current_workspace_valid;
+
+        Ok(WorkspaceHealthStatus {
+            healthy,
+            total_workspaces: stats.total_workspaces,
+            active_workspaces: stats.active_workspaces,
+            current_workspace_valid,
+            total_files: stats.total_files,
+            total_size_mb: stats.total_size_bytes / (1024 * 1024),
+            warnings,
+            issues: issues.clone(),
+            message: if healthy {
+                "Workspace system is healthy".to_string()
+            } else {
+                format!("{} issues detected", issues.len())
+            },
+        })
+    }
+
+    /// Exports workspace configuration.
+    pub async fn export_workspaces(&self) -> OpenHarnessResult<WorkspaceExport> {
+        let manager = self.manager.read().await;
+        let workspaces: Vec<WorkspaceInfo> = manager.get_workspaces().values().cloned().collect();
+        let current_workspace_id = manager.get_current_workspace().map(|w| w.id.clone());
+        let _recent_workspaces = manager.get_recent_workspaces().clone();
+
+        Ok(WorkspaceExport {
+            workspaces,
+            current_workspace_id,
+            recent_workspaces: manager
+                .get_recent_workspace_infos()
+                .iter()
+                .map(|w| w.id.clone())
+                .collect(),
+            recent_partner_workspaces: manager
+                .get_recent_partner_workspace_infos()
+                .iter()
+                .map(|w| w.id.clone())
+                .collect(),
+            export_timestamp: chrono::Utc::now().to_rfc3339(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+        })
+    }
+
+    /// Imports workspace configuration.
+    pub async fn import_workspaces(
+        &self,
+        export: WorkspaceExport,
+        overwrite: bool,
+    ) -> OpenHarnessResult<WorkspaceImportResult> {
+        let mut result = WorkspaceImportResult {
+            imported_workspaces: 0,
+            skipped_workspaces: 0,
+            errors: Vec::new(),
+            warnings: Vec::new(),
+        };
+
+        let mut manager = self.manager.write().await;
+
+        for workspace in export.workspaces {
+            if !workspace.is_valid().await {
+                result.warnings.push(format!(
+                    "Workspace path no longer valid: {:?}",
+                    workspace.root_path
+                ));
+                continue;
+            }
+
+            if !overwrite && manager.get_workspaces().contains_key(&workspace.id) {
+                result.skipped_workspaces += 1;
+                continue;
+            }
+
+            manager
+                .get_workspaces_mut()
+                .insert(workspace.id.clone(), workspace);
+            result.imported_workspaces += 1;
+        }
+
+        manager.set_recent_workspaces(export.recent_workspaces.clone());
+        manager.set_recent_partner_workspaces(export.recent_partner_workspaces.clone());
+
+        if let Some(current_id) = export.current_workspace_id {
+            if manager.get_workspaces().contains_key(&current_id) {
+                if let Err(e) = manager.set_current_workspace(current_id) {
+                    result
+                        .warnings
+                        .push(format!("Failed to restore current workspace: {}", e));
+                }
+            } else {
+                result
+                    .warnings
+                    .push("Current workspace not found in import".to_string());
+            }
+        }
+
+        drop(manager);
+
+        Ok(result)
+    }
+
+    /// Returns a quick summary.
+    pub async fn get_quick_summary(&self) -> WorkspaceQuickSummary {
+        let stats = self.get_statistics().await;
+        let current_workspace = self.get_current_workspace().await;
+        let recent_workspaces = self.get_recent_workspaces().await;
+        let recent_partner_workspaces = self.get_recent_partner_workspaces().await;
+
+        WorkspaceQuickSummary {
+            total_workspaces: stats.total_workspaces,
+            active_workspaces: stats.active_workspaces,
+            current_workspace: current_workspace.map(|w| w.get_summary()),
+            recent_workspaces: recent_workspaces
+                .into_iter()
+                .take(5)
+                .map(|w| w.get_summary())
+                .collect(),
+            recent_partner_workspaces: recent_partner_workspaces
+                .into_iter()
+                .take(5)
+                .map(|w| w.get_summary())
+                .collect(),
+            workspace_types: stats.workspaces_by_type,
+        }
+    }
+
+    /// Saves workspace data locally.
+    async fn save_workspace_data(&self) -> OpenHarnessResult<()> {
+        let manager = self.manager.read().await;
+
+        let workspace_data = WorkspacePersistenceData {
+            workspaces: manager.get_workspaces().clone(),
+            opened_workspace_ids: manager.get_opened_workspace_ids().clone(),
+            current_workspace_id: manager.get_current_workspace().map(|w| w.id.clone()),
+            recent_workspaces: manager.get_recent_workspaces().clone(),
+            recent_partner_workspaces: manager.get_recent_partner_workspaces().clone(),
+            saved_at: chrono::Utc::now(),
+        };
+
+        self.persistence
+            .save_json("workspace_data", &workspace_data, StorageOptions::default())
+            .await
+            .map_err(|e| {
+                OpenHarnessError::service(format!("Failed to save workspace data: {}", e))
+            })?;
+
+        Ok(())
+    }
+
+    /// Loads workspace data from local storage.
+    #[allow(dead_code)]
+    async fn load_workspace_data(&self) -> OpenHarnessResult<()> {
+        let workspace_data: Option<WorkspacePersistenceData> = self
+            .persistence
+            .load_json("workspace_data")
+            .await
+            .map_err(|e| {
+                OpenHarnessError::service(format!("Failed to load workspace data: {}", e))
+            })?;
+
+        if let Some(data) = workspace_data {
+            let mut manager = self.manager.write().await;
+
+            *manager.get_workspaces_mut() = data.workspaces;
+            manager.set_opened_workspace_ids(data.opened_workspace_ids);
+            manager.set_recent_workspaces(data.recent_workspaces);
+            manager.set_recent_partner_workspaces(data.recent_partner_workspaces);
+            let id_remap = manager.migrate_local_workspace_ids_to_stable_storage();
+
+            if let Some(raw_current) = data.current_workspace_id {
+                let current_id = id_remap.get(&raw_current).cloned().unwrap_or(raw_current);
+                if let Some(workspace) = manager.get_workspaces().get(&current_id) {
+                    if workspace.is_valid().await {
+                        if let Err(e) = manager.set_current_workspace(current_id) {
+                            warn!("Failed to restore current workspace: {}", e);
+                        }
+                    } else {
+                        warn!("Current workspace path no longer valid, skipping restore");
+                    }
+                }
+            }
+
+            info!(
+                "Loaded {} workspaces from local storage",
+                manager.get_workspaces().len()
+            );
+        } else {
+            info!("No saved workspace data found, starting fresh");
+        }
+
+        Ok(())
+    }
+
+    /// Loads workspace history only without restoring the current workspace (used on startup).
+    async fn load_workspace_history_only(&self) -> OpenHarnessResult<()> {
+        let workspace_data: Option<WorkspacePersistenceData> = self
+            .persistence
+            .load_json("workspace_data")
+            .await
+            .map_err(|e| {
+                OpenHarnessError::service(format!("Failed to load workspace data: {}", e))
+            })?;
+
+        let mut workspace_to_maintain: Option<PathBuf> = None;
+
+        if let Some(data) = workspace_data {
+            let mut manager = self.manager.write().await;
+
+            let mut workspaces = data.workspaces;
+            // Filter out legacy remote workspaces that don't have the required metadata (sshHost and connectionId)
+            workspaces.retain(|_id, ws| {
+                if ws.workspace_kind == WorkspaceKind::Remote {
+                    // Check if this remote workspace has the required metadata
+                    let has_ssh_host = ws.metadata.get("sshHost").and_then(|v| v.as_str()).is_some_and(|s| !s.trim().is_empty());
+                    let has_connection_id = ws.metadata.get("connectionId").and_then(|v| v.as_str()).is_some_and(|s| !s.trim().is_empty());
+                    if !has_ssh_host || !has_connection_id {
+                        // Skip this legacy remote workspace
+                        info!("Skipping legacy remote workspace without required metadata: id={}, root_path={}", _id, ws.root_path.display());
+                        return false;
+                    }
+                }
+                true
+            });
+
+            *manager.get_workspaces_mut() = workspaces;
+            // Also filter opened/recent lists to remove references to removed legacy workspaces
+            let filtered_opened_ids: Vec<String> = data
+                .opened_workspace_ids
+                .clone()
+                .into_iter()
+                .filter(|id| manager.get_workspaces().contains_key(id))
+                .collect();
+            manager.set_opened_workspace_ids(filtered_opened_ids);
+
+            let filtered_recent: Vec<String> = data
+                .recent_workspaces
+                .clone()
+                .into_iter()
+                .filter(|id| manager.get_workspaces().contains_key(id))
+                .collect();
+            manager.set_recent_workspaces(filtered_recent);
+
+            let filtered_recent_partner: Vec<String> = data
+                .recent_partner_workspaces
+                .clone()
+                .into_iter()
+                .filter(|id| manager.get_workspaces().contains_key(id))
+                .collect();
+            manager.set_recent_partner_workspaces(filtered_recent_partner);
+
+            let id_remap = manager.migrate_local_workspace_ids_to_stable_storage();
+
+            let raw_current = data
+                .current_workspace_id
+                .or_else(|| data.opened_workspace_ids.first().cloned());
+
+            if let Some(raw) = raw_current {
+                let current_id = id_remap.get(&raw).cloned().unwrap_or(raw);
+                if manager.get_workspaces().contains_key(&current_id) {
+                    if let Err(e) = manager.set_current_workspace(current_id) {
+                        warn!("Failed to restore current workspace on startup: {}", e);
+                    } else {
+                        workspace_to_maintain = manager
+                            .get_current_workspace()
+                            .map(|workspace| workspace.root_path.clone());
+                    }
+                }
+            }
+        }
+
+        if let Some(workspace_path) = workspace_to_maintain {
+            self.maintain_workspace_sessions_best_effort(
+                &workspace_path,
+                "workspace_history_restored",
+            )
+            .await;
+        }
+
+        Ok(())
+    }
+
+    fn to_manager_open_options(options: &WorkspaceCreateOptions) -> WorkspaceOpenOptions {
+        WorkspaceOpenOptions {
+            scan_options: options.scan_options.clone(),
+            auto_set_current: options.auto_set_current,
+            add_to_recent: options.add_to_recent,
+            workspace_kind: options.workspace_kind.clone(),
+            partner_id: options.partner_id.clone(),
+            display_name: options.display_name.clone(),
+            remote_connection_id: options.remote_connection_id.clone(),
+            remote_ssh_host: options.remote_ssh_host.clone(),
+            stable_workspace_id: options.stable_workspace_id.clone(),
+        }
+    }
+
+    fn partner_display_name(partner_id: Option<&str>) -> String {
+        match partner_id {
+            Some(id) if !id.trim().is_empty() => format!("Partner {}", id.trim()),
+            _ => "Partner".to_string(),
+        }
+    }
+
+    async fn generate_partner_workspace_id(&self) -> OpenHarnessResult<String> {
+        for _ in 0..32 {
+            let partner_id = uuid::Uuid::new_v4()
+                .simple()
+                .to_string()
+                .chars()
+                .take(8)
+                .collect::<String>();
+            let path = self.path_manager.partner_workspace_dir(&partner_id, None);
+
+            if fs::try_exists(&path).await.map_err(|e| {
+                OpenHarnessError::service(format!(
+                    "Failed to check partner workspace path '{}': {}",
+                    path.display(),
+                    e
+                ))
+            })? {
+                continue;
+            }
+
+            if self.get_workspace_by_path(&path).await.is_none() {
+                return Ok(partner_id);
+            }
+        }
+
+        Err(OpenHarnessError::service(
+            "Failed to allocate a unique partner workspace id".to_string(),
+        ))
+    }
+
+    fn partner_descriptor_from_path(&self, path: &Path) -> Option<PartnerWorkspaceDescriptor> {
+        let default_workspace = self.path_manager.default_partner_workspace_dir(None);
+        if path == default_workspace {
+            return Some(PartnerWorkspaceDescriptor {
+                path: path.to_path_buf(),
+                partner_id: None,
+                display_name: Self::partner_display_name(None),
+            });
+        }
+
+        let partner_root = self.path_manager.partner_workspace_base_dir(None);
+        if path.parent()? != partner_root {
+            return None;
+        }
+
+        let file_name = path.file_name()?.to_string_lossy();
+        let partner_id = file_name.strip_prefix("workspace-")?;
+        if partner_id.trim().is_empty() {
+            return None;
+        }
+
+        Some(PartnerWorkspaceDescriptor {
+            path: path.to_path_buf(),
+            partner_id: Some(partner_id.to_string()),
+            display_name: Self::partner_display_name(Some(partner_id)),
+        })
+    }
+
+    fn legacy_partner_descriptor_from_path(
+        &self,
+        path: &Path,
+    ) -> Option<PartnerWorkspaceDescriptor> {
+        let default_workspace = self.path_manager.legacy_default_partner_workspace_dir(None);
+        if path == default_workspace {
+            return Some(PartnerWorkspaceDescriptor {
+                path: path.to_path_buf(),
+                partner_id: None,
+                display_name: Self::partner_display_name(None),
+            });
+        }
+
+        let partner_root = self.path_manager.legacy_partner_workspace_base_dir(None);
+        if path.parent()? != partner_root {
+            return None;
+        }
+
+        let file_name = path.file_name()?.to_string_lossy();
+        let partner_id = file_name.strip_prefix("workspace-")?;
+        if partner_id.trim().is_empty() {
+            return None;
+        }
+
+        Some(PartnerWorkspaceDescriptor {
+            path: path.to_path_buf(),
+            partner_id: Some(partner_id.to_string()),
+            display_name: Self::partner_display_name(Some(partner_id)),
+        })
+    }
+
+    async fn remap_legacy_partner_workspace_records(&self) -> OpenHarnessResult<()> {
+        let mut changed = false;
+        let mut manager = self.manager.write().await;
+
+        for workspace in manager.get_workspaces_mut().values_mut() {
+            let Some(descriptor) = self.legacy_partner_descriptor_from_path(&workspace.root_path)
+            else {
+                continue;
+            };
+            let new_path = self
+                .path_manager
+                .resolve_partner_workspace_dir(descriptor.partner_id.as_deref(), None);
+
+            if workspace.root_path != new_path {
+                info!(
+                    "Remap legacy partner workspace record: workspace_id={}, from={}, to={}",
+                    workspace.id,
+                    workspace.root_path.display(),
+                    new_path.display()
+                );
+                workspace.root_path = new_path;
+                changed = true;
+            }
+
+            if workspace.workspace_kind != WorkspaceKind::Partner {
+                workspace.workspace_kind = WorkspaceKind::Partner;
+                changed = true;
+            }
+
+            if workspace.partner_id != descriptor.partner_id {
+                workspace.partner_id = descriptor.partner_id.clone();
+                changed = true;
+            }
+        }
+
+        drop(manager);
+
+        if changed {
+            self.save_workspace_data().await?;
+        }
+
+        Ok(())
+    }
+
+    async fn migrate_legacy_partner_workspaces(&self) -> OpenHarnessResult<()> {
+        let partner_root = self.path_manager.partner_workspace_base_dir(None);
+        fs::create_dir_all(&partner_root).await.map_err(|e| {
+            OpenHarnessError::service(format!(
+                "Failed to create partner workspace root '{}': {}",
+                partner_root.display(),
+                e
+            ))
+        })?;
+
+        let legacy_root = self.path_manager.legacy_partner_workspace_base_dir(None);
+        let default_legacy_workspace = self.path_manager.legacy_default_partner_workspace_dir(None);
+        let default_workspace = self.path_manager.default_partner_workspace_dir(None);
+
+        if fs::try_exists(&default_legacy_workspace)
+            .await
+            .map_err(|e| {
+                OpenHarnessError::service(format!(
+                    "Failed to inspect legacy partner workspace '{}': {}",
+                    default_legacy_workspace.display(),
+                    e
+                ))
+            })?
+            && !fs::try_exists(&default_workspace).await.map_err(|e| {
+                OpenHarnessError::service(format!(
+                    "Failed to inspect partner workspace '{}': {}",
+                    default_workspace.display(),
+                    e
+                ))
+            })?
+        {
+            fs::rename(&default_legacy_workspace, &default_workspace)
+                .await
+                .map_err(|e| {
+                    OpenHarnessError::service(format!(
+                        "Failed to migrate partner workspace '{}' to '{}': {}",
+                        default_legacy_workspace.display(),
+                        default_workspace.display(),
+                        e
+                    ))
+                })?;
+            info!(
+                "Migrated default partner workspace: from={}, to={}",
+                default_legacy_workspace.display(),
+                default_workspace.display()
+            );
+        }
+
+        let mut entries = fs::read_dir(&legacy_root).await.map_err(|e| {
+            OpenHarnessError::service(format!(
+                "Failed to read legacy partner workspace root '{}': {}",
+                legacy_root.display(),
+                e
+            ))
+        })?;
+
+        while let Some(entry) = entries.next_entry().await.map_err(|e| {
+            OpenHarnessError::service(format!(
+                "Failed to iterate legacy partner workspace root '{}': {}",
+                legacy_root.display(),
+                e
+            ))
+        })? {
+            let file_type = entry.file_type().await.map_err(|e| {
+                OpenHarnessError::service(format!(
+                    "Failed to inspect legacy partner workspace entry '{}': {}",
+                    entry.path().display(),
+                    e
+                ))
+            })?;
+            if !file_type.is_dir() {
+                continue;
+            }
+
+            let file_name = entry.file_name().to_string_lossy().to_string();
+            let Some(partner_id) = file_name.strip_prefix("workspace-") else {
+                continue;
+            };
+            if partner_id.trim().is_empty() {
+                continue;
+            }
+
+            let target_path = self.path_manager.partner_workspace_dir(partner_id, None);
+            if fs::try_exists(&target_path).await.map_err(|e| {
+                OpenHarnessError::service(format!(
+                    "Failed to inspect partner workspace '{}': {}",
+                    target_path.display(),
+                    e
+                ))
+            })? {
+                continue;
+            }
+
+            fs::rename(entry.path(), &target_path).await.map_err(|e| {
+                OpenHarnessError::service(format!(
+                    "Failed to migrate partner workspace '{}' to '{}': {}",
+                    file_name,
+                    target_path.display(),
+                    e
+                ))
+            })?;
+            info!(
+                "Migrated named partner workspace: partner_id={}, to={}",
+                partner_id,
+                target_path.display()
+            );
+        }
+
+        Ok(())
+    }
+
+    fn normalize_workspace_options_for_path(
+        &self,
+        path: &Path,
+        mut options: WorkspaceCreateOptions,
+    ) -> WorkspaceCreateOptions {
+        if options.workspace_kind == WorkspaceKind::Remote {
+            return options;
+        }
+
+        if options.workspace_kind == WorkspaceKind::Partner {
+            if options.display_name.is_none() {
+                options.display_name =
+                    Some(Self::partner_display_name(options.partner_id.as_deref()));
+            }
+            return options;
+        }
+
+        if let Some(descriptor) = self.partner_descriptor_from_path(path) {
+            options.workspace_kind = WorkspaceKind::Partner;
+            if options.partner_id.is_none() {
+                options.partner_id = descriptor.partner_id;
+            }
+            if options.display_name.is_none() {
+                options.display_name = Some(descriptor.display_name);
+            }
+        }
+
+        options
+    }
+
+    async fn discover_partner_workspaces(
+        &self,
+    ) -> OpenHarnessResult<Vec<PartnerWorkspaceDescriptor>> {
+        self.migrate_legacy_partner_workspaces().await?;
+
+        let partner_root = self.path_manager.partner_workspace_base_dir(None);
+        fs::create_dir_all(&partner_root).await.map_err(|e| {
+            OpenHarnessError::service(format!(
+                "Failed to create partner workspace root '{}': {}",
+                partner_root.display(),
+                e
+            ))
+        })?;
+
+        let default_workspace = self.path_manager.default_partner_workspace_dir(None);
+        fs::create_dir_all(&default_workspace).await.map_err(|e| {
+            OpenHarnessError::service(format!(
+                "Failed to create default partner workspace '{}': {}",
+                default_workspace.display(),
+                e
+            ))
+        })?;
+
+        let mut descriptors = vec![PartnerWorkspaceDescriptor {
+            path: default_workspace,
+            partner_id: None,
+            display_name: Self::partner_display_name(None),
+        }];
+
+        let mut entries = fs::read_dir(&partner_root).await.map_err(|e| {
+            OpenHarnessError::service(format!(
+                "Failed to read partner workspace root '{}': {}",
+                partner_root.display(),
+                e
+            ))
+        })?;
+
+        while let Some(entry) = entries.next_entry().await.map_err(|e| {
+            OpenHarnessError::service(format!(
+                "Failed to iterate partner workspace root '{}': {}",
+                partner_root.display(),
+                e
+            ))
+        })? {
+            let file_type = entry.file_type().await.map_err(|e| {
+                OpenHarnessError::service(format!(
+                    "Failed to inspect partner workspace entry '{}': {}",
+                    entry.path().display(),
+                    e
+                ))
+            })?;
+            if !file_type.is_dir() {
+                continue;
+            }
+
+            let file_name = entry.file_name().to_string_lossy().to_string();
+            let Some(partner_id) = file_name.strip_prefix("workspace-") else {
+                continue;
+            };
+            if partner_id.trim().is_empty() {
+                continue;
+            }
+
+            descriptors.push(PartnerWorkspaceDescriptor {
+                path: entry.path(),
+                partner_id: Some(partner_id.to_string()),
+                display_name: Self::partner_display_name(Some(partner_id)),
+            });
+        }
+
+        descriptors.sort_by(|left, right| {
+            match (left.partner_id.is_some(), right.partner_id.is_some()) {
+                (false, true) => std::cmp::Ordering::Less,
+                (true, false) => std::cmp::Ordering::Greater,
+                _ => left.path.cmp(&right.path),
+            }
+        });
+
+        Ok(descriptors)
+    }
+
+    async fn ensure_partner_workspaces(&self) -> OpenHarnessResult<()> {
+        let descriptors = self.discover_partner_workspaces().await?;
+        let mut has_current_workspace = self.get_current_workspace().await.is_some();
+        let has_opened_remote = {
+            let manager = self.manager.read().await;
+            manager
+                .get_opened_workspace_infos()
+                .iter()
+                .any(|w| w.workspace_kind == WorkspaceKind::Remote)
+        };
+
+        for descriptor in descriptors {
+            // If a remote workspace tab exists but nothing is current yet (e.g. pending SSH
+            // reconnect), do not auto-activate the default partner workspace — that would look
+            // like a spurious new local workspace.
+            let should_activate =
+                !has_current_workspace && !has_opened_remote && descriptor.partner_id.is_none();
+            let options = WorkspaceCreateOptions {
+                auto_set_current: should_activate,
+                add_to_recent: false,
+                workspace_kind: WorkspaceKind::Partner,
+                partner_id: descriptor.partner_id.clone(),
+                display_name: Some(descriptor.display_name.clone()),
+                ..Default::default()
+            };
+
+            self.open_workspace_with_options(descriptor.path, options)
+                .await?;
+            has_current_workspace = true;
+        }
+
+        Ok(())
+    }
+
+    /// Saves workspace data manually (public API).
+    pub async fn manual_save(&self) -> OpenHarnessResult<()> {
+        self.save_workspace_data().await
+    }
+
+    /// Returns whether a path is a managed partner workspace.
+    pub fn is_partner_workspace_path(&self, path: &Path) -> bool {
+        self.partner_descriptor_from_path(path).is_some()
+    }
+
+    /// Clears all persisted data.
+    pub async fn clear_persistent_data(&self) -> OpenHarnessResult<()> {
+        self.persistence
+            .delete("workspace_data")
+            .await
+            .map_err(|e| {
+                OpenHarnessError::service(format!("Failed to clear workspace data: {}", e))
+            })?;
+
+        Ok(())
+    }
+
+    /// Returns the underlying `WorkspaceManager` handle.
+    /// Used to share workspace state with other services (e.g. Agent).
+    pub fn get_manager(&self) -> Arc<RwLock<WorkspaceManager>> {
+        self.manager.clone()
+    }
+}
+
+/// Workspace info updates.
+#[derive(Debug, Clone)]
+pub struct WorkspaceInfoUpdates {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub tags: Option<Vec<String>>,
+}
+
+/// Batch remove result.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BatchRemoveResult {
+    pub successful: Vec<String>,
+    pub failed: Vec<(String, String)>,
+    pub total_processed: usize,
+}
+
+/// Workspace health status.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WorkspaceHealthStatus {
+    pub healthy: bool,
+    pub total_workspaces: usize,
+    pub active_workspaces: usize,
+    pub current_workspace_valid: bool,
+    pub total_files: usize,
+    pub total_size_mb: u64,
+    pub warnings: Vec<String>,
+    pub issues: Vec<String>,
+    pub message: String,
+}
+
+/// Workspace export format.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WorkspaceExport {
+    pub workspaces: Vec<WorkspaceInfo>,
+    pub current_workspace_id: Option<String>,
+    pub recent_workspaces: Vec<String>,
+    #[serde(default)]
+    pub recent_partner_workspaces: Vec<String>,
+    pub export_timestamp: String,
+    pub version: String,
+}
+
+/// Workspace import result.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WorkspaceImportResult {
+    pub imported_workspaces: usize,
+    pub skipped_workspaces: usize,
+    pub errors: Vec<String>,
+    pub warnings: Vec<String>,
+}
+
+/// Workspace quick summary.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WorkspaceQuickSummary {
+    pub total_workspaces: usize,
+    pub active_workspaces: usize,
+    pub current_workspace: Option<WorkspaceSummary>,
+    pub recent_workspaces: Vec<WorkspaceSummary>,
+    #[serde(default)]
+    pub recent_partner_workspaces: Vec<WorkspaceSummary>,
+    pub workspace_types: std::collections::HashMap<WorkspaceType, usize>,
+}
+
+/// Workspace persistence data.
+#[derive(Debug, Serialize, Deserialize)]
+struct WorkspacePersistenceData {
+    pub workspaces: std::collections::HashMap<String, WorkspaceInfo>,
+    #[serde(default)]
+    pub opened_workspace_ids: Vec<String>,
+    pub current_workspace_id: Option<String>,
+    #[serde(default)]
+    pub recent_workspaces: Vec<String>,
+    #[serde(default)]
+    pub recent_partner_workspaces: Vec<String>,
+    pub saved_at: chrono::DateTime<chrono::Utc>,
+}
+
+// ── Global workspace service singleton ──────────────────────────────
+
+static GLOBAL_WORKSPACE_SERVICE: std::sync::OnceLock<Arc<WorkspaceService>> =
+    std::sync::OnceLock::new();
+
+pub fn set_global_workspace_service(service: Arc<WorkspaceService>) {
+    match GLOBAL_WORKSPACE_SERVICE.set(service) {
+        Ok(_) => info!("Global workspace service set"),
+        Err(_) => info!("Global workspace service already exists, skipping set"),
+    }
+}
+
+pub fn get_global_workspace_service() -> Option<Arc<WorkspaceService>> {
+    GLOBAL_WORKSPACE_SERVICE.get().cloned()
+}
