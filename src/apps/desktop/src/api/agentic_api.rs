@@ -11,6 +11,7 @@ use openharness_core::agentic::coordination::{
     ConversationCoordinator, DialogScheduler, DialogSubmissionPolicy, DialogTriggerSource,
     PartnerBootstrapBlockReason, PartnerBootstrapEnsureOutcome, PartnerBootstrapSkipReason,
 };
+use openharness_core::agentic::{PermissionApprovalRequest, PermissionAuditRecord};
 use openharness_core::agentic::core::*;
 use openharness_core::agentic::image_analysis::ImageContextData;
 use openharness_core::agentic::runtime::{
@@ -272,6 +273,38 @@ pub struct WaitAgentMailboxMessagesRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct AgentApprovalRespondRequest {
+    pub tool_id: String,
+    pub approved: bool,
+    #[serde(default)]
+    pub reason: Option<String>,
+    #[serde(default)]
+    pub updated_input: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentApprovalRespondBatchRequest {
+    pub items: Vec<AgentApprovalRespondRequest>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentApprovalRespondBatchResult {
+    pub tool_id: String,
+    pub success: bool,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentApprovalAuditRequest {
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CancelAgentTaskRequest {
     pub task_id: String,
     pub reason: Option<String>,
@@ -283,6 +316,13 @@ pub struct UpdateAgentTaskPatchStatusRequest {
     pub task_id: String,
     pub patch_id: String,
     pub status: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentTaskPatchActionRequest {
+    pub task_id: String,
+    pub patch_id: String,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -997,6 +1037,64 @@ pub async fn update_agent_task_patch_status(
 }
 
 #[tauri::command]
+pub async fn apply_agent_task_patch(
+    coordinator: State<'_, Arc<ConversationCoordinator>>,
+    request: AgentTaskPatchActionRequest,
+) -> Result<AgentPatchRecord, String> {
+    let task_id = request.task_id.trim();
+    if task_id.is_empty() {
+        return Err("task_id is required".to_string());
+    }
+
+    let patch_id = request.patch_id.trim();
+    if patch_id.is_empty() {
+        return Err("patch_id is required".to_string());
+    }
+
+    coordinator
+        .apply_agent_task_patch(task_id, patch_id)
+        .await
+        .map_err(|e| format!("Failed to apply patch: {}", e))
+}
+
+#[tauri::command]
+pub async fn reject_agent_task_patch(
+    coordinator: State<'_, Arc<ConversationCoordinator>>,
+    request: AgentTaskPatchActionRequest,
+) -> Result<AgentPatchRecord, String> {
+    let task_id = request.task_id.trim();
+    if task_id.is_empty() {
+        return Err("task_id is required".to_string());
+    }
+
+    let patch_id = request.patch_id.trim();
+    if patch_id.is_empty() {
+        return Err("patch_id is required".to_string());
+    }
+
+    coordinator
+        .reject_agent_task_patch(task_id, patch_id)
+        .await
+        .map_err(|e| format!("Failed to reject patch: {}", e))
+}
+
+#[tauri::command]
+pub async fn merge_agent_task_patches(
+    coordinator: State<'_, Arc<ConversationCoordinator>>,
+    request: AgentTaskIdRequest,
+) -> Result<Vec<AgentPatchRecord>, String> {
+    let task_id = request.task_id.trim();
+    if task_id.is_empty() {
+        return Err("task_id is required".to_string());
+    }
+
+    coordinator
+        .merge_agent_task_patches(task_id)
+        .await
+        .map_err(|e| format!("Failed to merge task patches: {}", e))
+}
+
+#[tauri::command]
 pub async fn get_agent_task_patch_summary(
     coordinator: State<'_, Arc<ConversationCoordinator>>,
     request: AgentTaskIdRequest,
@@ -1097,6 +1195,86 @@ pub async fn wait_agent_mailbox_messages(
         .wait_agent_mailbox_messages(task_id, request.timeout_ms)
         .await
         .map_err(|e| format!("Failed to wait for agent mailbox messages: {}", e))
+}
+
+#[tauri::command]
+pub async fn agent_approval_list_pending(
+    coordinator: State<'_, Arc<ConversationCoordinator>>,
+) -> Result<Vec<PermissionApprovalRequest>, String> {
+    Ok(coordinator.agent_approval_list_pending().await)
+}
+
+#[tauri::command]
+pub async fn agent_approval_respond(
+    coordinator: State<'_, Arc<ConversationCoordinator>>,
+    request: AgentApprovalRespondRequest,
+) -> Result<(), String> {
+    let tool_id = request.tool_id.trim();
+    if tool_id.is_empty() {
+        return Err("tool_id is required".to_string());
+    }
+
+    coordinator
+        .agent_approval_respond(
+            tool_id,
+            request.approved,
+            request.reason,
+            request.updated_input,
+        )
+        .await
+        .map_err(|e| format!("Failed to respond approval: {}", e))
+}
+
+#[tauri::command]
+pub async fn agent_approval_respond_batch(
+    coordinator: State<'_, Arc<ConversationCoordinator>>,
+    request: AgentApprovalRespondBatchRequest,
+) -> Result<Vec<AgentApprovalRespondBatchResult>, String> {
+    let mut results = Vec::with_capacity(request.items.len());
+
+    for item in request.items {
+        let tool_id = item.tool_id.trim().to_string();
+        if tool_id.is_empty() {
+            results.push(AgentApprovalRespondBatchResult {
+                tool_id,
+                success: false,
+                error: Some("tool_id is required".to_string()),
+            });
+            continue;
+        }
+
+        match coordinator
+            .agent_approval_respond(
+                &tool_id,
+                item.approved,
+                item.reason,
+                item.updated_input,
+            )
+            .await
+        {
+            Ok(_) => results.push(AgentApprovalRespondBatchResult {
+                tool_id,
+                success: true,
+                error: None,
+            }),
+            Err(error) => results.push(AgentApprovalRespondBatchResult {
+                tool_id,
+                success: false,
+                error: Some(error.to_string()),
+            }),
+        }
+    }
+
+    Ok(results)
+}
+
+#[tauri::command]
+pub async fn agent_approval_audit_recent(
+    coordinator: State<'_, Arc<ConversationCoordinator>>,
+    request: AgentApprovalAuditRequest,
+) -> Result<Vec<PermissionAuditRecord>, String> {
+    let limit = request.limit.unwrap_or(200);
+    Ok(coordinator.agent_approval_audit_recent(limit).await)
 }
 
 #[tauri::command]

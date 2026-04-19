@@ -197,6 +197,12 @@
     gap: 10px;
   }
 
+  &__patch-review-controls {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
   &__patch-review-title-block {
     display: flex;
     flex-direction: column;
@@ -234,6 +240,27 @@
     }
   }
 
+  &__patch-merge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border: 1px solid rgba(59, 130, 246, 0.45);
+    background: rgba(59, 130, 246, 0.12);
+    color: #93c5fd;
+    border-radius: 6px;
+    font-size: 11px;
+    padding: 4px 8px;
+    cursor: pointer;
+
+    &:disabled {
+      opacity: 0.6;
+      cursor: default;
+      color: var(--color-text-muted);
+      border-color: var(--tool-card-border, rgba(255, 255, 255, 0.2));
+      background: transparent;
+    }
+  }
+
   &__patch-summary {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -261,6 +288,14 @@
 
   &__patch-error {
     color: var(--color-error);
+  }
+
+  &__patch-success {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #22c55e;
   }
 
   &__patch-list {

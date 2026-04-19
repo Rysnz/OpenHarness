@@ -10,6 +10,7 @@ import {
   Clock,
   AlertCircle,
   RotateCw,
+  GitMerge,
 } from 'lucide-react';
 import type { FlowToolItem, FlowTextItem, FlowThinkingItem, FlowItem } from '../../types/flow-chat';
 import { FlowChatStore } from '../../store/FlowChatStore';
@@ -42,6 +43,29 @@ export interface TaskDetailPanelProps {
   data: TaskDetailData;
 }
 
+type TaskDetailE2EBridge = {
+  triggerMerge?: (() => Promise<void>) | null;
+};
+
+type TaskDetailE2EPatchReviewMockState = {
+  mode: string;
+  taskId: string;
+  calls: {
+    summary: number;
+    list: number;
+    update: number;
+    merge: number;
+  };
+  patches: AgentPatchRecord[];
+};
+
+type TaskDetailE2EWindow = Window & {
+  __OPENHARNESS_E2E_TASK_DETAIL__?: TaskDetailE2EBridge;
+  __OPENHARNESS_E2E_PATCH_REVIEW_MOCK__?: {
+    state: TaskDetailE2EPatchReviewMockState;
+  };
+};
+
 export const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ data }) => {
   const { t } = useTranslation('flow-chat');
   const { toolItem, taskInput, sessionId } = data || {};
@@ -53,7 +77,9 @@ export const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ data }) => {
   const [patchSummary, setPatchSummary] = useState<AgentPatchSummary | null>(null);
   const [patchRecords, setPatchRecords] = useState<AgentPatchRecord[]>([]);
   const [isPatchLoading, setIsPatchLoading] = useState(false);
+  const [isPatchMerging, setIsPatchMerging] = useState(false);
   const [patchError, setPatchError] = useState<string | null>(null);
+  const [patchSuccess, setPatchSuccess] = useState<string | null>(null);
   const [patchUpdatingId, setPatchUpdatingId] = useState<string | null>(null);
   
   const contentRef = useRef<HTMLDivElement>(null);
@@ -120,11 +146,43 @@ export const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ data }) => {
     return t('toolCards.taskTool.subAgentFailed');
   };
 
+  const summarizePatchRecords = useCallback((records: AgentPatchRecord[]): AgentPatchSummary => {
+    const summary: AgentPatchSummary = {
+      total: records.length,
+      pending: 0,
+      accepted: 0,
+      rejected: 0,
+      applied: 0,
+      conflicted: 0,
+    };
+
+    for (const record of records) {
+      if (record.status === 'pending') summary.pending += 1;
+      if (record.status === 'accepted') summary.accepted += 1;
+      if (record.status === 'rejected') summary.rejected += 1;
+      if (record.status === 'applied') summary.applied += 1;
+      if (record.status === 'conflicted') summary.conflicted += 1;
+    }
+
+    return summary;
+  }, []);
+
+  const getE2EPatchReviewMockState = useCallback((): TaskDetailE2EPatchReviewMockState | null => {
+    const state = (window as TaskDetailE2EWindow).__OPENHARNESS_E2E_PATCH_REVIEW_MOCK__?.state;
+    if (!state || state.taskId !== taskId) {
+      return null;
+    }
+
+    return state;
+  }, [taskId]);
+
   const loadPatchData = useCallback(async () => {
     if (!taskId) {
       setPatchSummary(null);
       setPatchRecords([]);
       setPatchError(null);
+      setPatchSuccess(null);
+      setIsPatchMerging(false);
       return;
     }
 
@@ -132,6 +190,16 @@ export const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ data }) => {
     setPatchError(null);
 
     try {
+      const e2eState = getE2EPatchReviewMockState();
+      if (e2eState) {
+        e2eState.calls.summary += 1;
+        e2eState.calls.list += 1;
+        const records = e2eState.patches.map((record) => ({ ...record }));
+        setPatchSummary(summarizePatchRecords(records));
+        setPatchRecords(records);
+        return;
+      }
+
       const [summary, records] = await Promise.all([
         agentAPI.getAgentTaskPatchSummary(taskId),
         agentAPI.getAgentTaskPatches(taskId),
@@ -145,7 +213,7 @@ export const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ data }) => {
     } finally {
       setIsPatchLoading(false);
     }
-  }, [taskId, t]);
+  }, [getE2EPatchReviewMockState, summarizePatchRecords, taskId, t]);
 
   useEffect(() => {
     void loadPatchData();
@@ -159,8 +227,21 @@ export const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ data }) => {
 
       setPatchUpdatingId(patchId);
       setPatchError(null);
+      setPatchSuccess(null);
 
       try {
+        const e2eState = getE2EPatchReviewMockState();
+        if (e2eState) {
+          e2eState.calls.update += 1;
+          const target = e2eState.patches.find((record) => record.patch_id === patchId);
+          if (!target) {
+            throw new Error(`Patch not found: ${patchId}`);
+          }
+          target.status = status;
+          await loadPatchData();
+          return;
+        }
+
         await agentAPI.updateAgentTaskPatchStatus(taskId, patchId, status);
         await loadPatchData();
       } catch (error) {
@@ -170,8 +251,83 @@ export const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ data }) => {
         setPatchUpdatingId(null);
       }
     },
-    [loadPatchData, taskId, t],
+    [getE2EPatchReviewMockState, loadPatchData, taskId, t],
   );
+
+  const canMergePatches = useMemo(() => {
+    const eligibleBySummary = patchSummary
+      ? patchSummary.pending + patchSummary.accepted
+      : 0;
+    const eligibleByRecords = patchRecords.filter((record) =>
+      record.status === 'pending' || record.status === 'accepted',
+    ).length;
+    return eligibleBySummary > 0 || eligibleByRecords > 0;
+  }, [patchRecords, patchSummary]);
+
+  const mergeTaskPatches = useCallback(async () => {
+    if (!taskId) {
+      return;
+    }
+
+    setIsPatchMerging(true);
+    setPatchError(null);
+    setPatchSuccess(null);
+
+    try {
+      const e2eState = getE2EPatchReviewMockState();
+      if (e2eState) {
+        e2eState.calls.merge += 1;
+        if (e2eState.mode === 'merge-error') {
+          throw new Error('E2E forced merge failure');
+        }
+
+        const merged: AgentPatchRecord[] = [];
+        for (const record of e2eState.patches) {
+          if (record.status === 'pending' || record.status === 'accepted') {
+            record.status = 'applied';
+            merged.push({ ...record });
+          }
+        }
+
+        await loadPatchData();
+        setPatchSuccess(
+          t('toolCards.taskDetailPanel.patchReview.mergeSucceeded', {
+            count: merged.length,
+          }),
+        );
+        return;
+      }
+
+      const merged = await agentAPI.mergeAgentTaskPatches(taskId);
+      await loadPatchData();
+      setPatchSuccess(
+        t('toolCards.taskDetailPanel.patchReview.mergeSucceeded', {
+          count: merged.length,
+        }),
+      );
+    } catch (error) {
+      log.error('Failed to merge task patches', { taskId, error });
+      setPatchError(t('toolCards.taskDetailPanel.patchReview.mergeFailed'));
+    } finally {
+      setIsPatchMerging(false);
+    }
+  }, [getE2EPatchReviewMockState, loadPatchData, taskId, t]);
+
+  useEffect(() => {
+    const e2eBridge = (window as TaskDetailE2EWindow).__OPENHARNESS_E2E_TASK_DETAIL__;
+
+    if (!e2eBridge) {
+      return;
+    }
+
+    e2eBridge.triggerMerge = () => mergeTaskPatches();
+
+    return () => {
+      if (e2eBridge.triggerMerge) {
+        e2eBridge.triggerMerge = null;
+      }
+    };
+  }, [mergeTaskPatches]);
 
   const patchStatusLabel = useCallback(
     (status: AgentPatchStatus) => t(`toolCards.taskDetailPanel.patchStatus.${status}`),
@@ -344,7 +500,7 @@ export const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ data }) => {
         )}
 
         {taskId && (
-          <section className="task-detail-panel__patch-review">
+          <section className="task-detail-panel__patch-review" data-task-id={taskId}>
             <div className="task-detail-panel__patch-review-header">
               <div className="task-detail-panel__patch-review-title-block">
                 <h4>{t('toolCards.taskDetailPanel.patchReview.title')}</h4>
@@ -352,16 +508,30 @@ export const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ data }) => {
                   {t('toolCards.taskDetailPanel.patchReview.taskId')}: {taskId}
                 </span>
               </div>
-              <button
-                type="button"
-                className="task-detail-panel__patch-refresh"
-                onClick={() => void loadPatchData()}
-                disabled={isPatchLoading}
-                title={t('toolCards.taskDetailPanel.patchReview.refresh')}
-              >
-                <RotateCw size={12} />
-                {t('toolCards.taskDetailPanel.patchReview.refresh')}
-              </button>
+              <div className="task-detail-panel__patch-review-controls">
+                <button
+                  type="button"
+                  className="task-detail-panel__patch-refresh"
+                  onClick={() => void loadPatchData()}
+                  disabled={isPatchLoading || isPatchMerging}
+                  title={t('toolCards.taskDetailPanel.patchReview.refresh')}
+                >
+                  <RotateCw size={12} />
+                  {t('toolCards.taskDetailPanel.patchReview.refresh')}
+                </button>
+                <button
+                  type="button"
+                  className="task-detail-panel__patch-merge"
+                  onClick={() => void mergeTaskPatches()}
+                  disabled={isPatchLoading || isPatchMerging || !canMergePatches}
+                  title={t('toolCards.taskDetailPanel.patchReview.merge')}
+                >
+                  <GitMerge size={12} />
+                  {isPatchMerging
+                    ? t('toolCards.taskDetailPanel.patchReview.merging')
+                    : t('toolCards.taskDetailPanel.patchReview.merge')}
+                </button>
+              </div>
             </div>
 
             {patchSummary && (
@@ -377,6 +547,10 @@ export const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ data }) => {
 
             {patchError && (
               <div className="task-detail-panel__patch-error">{patchError}</div>
+            )}
+
+            {patchSuccess && (
+              <div className="task-detail-panel__patch-success">{patchSuccess}</div>
             )}
 
             {isPatchLoading && (
@@ -396,7 +570,7 @@ export const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ data }) => {
               <ul className="task-detail-panel__patch-list">
                 {patchRecords.map((record) => {
                   const isUpdating = patchUpdatingId === record.patch_id;
-                  const disableActions = isUpdating || record.status === 'applied';
+                  const disableActions = isUpdating || isPatchMerging || record.status === 'applied';
                   return (
                     <li key={record.patch_id} className="task-detail-panel__patch-item">
                       <div className="task-detail-panel__patch-item-top">

@@ -608,6 +608,47 @@ export class AgentAPI {
     }
   }
 
+  async applyAgentTaskPatch(taskId: string, patchId: string): Promise<AgentPatchRecord> {
+    try {
+      return await api.invoke<AgentPatchRecord>('apply_agent_task_patch', {
+        request: { taskId, patchId }
+      });
+    } catch (error) {
+      throw createTauriCommandError('apply_agent_task_patch', error, {
+        taskId,
+        patchId
+      });
+    }
+  }
+
+  async rejectAgentTaskPatchWithRollback(
+    taskId: string,
+    patchId: string
+  ): Promise<AgentPatchRecord> {
+    try {
+      return await api.invoke<AgentPatchRecord>('reject_agent_task_patch', {
+        request: { taskId, patchId }
+      });
+    } catch (error) {
+      throw createTauriCommandError('reject_agent_task_patch', error, {
+        taskId,
+        patchId
+      });
+    }
+  }
+
+  async mergeAgentTaskPatches(taskId: string): Promise<AgentPatchRecord[]> {
+    try {
+      return await api.invoke<AgentPatchRecord[]>('merge_agent_task_patches', {
+        request: { taskId }
+      });
+    } catch (error) {
+      throw createTauriCommandError('merge_agent_task_patches', error, {
+        taskId
+      });
+    }
+  }
+
   async getAgentTaskPatchSummary(taskId: string): Promise<AgentPatchSummary> {
     try {
       return await api.invoke<AgentPatchSummary>('get_agent_task_patch_summary', {
@@ -623,7 +664,7 @@ export class AgentAPI {
   }
 
   async rejectAgentTaskPatch(taskId: string, patchId: string): Promise<AgentPatchRecord> {
-    return this.updateAgentTaskPatchStatus(taskId, patchId, 'rejected');
+    return this.rejectAgentTaskPatchWithRollback(taskId, patchId);
   }
 
   async markAgentTaskPatchConflicted(taskId: string, patchId: string): Promise<AgentPatchRecord> {
