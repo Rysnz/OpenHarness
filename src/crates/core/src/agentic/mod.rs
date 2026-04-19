@@ -22,6 +22,9 @@ pub mod coordination;
 // Native agent task runtime module
 pub mod runtime;
 
+// Agent permission / approval / audit module
+pub mod permissions;
+
 /// Round-boundary yield when user queues a message during an active turn
 pub mod round_preempt;
 
@@ -47,6 +50,11 @@ pub use events::{queue, router, types as event_types};
 pub use execution::*;
 pub use image_analysis::{ImageAnalyzer, MessageEnhancer};
 pub use persistence::PersistenceManager;
+pub use permissions::{
+    PermissionAction, PermissionApprovalQueue, PermissionApprovalRequest, PermissionAuditRecord,
+    PermissionAuditStore, PermissionDecision, PermissionEngine, PermissionEvaluation,
+    PermissionMode, PermissionRiskLevel,
+};
 pub use round_preempt::{
     DialogRoundPreemptSource, NoopDialogRoundPreemptSource, SessionRoundYieldFlags,
 };

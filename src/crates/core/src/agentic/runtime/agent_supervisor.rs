@@ -9,13 +9,14 @@ use super::agent_transcript::{AgentTranscriptEntry, AgentTranscriptStore};
 use super::task_events::{AgentTaskEvent, AgentTaskEventKind};
 use super::team::{AgentTeam, AgentTeamMemberStatus, AgentTeamStatus, AgentTeamStore};
 use super::workspace_binding::WorkspaceIsolation;
-use crate::service::git::{GitDiffParams, GitService};
+use crate::service::git::{GitAddParams, GitDiffParams, GitService};
 use crate::util::errors::{OpenHarnessError, OpenHarnessResult};
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
+use tokio::process::Command;
 use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
 
@@ -363,6 +364,522 @@ impl AgentTaskSupervisor {
         }
 
         Ok(())
+    }
+
+    fn patch_repo_path(config: &AgentTaskConfig) -> PathBuf {
+        config
+            .workspace_binding
+            .worktree_path
+            .clone()
+            .unwrap_or_else(|| config.workspace_binding.root.clone())
+    }
+
+    fn normalize_patch_path_for_git(repo_root: &Path, patch_path: &Path) -> OpenHarnessResult<String> {
+        let relative = if patch_path.is_absolute() {
+            patch_path.strip_prefix(repo_root).map_err(|_| {
+                OpenHarnessError::Validation(format!(
+                    "Patch path '{}' is outside task workspace '{}'",
+                    patch_path.display(),
+                    repo_root.display()
+                ))
+            })?
+        } else {
+            patch_path
+        };
+
+        if relative.as_os_str().is_empty() {
+            return Err(OpenHarnessError::Validation(
+                "Patch path cannot be empty".to_string(),
+            ));
+        }
+
+        if relative
+            .components()
+            .any(|component| matches!(component, Component::ParentDir))
+        {
+            return Err(OpenHarnessError::Validation(format!(
+                "Patch path '{}' escapes task workspace",
+                relative.display()
+            )));
+        }
+
+        let normalized = relative.to_string_lossy().replace('\\', "/");
+        if normalized.trim().is_empty() || normalized == "." {
+            return Err(OpenHarnessError::Validation(
+                "Patch path cannot be current directory".to_string(),
+            ));
+        }
+
+        Ok(normalized)
+    }
+
+    fn normalize_git_status_path(path: &str) -> String {
+        path.trim()
+            .trim_start_matches("./")
+            .replace('\\', "/")
+    }
+
+    async fn resolve_patch_operation_context(
+        &self,
+        task_id: &AgentTaskId,
+        patch_id: &str,
+    ) -> OpenHarnessResult<(AgentPatchRecord, PathBuf, String, bool)> {
+        let task_snapshot = self.registry.query_task(task_id).await.ok_or_else(|| {
+            OpenHarnessError::NotFound(format!(
+                "Task not found for patch operation: {}",
+                task_id.as_str()
+            ))
+        })?;
+
+        let patch_record = self
+            .patch_store
+            .list_by_task(task_id)
+            .await
+            .into_iter()
+            .find(|record| record.patch_id == patch_id)
+            .ok_or_else(|| {
+                OpenHarnessError::NotFound(format!(
+                    "Patch not found for task {}: {}",
+                    task_id.as_str(),
+                    patch_id
+                ))
+            })?;
+
+        let repo_path = Self::patch_repo_path(&task_snapshot.config);
+        let normalized_path =
+            Self::normalize_patch_path_for_git(&repo_path, patch_record.relative_path.as_path())?;
+
+        let is_repository = GitService::is_repository(&repo_path).await.map_err(|error| {
+            OpenHarnessError::service(format!(
+                "Failed to inspect git repository '{}': {}",
+                repo_path.display(),
+                error
+            ))
+        })?;
+
+        Ok((patch_record, repo_path, normalized_path, is_repository))
+    }
+
+    async fn emit_patch_operation_event(
+        registry: &Arc<AgentTaskRegistry>,
+        task_id: &AgentTaskId,
+        kind: AgentTaskEventKind,
+        message: String,
+        data: serde_json::Value,
+    ) {
+        let _ = registry
+            .push_event(AgentTaskEvent::new(
+                task_id.clone(),
+                kind,
+                Some(message),
+                Some(data),
+            ))
+            .await;
+    }
+
+    pub async fn apply_task_patch(
+        &self,
+        task_id: &AgentTaskId,
+        patch_id: &str,
+        target_status: PatchStatus,
+    ) -> OpenHarnessResult<AgentPatchRecord> {
+        if !matches!(target_status, PatchStatus::Accepted | PatchStatus::Applied) {
+            return Err(OpenHarnessError::Validation(format!(
+                "apply_task_patch requires target status accepted/applied, got {:?}",
+                target_status
+            )));
+        }
+
+        let (patch_record, repo_path, normalized_path, is_repository) = self
+            .resolve_patch_operation_context(task_id, patch_id)
+            .await?;
+
+        if !is_repository {
+            return self
+                .patch_store
+                .set_status(task_id, patch_id, target_status)
+                .await;
+        }
+
+        let add_result = GitService::add_files(
+            &repo_path,
+            GitAddParams {
+                files: vec![normalized_path.clone()],
+                all: Some(false),
+                update: Some(false),
+            },
+        )
+        .await;
+
+        match add_result {
+            Ok(_) => {
+                let updated = self
+                    .patch_store
+                    .set_status(task_id, patch_id, target_status)
+                    .await?;
+
+                self.transcript_store
+                    .append_entry(
+                        task_id,
+                        AgentTranscriptEntry::PatchRecord {
+                            patch_id: patch_id.to_string(),
+                            summary: format!(
+                                "Patch {} staged with git add {}",
+                                patch_id, normalized_path
+                            ),
+                        },
+                    )
+                    .await;
+
+                Self::emit_patch_operation_event(
+                    &self.registry,
+                    task_id,
+                    AgentTaskEventKind::ToolCallCompleted,
+                    format!("Patch {} applied", patch_id),
+                    serde_json::json!({
+                        "patch_id": patch_id,
+                        "patch_status": updated.status,
+                        "operation": "apply",
+                        "path": normalized_path,
+                        "repository_path": repo_path,
+                    }),
+                )
+                .await;
+
+                Ok(updated)
+            }
+            Err(error) => {
+                let _ = self
+                    .patch_store
+                    .set_status(task_id, patch_id, PatchStatus::Conflicted)
+                    .await;
+
+                Self::emit_patch_operation_event(
+                    &self.registry,
+                    task_id,
+                    AgentTaskEventKind::ToolCallFailed,
+                    format!("Patch {} apply failed", patch_id),
+                    serde_json::json!({
+                        "patch_id": patch_id,
+                        "operation": "apply",
+                        "path": normalized_path,
+                        "error": error.to_string(),
+                    }),
+                )
+                .await;
+
+                Err(OpenHarnessError::service(format!(
+                    "Failed to apply patch {} for task {} (source path: {}): {}",
+                    patch_id,
+                    task_id.as_str(),
+                    patch_record.relative_path.display(),
+                    error
+                )))
+            }
+        }
+    }
+
+    async fn remove_untracked_patch_path(
+        repo_path: &Path,
+        relative_path: &str,
+    ) -> OpenHarnessResult<()> {
+        let target_path = repo_path.join(relative_path);
+        if !target_path.exists() {
+            return Ok(());
+        }
+
+        if target_path.is_dir() {
+            tokio::fs::remove_dir_all(&target_path)
+                .await
+                .map_err(|error| {
+                    OpenHarnessError::service(format!(
+                        "Failed to remove untracked directory '{}': {}",
+                        target_path.display(),
+                        error
+                    ))
+                })?;
+        } else {
+            tokio::fs::remove_file(&target_path)
+                .await
+                .map_err(|error| {
+                    OpenHarnessError::service(format!(
+                        "Failed to remove untracked file '{}': {}",
+                        target_path.display(),
+                        error
+                    ))
+                })?;
+        }
+
+        Ok(())
+    }
+
+    pub async fn reject_task_patch_with_rollback(
+        &self,
+        task_id: &AgentTaskId,
+        patch_id: &str,
+    ) -> OpenHarnessResult<AgentPatchRecord> {
+        let (_patch_record, repo_path, normalized_path, is_repository) = self
+            .resolve_patch_operation_context(task_id, patch_id)
+            .await?;
+
+        if !is_repository {
+            return self
+                .patch_store
+                .set_status(task_id, patch_id, PatchStatus::Rejected)
+                .await;
+        }
+
+        let normalized_path = Self::normalize_git_status_path(&normalized_path);
+        let tracked_in_head = GitService::get_file_content(&repo_path, &normalized_path, Some("HEAD"))
+            .await
+            .is_ok();
+
+        let rollback_result: OpenHarnessResult<()> = if !tracked_in_head {
+            Self::remove_untracked_patch_path(&repo_path, &normalized_path).await
+        } else {
+            let files = vec![normalized_path.clone()];
+
+            let _ = GitService::reset_files(&repo_path, &files, true).await;
+            GitService::reset_files(&repo_path, &files, false)
+                .await
+                .map(|_| ())
+                .map_err(|error| {
+                    OpenHarnessError::service(format!(
+                        "Failed to rollback patch {} for task {}: {}",
+                        patch_id,
+                        task_id.as_str(),
+                        error
+                    ))
+                })
+        };
+
+        if let Err(error) = rollback_result {
+            let _ = self
+                .patch_store
+                .set_status(task_id, patch_id, PatchStatus::Conflicted)
+                .await;
+
+            Self::emit_patch_operation_event(
+                &self.registry,
+                task_id,
+                AgentTaskEventKind::ToolCallFailed,
+                format!("Patch {} rollback failed", patch_id),
+                serde_json::json!({
+                    "patch_id": patch_id,
+                    "operation": "rollback",
+                    "path": normalized_path,
+                    "error": error.to_string(),
+                }),
+            )
+            .await;
+
+            return Err(error);
+        }
+
+        let updated = self
+            .patch_store
+            .set_status(task_id, patch_id, PatchStatus::Rejected)
+            .await?;
+
+        self.transcript_store
+            .append_entry(
+                task_id,
+                AgentTranscriptEntry::PatchRecord {
+                    patch_id: patch_id.to_string(),
+                    summary: format!("Patch {} rolled back at {}", patch_id, normalized_path),
+                },
+            )
+            .await;
+
+        Self::emit_patch_operation_event(
+            &self.registry,
+            task_id,
+            AgentTaskEventKind::ToolCallCompleted,
+            format!("Patch {} rejected and rolled back", patch_id),
+            serde_json::json!({
+                "patch_id": patch_id,
+                "patch_status": updated.status,
+                "operation": "rollback",
+                "path": normalized_path,
+                "repository_path": repo_path,
+            }),
+        )
+        .await;
+
+        Ok(updated)
+    }
+
+    pub async fn merge_task_worktree_branch(
+        &self,
+        task_id: &AgentTaskId,
+    ) -> OpenHarnessResult<Vec<AgentPatchRecord>> {
+        let task_snapshot = self.registry.query_task(task_id).await.ok_or_else(|| {
+            OpenHarnessError::NotFound(format!(
+                "Task not found for merge operation: {}",
+                task_id.as_str()
+            ))
+        })?;
+
+        if !matches!(
+            task_snapshot.config.workspace_binding.isolation,
+            WorkspaceIsolation::GitWorktree
+        ) {
+            return Err(OpenHarnessError::Validation(format!(
+                "Task {} is not using git worktree isolation",
+                task_id.as_str()
+            )));
+        }
+
+        let branch_name = task_snapshot
+            .config
+            .workspace_binding
+            .branch_name
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| {
+                OpenHarnessError::Validation(format!(
+                    "Task {} does not provide a worktree branch name",
+                    task_id.as_str()
+                ))
+            })?
+            .to_string();
+
+        let repo_path = task_snapshot.config.workspace_binding.root.clone();
+        let is_repository = GitService::is_repository(&repo_path).await.map_err(|error| {
+            OpenHarnessError::service(format!(
+                "Failed to inspect repository '{}': {}",
+                repo_path.display(),
+                error
+            ))
+        })?;
+        if !is_repository {
+            return Err(OpenHarnessError::Validation(format!(
+                "Task {} root '{}' is not a git repository",
+                task_id.as_str(),
+                repo_path.display()
+            )));
+        }
+
+        let output = Command::new("git")
+            .arg("-c")
+            .arg("user.name=OpenHarness Agent")
+            .arg("-c")
+            .arg("user.email=openharness@example.com")
+            .arg("merge")
+            .arg("--no-ff")
+            .arg("--no-edit")
+            .arg(&branch_name)
+            .current_dir(&repo_path)
+            .output()
+            .await
+            .map_err(|error| {
+                OpenHarnessError::service(format!(
+                    "Failed to run git merge for task {}: {}",
+                    task_id.as_str(),
+                    error
+                ))
+            })?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            let abort_detail = match Command::new("git")
+                .arg("merge")
+                .arg("--abort")
+                .current_dir(&repo_path)
+                .output()
+                .await
+            {
+                Ok(abort_output) if abort_output.status.success() => {
+                    Some("merge abort succeeded".to_string())
+                }
+                Ok(abort_output) => {
+                    let abort_stderr = String::from_utf8_lossy(&abort_output.stderr)
+                        .trim()
+                        .to_string();
+                    Some(format!("merge abort failed: {}", abort_stderr))
+                }
+                Err(error) => {
+                    Some(format!("merge abort failed to execute: {}", error))
+                }
+            };
+
+            Self::emit_patch_operation_event(
+                &self.registry,
+                task_id,
+                AgentTaskEventKind::ToolCallFailed,
+                format!("Task branch merge failed: {}", branch_name),
+                serde_json::json!({
+                    "task_id": task_id,
+                    "operation": "merge",
+                    "branch_name": branch_name,
+                    "repository_path": repo_path,
+                    "error": stderr,
+                    "merge_abort": abort_detail,
+                }),
+            )
+            .await;
+
+            return Err(OpenHarnessError::service(format!(
+                "Failed to merge task branch '{}' for task {}: {}{}",
+                branch_name,
+                task_id.as_str(),
+                stderr,
+                abort_detail
+                    .as_ref()
+                    .map(|detail| format!(" ({})", detail))
+                    .unwrap_or_default()
+            )));
+        }
+
+        let current_records = self.patch_store.list_by_task(task_id).await;
+        let mut updated_records = Vec::with_capacity(current_records.len());
+        for record in current_records {
+            let updated = if matches!(record.status, PatchStatus::Rejected | PatchStatus::Conflicted)
+            {
+                record
+            } else if matches!(record.status, PatchStatus::Applied) {
+                record
+            } else {
+                self.patch_store
+                    .set_status(task_id, &record.patch_id, PatchStatus::Applied)
+                    .await?
+            };
+            updated_records.push(updated);
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        self.transcript_store
+            .append_entry(
+                task_id,
+                AgentTranscriptEntry::PatchRecord {
+                    patch_id: format!("task-merge-{}", task_id.as_str()),
+                    summary: format!(
+                        "Merged worktree branch '{}' into repository root '{}'",
+                        branch_name,
+                        repo_path.display()
+                    ),
+                },
+            )
+            .await;
+
+        Self::emit_patch_operation_event(
+            &self.registry,
+            task_id,
+            AgentTaskEventKind::ToolCallCompleted,
+            format!("Task branch merged: {}", branch_name),
+            serde_json::json!({
+                "task_id": task_id,
+                "operation": "merge",
+                "branch_name": branch_name,
+                "repository_path": repo_path,
+                "patch_count": updated_records.len(),
+                "merge_output": stdout,
+            }),
+        )
+        .await;
+
+        Ok(updated_records)
     }
 
     async fn capture_worktree_patch_summary(
@@ -718,6 +1235,7 @@ impl AgentTaskSupervisor {
             }
 
             let _ = registry.persist_snapshot(&task_id_clone).await;
+            let _ = registry.notify_completion(&task_id_clone).await;
         });
 
         Ok(snapshot)
@@ -783,7 +1301,9 @@ impl AgentTaskSupervisor {
 mod tests {
     use super::*;
     use crate::agentic::runtime::{AgentTeam, CleanupPolicy, WorkspaceBinding, WorkspaceIsolation};
-    use git2::Repository;
+    use git2::{Repository, Signature};
+    use std::path::Path;
+    use std::process::Command as StdCommand;
 
     fn build_task_config() -> AgentTaskConfig {
         let root = std::env::temp_dir().join(format!(
@@ -844,6 +1364,374 @@ mod tests {
         drop(repository);
 
         worktree_path
+    }
+
+    fn init_temp_git_repo_with_tracked_modification(
+        file_name: &str,
+        initial_content: &str,
+        modified_content: &str,
+    ) -> PathBuf {
+        let repo_path = std::env::temp_dir().join(format!(
+            "openharness-agent-supervisor-tracked-{}",
+            uuid::Uuid::new_v4()
+        ));
+
+        std::fs::create_dir_all(&repo_path).unwrap();
+        let repository = Repository::init(&repo_path).unwrap();
+
+        std::fs::write(repo_path.join(file_name), initial_content).unwrap();
+        let mut index = repository.index().unwrap();
+        index.add_path(Path::new(file_name)).unwrap();
+        let tree_id = index.write_tree().unwrap();
+        let tree = repository.find_tree(tree_id).unwrap();
+        let signature = Signature::now("OpenHarness", "openharness@example.com").unwrap();
+        repository
+            .commit(Some("HEAD"), &signature, &signature, "initial commit", &tree, &[])
+            .unwrap();
+
+        std::fs::write(repo_path.join(file_name), modified_content).unwrap();
+        repo_path
+    }
+
+    fn run_git_sync(repo_path: &Path, args: &[&str]) -> String {
+        let output = StdCommand::new("git")
+            .args(args)
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+
+        assert!(
+            output.status.success(),
+            "git {:?} failed: {}",
+            args,
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        String::from_utf8_lossy(&output.stdout).trim().to_string()
+    }
+
+    fn init_temp_git_repo_with_feature_branch(
+        file_name: &str,
+        feature_branch: &str,
+        base_content: &str,
+        feature_content: &str,
+    ) -> (PathBuf, String) {
+        let repo_path = std::env::temp_dir().join(format!(
+            "openharness-agent-supervisor-merge-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&repo_path).unwrap();
+
+        run_git_sync(repo_path.as_path(), &["init"]);
+        run_git_sync(
+            repo_path.as_path(),
+            &["config", "user.name", "OpenHarness Test"],
+        );
+        run_git_sync(
+            repo_path.as_path(),
+            &["config", "user.email", "openharness@example.com"],
+        );
+
+        std::fs::write(repo_path.join(file_name), base_content).unwrap();
+        run_git_sync(repo_path.as_path(), &["add", file_name]);
+        run_git_sync(repo_path.as_path(), &["commit", "-m", "base commit"]);
+
+        let base_branch = run_git_sync(repo_path.as_path(), &["rev-parse", "--abbrev-ref", "HEAD"]);
+        run_git_sync(repo_path.as_path(), &["checkout", "-b", feature_branch]);
+
+        std::fs::write(repo_path.join(file_name), feature_content).unwrap();
+        run_git_sync(repo_path.as_path(), &["add", file_name]);
+        run_git_sync(repo_path.as_path(), &["commit", "-m", "feature commit"]);
+        run_git_sync(repo_path.as_path(), &["checkout", &base_branch]);
+
+        (repo_path, feature_branch.to_string())
+    }
+
+    fn init_temp_git_repo_with_conflicting_feature_branch(
+        file_name: &str,
+        feature_branch: &str,
+        base_content: &str,
+        feature_content: &str,
+        main_content: &str,
+    ) -> (PathBuf, String) {
+        let repo_path = std::env::temp_dir().join(format!(
+            "openharness-agent-supervisor-merge-conflict-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&repo_path).unwrap();
+
+        run_git_sync(repo_path.as_path(), &["init"]);
+        run_git_sync(
+            repo_path.as_path(),
+            &["config", "user.name", "OpenHarness Test"],
+        );
+        run_git_sync(
+            repo_path.as_path(),
+            &["config", "user.email", "openharness@example.com"],
+        );
+
+        std::fs::write(repo_path.join(file_name), base_content).unwrap();
+        run_git_sync(repo_path.as_path(), &["add", file_name]);
+        run_git_sync(repo_path.as_path(), &["commit", "-m", "base commit"]);
+
+        let base_branch = run_git_sync(repo_path.as_path(), &["rev-parse", "--abbrev-ref", "HEAD"]);
+        run_git_sync(repo_path.as_path(), &["checkout", "-b", feature_branch]);
+        std::fs::write(repo_path.join(file_name), feature_content).unwrap();
+        run_git_sync(repo_path.as_path(), &["add", file_name]);
+        run_git_sync(repo_path.as_path(), &["commit", "-m", "feature commit"]);
+
+        run_git_sync(repo_path.as_path(), &["checkout", &base_branch]);
+        std::fs::write(repo_path.join(file_name), main_content).unwrap();
+        run_git_sync(repo_path.as_path(), &["add", file_name]);
+        run_git_sync(repo_path.as_path(), &["commit", "-m", "main commit"]);
+
+        (repo_path, feature_branch.to_string())
+    }
+
+    fn build_patch_record(task_id: &AgentTaskId, patch_id: &str, relative_path: &str) -> AgentPatchRecord {
+        AgentPatchRecord {
+            patch_id: patch_id.to_string(),
+            task_id: task_id.clone(),
+            tool_call_id: "tool-call-test".to_string(),
+            relative_path: PathBuf::from(relative_path),
+            diff_preview: "diff preview".to_string(),
+            full_diff_ref: None,
+            status: PatchStatus::Pending,
+        }
+    }
+
+    fn status_contains_path(paths: &[String], target: &str) -> bool {
+        let target = target.replace('\\', "/");
+        paths
+            .iter()
+            .map(|path| path.replace('\\', "/"))
+            .any(|path| path == target)
+    }
+
+    #[tokio::test]
+    async fn apply_task_patch_stages_file_and_updates_status() {
+        let snapshot_file = std::env::temp_dir().join(format!(
+            "openharness-agent-supervisor-apply-patch-{}.json",
+            uuid::Uuid::new_v4()
+        ));
+        let repo_path = init_temp_git_repo_with_untracked_file("notes.txt");
+        let supervisor = AgentTaskSupervisor::new(1, Some(snapshot_file.clone()));
+
+        let config = build_git_worktree_task_config(repo_path.clone());
+        let snapshot = supervisor
+            .registry()
+            .create_task(config, AgentTaskKind::Background)
+            .await;
+
+        supervisor
+            .patch_store()
+            .upsert_patch(build_patch_record(&snapshot.task_id, "patch-apply-1", "notes.txt"))
+            .await;
+
+        let updated = supervisor
+            .apply_task_patch(&snapshot.task_id, "patch-apply-1", PatchStatus::Accepted)
+            .await
+            .unwrap();
+        assert_eq!(updated.status, PatchStatus::Accepted);
+
+        let status = GitService::get_status(&repo_path).await.unwrap();
+        let staged_paths = status
+            .staged
+            .iter()
+            .map(|file| file.path.clone())
+            .collect::<Vec<_>>();
+        assert!(status_contains_path(&staged_paths, "notes.txt"));
+
+        let _ = tokio::fs::remove_file(snapshot_file).await;
+        let _ = tokio::fs::remove_dir_all(repo_path).await;
+    }
+
+    #[tokio::test]
+    async fn reject_task_patch_rolls_back_tracked_changes_and_updates_status() {
+        let snapshot_file = std::env::temp_dir().join(format!(
+            "openharness-agent-supervisor-reject-patch-{}.json",
+            uuid::Uuid::new_v4()
+        ));
+        let repo_path = init_temp_git_repo_with_tracked_modification(
+            "tracked.txt",
+            "initial content\n",
+            "modified content\n",
+        );
+        let supervisor = AgentTaskSupervisor::new(1, Some(snapshot_file.clone()));
+
+        let config = build_git_worktree_task_config(repo_path.clone());
+        let snapshot = supervisor
+            .registry()
+            .create_task(config, AgentTaskKind::Background)
+            .await;
+
+        supervisor
+            .patch_store()
+            .upsert_patch(build_patch_record(
+                &snapshot.task_id,
+                "patch-reject-1",
+                "tracked.txt",
+            ))
+            .await;
+
+        let updated = supervisor
+            .reject_task_patch_with_rollback(&snapshot.task_id, "patch-reject-1")
+            .await
+            .unwrap();
+        assert_eq!(updated.status, PatchStatus::Rejected);
+
+        let file_content = tokio::fs::read_to_string(repo_path.join("tracked.txt"))
+            .await
+            .unwrap();
+        assert_eq!(file_content.replace("\r\n", "\n"), "initial content\n");
+
+        let status = GitService::get_status(&repo_path).await.unwrap();
+        let unstaged_paths = status
+            .unstaged
+            .iter()
+            .map(|file| file.path.clone())
+            .collect::<Vec<_>>();
+        assert!(!status_contains_path(&unstaged_paths, "tracked.txt"));
+
+        let _ = tokio::fs::remove_file(snapshot_file).await;
+        let _ = tokio::fs::remove_dir_all(repo_path).await;
+    }
+
+    #[tokio::test]
+    async fn merge_task_worktree_branch_updates_patch_records_to_applied() {
+        let snapshot_file = std::env::temp_dir().join(format!(
+            "openharness-agent-supervisor-merge-patch-{}.json",
+            uuid::Uuid::new_v4()
+        ));
+        let (repo_path, feature_branch) = init_temp_git_repo_with_feature_branch(
+            "README.md",
+            "feature/agent-task-merge",
+            "base\n",
+            "feature\n",
+        );
+
+        let supervisor = AgentTaskSupervisor::new(1, Some(snapshot_file.clone()));
+        let config = AgentTaskConfig {
+            agent_name: "Explore".to_string(),
+            prompt: "merge task branch".to_string(),
+            parent_task_id: None,
+            session_id: Some("session-test".to_string()),
+            workspace_binding: WorkspaceBinding {
+                isolation: WorkspaceIsolation::GitWorktree,
+                root: repo_path.clone(),
+                working_dir: repo_path.clone(),
+                branch_name: Some(feature_branch.clone()),
+                worktree_path: Some(repo_path.clone()),
+                cleanup_policy: CleanupPolicy::Keep,
+            },
+            fork_context: ForkContextMode::Fresh,
+            max_turns: Some(1),
+            allowed_tools: Vec::new(),
+            model: None,
+        };
+
+        let snapshot = supervisor
+            .registry()
+            .create_task(config, AgentTaskKind::Background)
+            .await;
+
+        supervisor
+            .patch_store()
+            .upsert_many(vec![
+                AgentPatchRecord {
+                    status: PatchStatus::Accepted,
+                    ..build_patch_record(&snapshot.task_id, "patch-merge-1", "README.md")
+                },
+                AgentPatchRecord {
+                    status: PatchStatus::Pending,
+                    ..build_patch_record(&snapshot.task_id, "patch-merge-2", "README.md")
+                },
+            ])
+            .await;
+
+        let merged_records = supervisor
+            .merge_task_worktree_branch(&snapshot.task_id)
+            .await
+            .unwrap();
+
+        assert_eq!(merged_records.len(), 2);
+        assert!(merged_records
+            .iter()
+            .all(|record| matches!(record.status, PatchStatus::Applied)));
+
+        let readme = tokio::fs::read_to_string(repo_path.join("README.md"))
+            .await
+            .unwrap();
+        assert_eq!(readme.replace("\r\n", "\n"), "feature\n");
+
+        let _ = tokio::fs::remove_file(snapshot_file).await;
+        let _ = tokio::fs::remove_dir_all(repo_path).await;
+    }
+
+    #[tokio::test]
+    async fn merge_task_worktree_branch_conflict_aborts_and_keeps_patch_status() {
+        let snapshot_file = std::env::temp_dir().join(format!(
+            "openharness-agent-supervisor-merge-conflict-patch-{}.json",
+            uuid::Uuid::new_v4()
+        ));
+        let (repo_path, feature_branch) = init_temp_git_repo_with_conflicting_feature_branch(
+            "README.md",
+            "feature/agent-task-conflict",
+            "base\n",
+            "feature change\n",
+            "main change\n",
+        );
+
+        let supervisor = AgentTaskSupervisor::new(1, Some(snapshot_file.clone()));
+        let config = AgentTaskConfig {
+            agent_name: "Explore".to_string(),
+            prompt: "merge task branch with conflict".to_string(),
+            parent_task_id: None,
+            session_id: Some("session-test".to_string()),
+            workspace_binding: WorkspaceBinding {
+                isolation: WorkspaceIsolation::GitWorktree,
+                root: repo_path.clone(),
+                working_dir: repo_path.clone(),
+                branch_name: Some(feature_branch.clone()),
+                worktree_path: Some(repo_path.clone()),
+                cleanup_policy: CleanupPolicy::Keep,
+            },
+            fork_context: ForkContextMode::Fresh,
+            max_turns: Some(1),
+            allowed_tools: Vec::new(),
+            model: None,
+        };
+
+        let snapshot = supervisor
+            .registry()
+            .create_task(config, AgentTaskKind::Background)
+            .await;
+
+        supervisor
+            .patch_store()
+            .upsert_patch(AgentPatchRecord {
+                status: PatchStatus::Accepted,
+                ..build_patch_record(&snapshot.task_id, "patch-conflict-1", "README.md")
+            })
+            .await;
+
+        let merge_result = supervisor.merge_task_worktree_branch(&snapshot.task_id).await;
+        assert!(merge_result.is_err());
+
+        let status = GitService::get_status(&repo_path).await.unwrap();
+        assert!(status.staged.is_empty());
+        assert!(status.unstaged.is_empty());
+        assert!(status.untracked.is_empty());
+
+        let merge_head = repo_path.join(".git").join("MERGE_HEAD");
+        assert!(!merge_head.exists());
+
+        let patches = supervisor.patch_store().list_by_task(&snapshot.task_id).await;
+        assert_eq!(patches.len(), 1);
+        assert_eq!(patches[0].status, PatchStatus::Accepted);
+
+        let _ = tokio::fs::remove_file(snapshot_file).await;
+        let _ = tokio::fs::remove_dir_all(repo_path).await;
     }
 
     #[tokio::test]

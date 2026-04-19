@@ -13,6 +13,7 @@ use crate::agentic::events::{
 };
 use crate::agentic::execution::{ContextCompactionOutcome, ExecutionContext, ExecutionEngine};
 use crate::agentic::image_analysis::ImageContextData;
+use crate::agentic::permissions::{PermissionApprovalRequest, PermissionAuditRecord};
 use crate::agentic::round_preempt::DialogRoundPreemptSource;
 use crate::agentic::runtime::{
     AgentTaskConfig, AgentTaskExecutionOutput, AgentTaskExecutor, AgentTaskFilter, AgentTaskId,
@@ -1908,6 +1909,36 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             .await
     }
 
+    pub async fn agent_approval_list_pending(&self) -> Vec<PermissionApprovalRequest> {
+        self.tool_pipeline.list_pending_approvals().await
+    }
+
+    pub async fn agent_approval_respond(
+        &self,
+        tool_id: &str,
+        approved: bool,
+        reason: Option<String>,
+        updated_input: Option<serde_json::Value>,
+    ) -> OpenHarnessResult<()> {
+        let tool_id = tool_id.trim();
+        if tool_id.is_empty() {
+            return Err(OpenHarnessError::Validation(
+                "tool_id is required".to_string(),
+            ));
+        }
+
+        if approved {
+            self.tool_pipeline.confirm_tool(tool_id, updated_input).await
+        } else {
+            let reason = reason.unwrap_or_else(|| "Rejected by approval response".to_string());
+            self.tool_pipeline.reject_tool(tool_id, reason).await
+        }
+    }
+
+    pub async fn agent_approval_audit_recent(&self, limit: usize) -> Vec<PermissionAuditRecord> {
+        self.tool_pipeline.list_permission_audits(limit).await
+    }
+
     /// Reject tool execution
     pub async fn reject_tool(&self, tool_id: &str, reason: String) -> OpenHarnessResult<()> {
         self.tool_pipeline.reject_tool(tool_id, reason).await
@@ -2144,9 +2175,53 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
         patch_id: &str,
         status: PatchStatus,
     ) -> OpenHarnessResult<AgentPatchRecord> {
+        let task_id = AgentTaskId::from(task_id);
+        match status {
+            PatchStatus::Accepted | PatchStatus::Applied => {
+                self.agent_task_supervisor
+                    .apply_task_patch(&task_id, patch_id, status)
+                    .await
+            }
+            PatchStatus::Rejected => {
+                self.agent_task_supervisor
+                    .reject_task_patch_with_rollback(&task_id, patch_id)
+                    .await
+            }
+            PatchStatus::Pending | PatchStatus::Conflicted => {
+                self.agent_task_supervisor
+                    .patch_store()
+                    .set_status(&task_id, patch_id, status)
+                    .await
+            }
+        }
+    }
+
+    pub async fn apply_agent_task_patch(
+        &self,
+        task_id: &str,
+        patch_id: &str,
+    ) -> OpenHarnessResult<AgentPatchRecord> {
         self.agent_task_supervisor
-            .patch_store()
-            .set_status(&AgentTaskId::from(task_id), patch_id, status)
+            .apply_task_patch(&AgentTaskId::from(task_id), patch_id, PatchStatus::Applied)
+            .await
+    }
+
+    pub async fn reject_agent_task_patch(
+        &self,
+        task_id: &str,
+        patch_id: &str,
+    ) -> OpenHarnessResult<AgentPatchRecord> {
+        self.agent_task_supervisor
+            .reject_task_patch_with_rollback(&AgentTaskId::from(task_id), patch_id)
+            .await
+    }
+
+    pub async fn merge_agent_task_patches(
+        &self,
+        task_id: &str,
+    ) -> OpenHarnessResult<Vec<AgentPatchRecord>> {
+        self.agent_task_supervisor
+            .merge_task_worktree_branch(&AgentTaskId::from(task_id))
             .await
     }
 

@@ -450,6 +450,7 @@ assistant: "I'm going to use the Task tool to launch the greeting-responder agen
             | "list"
             | "patches"
             | "patch_summary"
+            | "patch_merge"
             | "patch_status" => {
                 Ok(if action.is_empty() {
                     "spawn".to_string()
@@ -458,7 +459,7 @@ assistant: "I'm going to use the Task tool to launch the greeting-responder agen
                 })
             }
             _ => Err(OpenHarnessError::tool(format!(
-                "Unsupported Task action '{}'. Allowed actions: spawn, status, wait, cancel, events, transcript, list, patches, patch_summary, patch_status",
+                "Unsupported Task action '{}'. Allowed actions: spawn, status, wait, cancel, events, transcript, list, patches, patch_summary, patch_merge, patch_status",
                 action
             ))),
         }
@@ -540,13 +541,13 @@ impl Tool for TaskTool {
             "properties": {
                 "action": {
                     "type": "string",
-                    "description": "Task operation. Use 'spawn' to launch an agent; use status/wait/cancel/events/transcript/list to inspect or control real agent tasks; use patches/patch_summary/patch_status for patch review.",
-                    "enum": ["spawn", "status", "wait", "cancel", "events", "transcript", "list", "patches", "patch_summary", "patch_status"],
+                    "description": "Task operation. Use 'spawn' to launch an agent; use status/wait/cancel/events/transcript/list to inspect or control real agent tasks; use patches/patch_summary/patch_merge/patch_status for patch review.",
+                    "enum": ["spawn", "status", "wait", "cancel", "events", "transcript", "list", "patches", "patch_summary", "patch_merge", "patch_status"],
                     "default": "spawn"
                 },
                 "task_id": {
                     "type": "string",
-                    "description": "Agent task id for status, wait, cancel, events, transcript, patches, patch_summary, or patch_status actions"
+                    "description": "Agent task id for status, wait, cancel, events, transcript, patches, patch_summary, patch_merge, or patch_status actions"
                 },
                 "patch_id": {
                     "type": "string",
@@ -554,7 +555,7 @@ impl Tool for TaskTool {
                 },
                 "patch_status": {
                     "type": "string",
-                    "description": "Target patch status for patch_status action",
+                    "description": "Target patch status for patch_status action. On git workspaces, accepted/applied stage changes with git add, and rejected performs rollback.",
                     "enum": ["pending", "accepted", "rejected", "applied", "conflicted"]
                 },
                 "description": {
@@ -665,7 +666,7 @@ impl Tool for TaskTool {
                 .validate_required("subagent_type")
                 .finish(),
             "list" => ValidationResult::default(),
-            "status" | "wait" | "cancel" | "events" | "transcript" | "patches" | "patch_summary" => {
+            "status" | "wait" | "cancel" | "events" | "transcript" | "patches" | "patch_summary" | "patch_merge" => {
                 if input
                     .get("task_id")
                     .and_then(|value| value.as_str())
@@ -712,7 +713,7 @@ impl Tool for TaskTool {
                 ValidationResult::default()
             }
             _ => Self::validation_error(format!(
-                "Unsupported Task action '{}'. Allowed actions: spawn, status, wait, cancel, events, transcript, list, patches, patch_summary, patch_status",
+                "Unsupported Task action '{}'. Allowed actions: spawn, status, wait, cancel, events, transcript, list, patches, patch_summary, patch_merge, patch_status",
                 action
             )),
         }
@@ -937,6 +938,28 @@ impl Tool for TaskTool {
                         image_attachments: None,
                     }])
                 }
+                "patch_merge" => {
+                    let task_id = Self::task_id(input)?;
+                    let patches = coordinator.merge_agent_task_patches(&task_id).await?;
+                    let applied_count = patches
+                        .iter()
+                        .filter(|record| matches!(record.status, PatchStatus::Applied))
+                        .count();
+
+                    Ok(vec![ToolResult::Result {
+                        data: json!({
+                            "duration": duration(),
+                            "task_id": task_id,
+                            "patches": patches,
+                        }),
+                        result_for_assistant: Some(format!(
+                            "Merged task {} worktree branch and updated {} patch record(s) to applied.",
+                            task_id,
+                            applied_count,
+                        )),
+                        image_attachments: None,
+                    }])
+                }
                 "patch_status" => {
                     let task_id = Self::task_id(input)?;
                     let patch_id = Self::patch_id(input)?;
@@ -951,10 +974,10 @@ impl Tool for TaskTool {
                             "patch": patch,
                         }),
                         result_for_assistant: Some(format!(
-                            "Updated patch {} for task {} to status {:?}.",
+                            "Updated patch {} for task {}. Current status: {:?}.",
                             patch_id,
                             task_id,
-                            patch_status,
+                            patch.status,
                         )),
                         image_attachments: None,
                     }])
@@ -1228,6 +1251,33 @@ impl Tool for TaskTool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn action_parses_patch_merge() {
+        let action = TaskTool::action(&json!({ "action": "patch_merge" })).unwrap();
+        assert_eq!(action, "patch_merge");
+    }
+
+    #[tokio::test]
+    async fn validates_patch_merge_requires_task_id() {
+        let tool = TaskTool::new();
+
+        let missing_task_id = tool
+            .validate_input(&json!({ "action": "patch_merge" }), None)
+            .await;
+        assert!(!missing_task_id.result);
+
+        let ok = tool
+            .validate_input(
+                &json!({
+                    "action": "patch_merge",
+                    "task_id": "agtask-test"
+                }),
+                None,
+            )
+            .await;
+        assert!(ok.result);
+    }
 
     #[tokio::test]
     async fn validates_task_control_actions_without_spawn_fields() {

@@ -18,6 +18,7 @@ struct TaskRecord {
     events: Vec<AgentTaskEvent>,
     completion_notify: Arc<Notify>,
     cancel_token: Option<CancellationToken>,
+    terminal_notified: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -60,6 +61,7 @@ impl AgentTaskRegistry {
                 events: Vec::new(),
                 completion_notify: Arc::new(Notify::new()),
                 cancel_token: None,
+                terminal_notified: false,
             },
         );
 
@@ -262,8 +264,16 @@ impl AgentTaskRegistry {
 
         if status.is_terminal() {
             record.snapshot.completed_at_ms = Some(now);
-            record.completion_notify.notify_waiters();
             record.cancel_token = None;
+
+            if matches!(status, AgentTaskStatus::Succeeded) {
+                // Success transitions must wait for supervisor finalization
+                // (transcript/patch/event persistence) before waiters are released.
+                record.terminal_notified = false;
+            } else {
+                record.terminal_notified = true;
+                record.completion_notify.notify_waiters();
+            }
         }
 
         if let Some(summary) = summary {
@@ -308,7 +318,7 @@ impl AgentTaskRegistry {
                     OpenHarnessError::NotFound(format!("Task not found: {}", task_id.as_str()))
                 })?;
 
-                if record.snapshot.status.is_terminal() {
+                if record.snapshot.status.is_terminal() && record.terminal_notified {
                     return Ok(record.snapshot.clone());
                 }
 
@@ -380,6 +390,7 @@ impl AgentTaskRegistry {
                 )],
                 completion_notify: Arc::new(Notify::new()),
                 cancel_token: None,
+                terminal_notified: snapshot.status.is_terminal(),
             });
         }
 
@@ -387,6 +398,20 @@ impl AgentTaskRegistry {
         self.write_persisted_store(&store).await?;
 
         Ok(recovered)
+    }
+
+    pub async fn notify_completion(&self, task_id: &AgentTaskId) -> OpenHarnessResult<()> {
+        let mut records = self.records.write().await;
+        let record = records.get_mut(task_id.as_str()).ok_or_else(|| {
+            OpenHarnessError::NotFound(format!("Task not found: {}", task_id.as_str()))
+        })?;
+
+        if record.snapshot.status.is_terminal() {
+            record.terminal_notified = true;
+            record.completion_notify.notify_waiters();
+        }
+
+        Ok(())
     }
 
     async fn read_persisted_store(&self) -> OpenHarnessResult<PersistedTaskStore> {
@@ -453,6 +478,7 @@ mod tests {
     use crate::agentic::runtime::{
         CleanupPolicy, ForkContextMode, WorkspaceBinding, WorkspaceIsolation,
     };
+    use tokio::time::{timeout, Duration};
 
     fn build_test_config() -> AgentTaskConfig {
         let root = std::env::temp_dir().join(format!(
@@ -514,6 +540,39 @@ mod tests {
 
         let snapshot = registry.query_task(&task_id).await.unwrap();
         assert_eq!(snapshot.status, AgentTaskStatus::Cancelled);
+
+        let _ = tokio::fs::remove_file(snapshot_file).await;
+    }
+
+    #[tokio::test]
+    async fn succeeded_task_waits_until_completion_is_notified() {
+        let snapshot_file = std::env::temp_dir().join(format!(
+            "openharness-agent-task-wait-notify-{}.json",
+            uuid::Uuid::new_v4()
+        ));
+
+        let registry = AgentTaskRegistry::new(snapshot_file.clone());
+        let created = registry
+            .create_task(build_test_config(), AgentTaskKind::Background)
+            .await;
+        let task_id = created.task_id.clone();
+
+        registry.mark_running(&task_id).await.unwrap();
+        registry
+            .mark_succeeded(&task_id, "done".to_string(), None)
+            .await
+            .unwrap();
+
+        let premature_wait = timeout(Duration::from_millis(25), registry.wait_for_terminal(&task_id)).await;
+        assert!(premature_wait.is_err());
+
+        registry.notify_completion(&task_id).await.unwrap();
+        let terminal = timeout(Duration::from_millis(200), registry.wait_for_terminal(&task_id))
+            .await
+            .expect("wait_for_terminal should complete after notify")
+            .unwrap();
+
+        assert_eq!(terminal.status, AgentTaskStatus::Succeeded);
 
         let _ = tokio::fs::remove_file(snapshot_file).await;
     }
