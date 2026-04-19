@@ -1186,6 +1186,56 @@ pub struct AgentTeam {
 
 ## 22. 优先级
 
+### 22.0 2026-04-18 执行纠偏（当前生效）
+
+当前结论：方向正确，但阶段推进顺序已发生偏移。自本节起，以“安全基座优先、可观测优先、收尾一致性优先”为执行顺序。
+
+新增阶段 A（先于后续高级能力）：
+
+1. 仓库与命名基线固定：
+   - 明确源码、构建产物、临时文件边界。
+   - 建立可审查 git 基线，避免大规模 untracked 影响阶段验收。
+   - 全仓复扫旧品牌名，仅允许迁移测试样本保留。
+
+当前阶段完成度（动态）：
+
+- 阶段 0：约 70%
+- 阶段 1：约 40%
+- 阶段 2：约 80%
+- 阶段 3：约 65%
+- 阶段 4：约 70%
+- 阶段 5：约 70%
+- 阶段 6：约 75%
+- 阶段 7：约 35%（PermissionEngine/ApprovalQueue/AuditStore 最小闭环已接线）
+- 阶段 8：约 10%
+- 阶段 9：约 15%
+- 阶段 10：约 65%（ToolCallStreamChunk/progress/stdout/stderr 已下沉到 AgentTaskEvent）
+- 阶段 11：约 100%（PatchRecord/状态持久化 + apply/reject rollback + merge/冲突 abort 恢复 + core/desktop/web 显式命令 + PatchReview E2E 成功/失败链路）
+- 阶段 12：约 35%（team/mailbox 雏形）
+- 阶段 13：约 82%（新增审批命令 + team/mailbox 命令 + patch apply/reject/merge 显式命令 + TaskDetailPanel merge 交互闭环）
+- 阶段 14：约 50%
+- 阶段 16：约 70%
+
+关键纠偏说明：
+
+1. PatchStore 当前实现在 `agentic/runtime/patch_store.rs`，先保持该路径（生命周期更贴近 task/supervisor），后续复杂化再考虑拆分到 `agentic/patches/`。
+2. 阶段 11 拆分为两段：
+   - 11A Patch Record Review（已完成）
+   - 11B Patch Apply/Merge/Revert（已完成 apply/reject rollback/merge 命令闭环，含 merge 冲突 abort 恢复；PatchReview E2E 已完成）
+3. 阶段 12 仅标记为“基础设施已起步”，不视为完整 Swarm。
+4. 阶段 10 立即补齐：`ToolCallStreamChunk/stdout/stderr/progress` 必须真实下沉到 AgentTaskEvent。
+5. P0 修正项：`wait_task` 返回前必须保证收尾可见性（transcript/patch/event 已完成）。
+
+下一步固定执行顺序：
+
+1. `wait_task` 收尾一致性。
+2. Streaming tool events（chunk/stdout/stderr/progress）。
+3. PermissionEngine + ApprovalQueue + AuditStore 最小闭环。
+4. 写文件、shell、MCP、worktree 全量接入权限 gate。
+5. PatchReview：后端与前端 merge 交互 + E2E 覆盖已闭环。
+6. 补 E2E（恢复、权限拒绝、worktree、patch 审查、取消）。
+7. 再继续 Team/Swarm 多 worktree 协作。
+
 ### P0：必须先做
 
 1. AgentDefinition 扩展。
