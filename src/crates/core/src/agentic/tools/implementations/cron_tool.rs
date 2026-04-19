@@ -680,8 +680,15 @@ Patch schema for "update":
         matches!(action, "get_time" | "list")
     }
 
-    fn needs_permissions(&self, _input: Option<&Value>) -> bool {
-        false
+    fn needs_permissions(&self, input: Option<&Value>) -> bool {
+        // Read-only operations don't need permissions
+        let Some(input) = input else {
+            return true;
+        };
+        let Some(action) = input.get("action").and_then(|value| value.as_str()) else {
+            return true;
+        };
+        !matches!(action, "get_time" | "list")
     }
 
     async fn validate_input(
