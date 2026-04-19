@@ -6,7 +6,10 @@
 use super::state_manager::ToolStateManager;
 use super::types::*;
 use crate::agentic::core::{ToolCall, ToolExecutionState, ToolResult as ModelToolResult};
-use crate::agentic::events::types::ToolEventData;
+use crate::agentic::permissions::{
+    PermissionApprovalQueue, PermissionApprovalRequest, PermissionAuditRecord,
+    PermissionAuditStore, PermissionDecision, PermissionEngine, PermissionEvaluation,
+};
 use crate::agentic::runtime::{AgentPatchStore, AgentTaskRegistry};
 use crate::agentic::tools::computer_use_host::ComputerUseHostRef;
 use crate::agentic::tools::framework::{ToolResult as FrameworkToolResult, ToolUseContext};
@@ -208,6 +211,9 @@ pub enum ConfirmationResponse {
 pub struct ToolPipeline {
     tool_registry: Arc<TokioRwLock<ToolRegistry>>,
     state_manager: Arc<ToolStateManager>,
+    permission_engine: Arc<PermissionEngine>,
+    approval_queue: Arc<PermissionApprovalQueue>,
+    permission_audit_store: Arc<PermissionAuditStore>,
     /// Confirmation channel management (tool_id -> oneshot sender)
     confirmation_channels: Arc<DashMap<String, oneshot::Sender<ConfirmationResponse>>>,
     /// Cancellation token management (tool_id -> CancellationToken)
@@ -224,6 +230,9 @@ impl ToolPipeline {
         Self {
             tool_registry,
             state_manager,
+            permission_engine: Arc::new(PermissionEngine::default()),
+            approval_queue: Arc::new(PermissionApprovalQueue::default()),
+            permission_audit_store: Arc::new(PermissionAuditStore::default()),
             confirmation_channels: Arc::new(DashMap::new()),
             cancellation_tokens: Arc::new(DashMap::new()),
             computer_use_host,
@@ -240,6 +249,63 @@ impl ToolPipeline {
 
     pub fn set_agent_patch_store(&self, patch_store: Arc<AgentPatchStore>) {
         self.state_manager.set_agent_patch_store(patch_store);
+    }
+
+    pub fn permission_engine(&self) -> Arc<PermissionEngine> {
+        Arc::clone(&self.permission_engine)
+    }
+
+    pub fn approval_queue(&self) -> Arc<PermissionApprovalQueue> {
+        Arc::clone(&self.approval_queue)
+    }
+
+    pub fn permission_audit_store(&self) -> Arc<PermissionAuditStore> {
+        Arc::clone(&self.permission_audit_store)
+    }
+
+    pub async fn list_pending_approvals(&self) -> Vec<PermissionApprovalRequest> {
+        self.approval_queue.list_pending().await
+    }
+
+    pub async fn list_permission_audits(&self, limit: usize) -> Vec<PermissionAuditRecord> {
+        self.permission_audit_store.list_recent(limit).await
+    }
+
+    async fn append_permission_audit(
+        &self,
+        task: &ToolTask,
+        evaluation: &PermissionEvaluation,
+        approved: Option<bool>,
+        reason: Option<String>,
+    ) {
+        let record = PermissionAuditRecord::from_evaluation(
+            task.tool_call.tool_id.clone(),
+            task.tool_call.tool_name.clone(),
+            task.context.session_id.clone(),
+            task.context.dialog_turn_id.clone(),
+            evaluation,
+            approved,
+            reason,
+        );
+        self.permission_audit_store.append(record).await;
+    }
+
+    async fn evaluate_permission_for_task(&self, task: &ToolTask) -> PermissionEvaluation {
+        let needs_permissions = {
+            let registry = self.tool_registry.read().await;
+            registry
+                .get_tool(&task.tool_call.tool_name)
+                .map(|tool| tool.needs_permissions(Some(&task.tool_call.arguments)))
+                .unwrap_or(true)
+        };
+
+        self.permission_engine
+            .evaluate(
+                &task.tool_call.tool_name,
+                &task.tool_call.arguments,
+                needs_permissions,
+            )
+            .await
     }
 
     /// Execute multiple tool calls using partitioned mixed scheduling.
@@ -541,12 +607,65 @@ impl ToolPipeline {
         };
 
         let is_streaming = tool.supports_streaming();
+        let tool_needs_permissions = tool.needs_permissions(Some(&tool_args));
+        let permission_evaluation = self
+            .permission_engine
+            .evaluate(&tool_name, &tool_args, tool_needs_permissions)
+            .await;
 
-        let needs_confirmation =
-            task.options.confirm_before_run && tool.needs_permissions(Some(&tool_args));
+        self.append_permission_audit(&task, &permission_evaluation, None, None)
+            .await;
+
+        if matches!(
+            permission_evaluation.effective_decision,
+            PermissionDecision::Deny
+        ) {
+            let deny_reason = format!(
+                "Permission denied for tool '{}': {}",
+                tool_name, permission_evaluation.reason
+            );
+            warn!("{}", deny_reason);
+
+            self.state_manager
+                .update_state(
+                    &tool_id,
+                    ToolExecutionState::Failed {
+                        error: deny_reason.clone(),
+                        is_retryable: false,
+                    },
+                )
+                .await;
+
+            return Err(OpenHarnessError::Validation(deny_reason));
+        }
+
+        let needs_confirmation = permission_evaluation.requires_approval()
+            || (task.options.confirm_before_run && tool_needs_permissions);
 
         if needs_confirmation {
             info!("Tool requires confirmation: tool_name={}", tool_name);
+
+            let approval_reason = if permission_evaluation.requires_approval() {
+                permission_evaluation.reason.clone()
+            } else {
+                format!(
+                    "Tool '{}' requires confirmation by runtime settings",
+                    tool_name
+                )
+            };
+
+            self.approval_queue
+                .upsert(PermissionApprovalRequest::new(
+                    task.tool_call.tool_id.clone(),
+                    task.tool_call.tool_name.clone(),
+                    permission_evaluation.action,
+                    permission_evaluation.risk_level,
+                    approval_reason,
+                    task.context.session_id.clone(),
+                    task.context.dialog_turn_id.clone(),
+                    tool_args.clone(),
+                ))
+                .await;
 
             let (tx, rx) = oneshot::channel::<ConfirmationResponse>();
 
@@ -592,8 +711,17 @@ impl ToolPipeline {
             match confirmation_result {
                 Some(Ok(ConfirmationResponse::Confirmed)) => {
                     debug!("Tool confirmed: tool_name={}", tool_name);
+                    let _ = self
+                        .approval_queue
+                        .remove_by_tool_call(&task.tool_call.tool_id)
+                        .await;
                 }
                 Some(Ok(ConfirmationResponse::Rejected(reason))) => {
+                    let _ = self
+                        .approval_queue
+                        .remove_by_tool_call(&task.tool_call.tool_id)
+                        .await;
+
                     self.state_manager
                         .update_state(
                             &tool_id,
@@ -610,6 +738,18 @@ impl ToolPipeline {
                 }
                 Some(Err(_)) => {
                     // Channel closed
+                    let _ = self
+                        .approval_queue
+                        .remove_by_tool_call(&task.tool_call.tool_id)
+                        .await;
+                    self.append_permission_audit(
+                        &task,
+                        &permission_evaluation,
+                        Some(false),
+                        Some("Approval channel closed".to_string()),
+                    )
+                    .await;
+
                     self.state_manager
                         .update_state(
                             &tool_id,
@@ -622,6 +762,18 @@ impl ToolPipeline {
                     return Err(OpenHarnessError::service("Confirmation channel closed"));
                 }
                 None => {
+                    let _ = self
+                        .approval_queue
+                        .remove_by_tool_call(&task.tool_call.tool_id)
+                        .await;
+                    self.append_permission_audit(
+                        &task,
+                        &permission_evaluation,
+                        Some(false),
+                        Some("Approval timeout".to_string()),
+                    )
+                    .await;
+
                     self.state_manager
                         .update_state(
                             &tool_id,
@@ -870,7 +1022,7 @@ impl ToolPipeline {
             None => execution_future.await?,
         };
 
-        if tool.supports_streaming() && tool_results.len() > 1 {
+        if tool.supports_streaming() && !tool_results.is_empty() {
             self.handle_streaming_results(task, &tool_results).await?;
         }
 
@@ -895,31 +1047,47 @@ impl ToolPipeline {
         let mut chunks_received = 0;
 
         for result in results {
-            if let FrameworkToolResult::StreamChunk {
-                data,
-                chunk_index: _,
-                is_final: _,
-            } = result
-            {
-                chunks_received += 1;
+            match result {
+                FrameworkToolResult::StreamChunk {
+                    data,
+                    chunk_index: _,
+                    is_final: _,
+                } => {
+                    chunks_received += 1;
 
-                // Update state
-                self.state_manager
-                    .update_state(
-                        &task.tool_call.tool_id,
-                        ToolExecutionState::Streaming {
-                            started_at: std::time::SystemTime::now(),
-                            chunks_received,
-                        },
-                    )
-                    .await;
+                    // Update state
+                    self.state_manager
+                        .update_state(
+                            &task.tool_call.tool_id,
+                            ToolExecutionState::Streaming {
+                                started_at: std::time::SystemTime::now(),
+                                chunks_received,
+                            },
+                        )
+                        .await;
 
-                // Send StreamChunk event
-                let _event_data = ToolEventData::StreamChunk {
-                    tool_id: task.tool_call.tool_id.clone(),
-                    tool_name: task.tool_call.tool_name.clone(),
-                    data: data.clone(),
-                };
+                    self.state_manager
+                        .emit_stream_chunk_event(task, data.clone(), chunks_received)
+                        .await;
+                }
+                FrameworkToolResult::Progress { content, .. } => {
+                    let message = content
+                        .get("message")
+                        .and_then(|value| value.as_str())
+                        .map(|value| value.to_string())
+                        .or_else(|| content.as_str().map(|value| value.to_string()))
+                        .unwrap_or_else(|| "Tool progress update".to_string());
+
+                    let percentage = content
+                        .get("percentage")
+                        .and_then(|value| value.as_f64())
+                        .unwrap_or(0.0) as f32;
+
+                    self.state_manager
+                        .emit_progress_event(task, message, percentage, content.clone())
+                        .await;
+                }
+                _ => {}
             }
         }
 
@@ -1049,9 +1217,22 @@ impl ToolPipeline {
             self.state_manager.update_task_arguments(tool_id, new_args);
         }
 
+        let task_after_update = self.state_manager.get_task(tool_id).ok_or_else(|| {
+            OpenHarnessError::NotFound(format!("Tool task not found after update: {}", tool_id))
+        })?;
+        let permission_evaluation = self.evaluate_permission_for_task(&task_after_update).await;
+
         // Get sender from map and send confirmation response
         if let Some((_, tx)) = self.confirmation_channels.remove(tool_id) {
             let _ = tx.send(ConfirmationResponse::Confirmed);
+            let _ = self.approval_queue.remove_by_tool_call(tool_id).await;
+            self.append_permission_audit(
+                &task_after_update,
+                &permission_evaluation,
+                Some(true),
+                Some("Approval confirmed".to_string()),
+            )
+            .await;
             info!("User confirmed tool execution: tool_id={}", tool_id);
             Ok(())
         } else {
@@ -1076,15 +1257,34 @@ impl ToolPipeline {
             )));
         }
 
+        let permission_evaluation = self.evaluate_permission_for_task(&task).await;
+
         // Get sender from map and send rejection response
         if let Some((_, tx)) = self.confirmation_channels.remove(tool_id) {
             let _ = tx.send(ConfirmationResponse::Rejected(reason.clone()));
+            let _ = self.approval_queue.remove_by_tool_call(tool_id).await;
+            self.append_permission_audit(
+                &task,
+                &permission_evaluation,
+                Some(false),
+                Some(format!("Approval rejected: {}", reason)),
+            )
+            .await;
             info!(
                 "User rejected tool execution: tool_id={}, reason={}",
                 tool_id, reason
             );
             Ok(())
         } else {
+            let _ = self.approval_queue.remove_by_tool_call(tool_id).await;
+            self.append_permission_audit(
+                &task,
+                &permission_evaluation,
+                Some(false),
+                Some(format!("Approval rejected without channel: {}", reason)),
+            )
+            .await;
+
             // If the channel does not exist, mark it as cancelled directly
             self.state_manager
                 .update_state(

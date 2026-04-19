@@ -94,6 +94,126 @@ impl ToolStateManager {
             .and_then(|slot| slot.clone())
     }
 
+    fn truncate_stream_text(raw: &str, max_chars: usize) -> String {
+        let mut truncated = raw.chars().take(max_chars).collect::<String>();
+        if raw.chars().count() > max_chars {
+            truncated.push_str("...");
+        }
+        truncated
+    }
+
+    async fn emit_agent_task_stream_chunk_event(
+        &self,
+        task: &ToolTask,
+        stream_type: &str,
+        payload: serde_json::Value,
+    ) {
+        let Some(task_id) = task
+            .context
+            .context_vars
+            .get("agent_task_id")
+            .map(|value| value.trim())
+            .filter(|value| !value.is_empty())
+            .map(AgentTaskId::from)
+        else {
+            return;
+        };
+
+        let Some(registry) = self.agent_task_registry() else {
+            return;
+        };
+
+        let _ = registry
+            .push_event(AgentTaskEvent::new(
+                task_id,
+                AgentTaskEventKind::ToolCallStreamChunk,
+                Some(format!(
+                    "Tool stream chunk ({}): {}",
+                    stream_type, task.tool_call.tool_name
+                )),
+                Some(serde_json::json!({
+                    "tool_call_id": task.tool_call.tool_id,
+                    "tool_name": task.tool_call.tool_name,
+                    "session_id": task.context.session_id,
+                    "dialog_turn_id": task.context.dialog_turn_id,
+                    "stream_type": stream_type,
+                    "payload": payload,
+                })),
+            ))
+            .await;
+    }
+
+    pub async fn emit_stream_chunk_event(
+        &self,
+        task: &ToolTask,
+        data: serde_json::Value,
+        chunk_index: usize,
+    ) {
+        let event_subagent_parent_info = task
+            .context
+            .subagent_parent_info
+            .clone()
+            .map(|info| info.into());
+        let event = AgenticEvent::ToolEvent {
+            session_id: task.context.session_id.clone(),
+            turn_id: task.context.dialog_turn_id.clone(),
+            tool_event: ToolEventData::StreamChunk {
+                tool_id: task.tool_call.tool_id.clone(),
+                tool_name: task.tool_call.tool_name.clone(),
+                data: data.clone(),
+            },
+            subagent_parent_info: event_subagent_parent_info,
+        };
+        let _ = self.event_queue.enqueue(event, None).await;
+
+        self.emit_agent_task_stream_chunk_event(
+            task,
+            "stream_chunk",
+            serde_json::json!({
+                "chunk_index": chunk_index,
+                "data": Self::sanitize_tool_result_for_event(&data),
+            }),
+        )
+        .await;
+    }
+
+    pub async fn emit_progress_event(
+        &self,
+        task: &ToolTask,
+        message: String,
+        percentage: f32,
+        raw: serde_json::Value,
+    ) {
+        let event_subagent_parent_info = task
+            .context
+            .subagent_parent_info
+            .clone()
+            .map(|info| info.into());
+        let event = AgenticEvent::ToolEvent {
+            session_id: task.context.session_id.clone(),
+            turn_id: task.context.dialog_turn_id.clone(),
+            tool_event: ToolEventData::Progress {
+                tool_id: task.tool_call.tool_id.clone(),
+                tool_name: task.tool_call.tool_name.clone(),
+                message: message.clone(),
+                percentage,
+            },
+            subagent_parent_info: event_subagent_parent_info,
+        };
+        let _ = self.event_queue.enqueue(event, None).await;
+
+        self.emit_agent_task_stream_chunk_event(
+            task,
+            "progress",
+            serde_json::json!({
+                "message": message,
+                "percentage": percentage,
+                "raw": Self::sanitize_tool_result_for_event(&raw),
+            }),
+        )
+        .await;
+    }
+
     fn is_patch_generating_tool(tool_name: &str) -> bool {
         matches!(
             tool_name.to_ascii_lowercase().as_str(),
@@ -313,6 +433,49 @@ impl ToolStateManager {
                 })),
             ))
             .await;
+    }
+
+    async fn emit_completed_stdout_stderr_chunks(
+        &self,
+        registry: &Arc<AgentTaskRegistry>,
+        task: &ToolTask,
+        task_id: &AgentTaskId,
+        result: &FrameworkToolResult,
+    ) {
+        let data = result.content();
+        let Some(obj) = data.as_object() else {
+            return;
+        };
+
+        for key in ["stdout", "stderr"] {
+            let Some(raw_text) = obj.get(key).and_then(|value| value.as_str()) else {
+                continue;
+            };
+            if raw_text.trim().is_empty() {
+                continue;
+            }
+
+            let content = Self::truncate_stream_text(raw_text, 4000);
+            let _ = registry
+                .push_event(AgentTaskEvent::new(
+                    task_id.clone(),
+                    AgentTaskEventKind::ToolCallStreamChunk,
+                    Some(format!(
+                        "Tool {} {} output captured",
+                        task.tool_call.tool_name, key
+                    )),
+                    Some(serde_json::json!({
+                        "tool_call_id": task.tool_call.tool_id,
+                        "tool_name": task.tool_call.tool_name,
+                        "session_id": task.context.session_id,
+                        "dialog_turn_id": task.context.dialog_turn_id,
+                        "stream_type": key,
+                        "content": content,
+                        "content_length": raw_text.len(),
+                    })),
+                ))
+                .await;
+        }
     }
 
     /// Create task
@@ -557,26 +720,40 @@ impl ToolStateManager {
             } => {
                 if matches!(
                     old_state,
-                    Some(ToolExecutionState::Running { .. })
-                        | Some(ToolExecutionState::Streaming { .. })
+                    Some(ToolExecutionState::Streaming { .. })
+                        | Some(ToolExecutionState::Running { .. })
                 ) {
-                    return;
+                    (
+                        AgentTaskEventKind::ToolCallStreamChunk,
+                        Some(format!(
+                            "Streaming chunk received: {}",
+                            task.tool_call.tool_name
+                        )),
+                        Some(serde_json::json!({
+                            "tool_call_id": task.tool_call.tool_id,
+                            "tool_name": task.tool_call.tool_name,
+                            "session_id": task.context.session_id,
+                            "dialog_turn_id": task.context.dialog_turn_id,
+                            "chunks_received": chunks_received,
+                        })),
+                    )
+                } else {
+                    (
+                        AgentTaskEventKind::ToolCallStarted,
+                        Some(format!(
+                            "Streaming tool started: {}",
+                            task.tool_call.tool_name
+                        )),
+                        Some(serde_json::json!({
+                            "tool_call_id": task.tool_call.tool_id,
+                            "tool_name": task.tool_call.tool_name,
+                            "session_id": task.context.session_id,
+                            "dialog_turn_id": task.context.dialog_turn_id,
+                            "input": task.tool_call.arguments,
+                            "chunks_received": chunks_received,
+                        })),
+                    )
                 }
-                (
-                    AgentTaskEventKind::ToolCallStarted,
-                    Some(format!(
-                        "Streaming tool started: {}",
-                        task.tool_call.tool_name
-                    )),
-                    Some(serde_json::json!({
-                        "tool_call_id": task.tool_call.tool_id,
-                        "tool_name": task.tool_call.tool_name,
-                        "session_id": task.context.session_id,
-                        "dialog_turn_id": task.context.dialog_turn_id,
-                        "input": task.tool_call.arguments,
-                        "chunks_received": chunks_received,
-                    })),
-                )
             }
             ToolExecutionState::AwaitingConfirmation { params, .. } => (
                 AgentTaskEventKind::ToolCallWaitingApproval,
@@ -647,6 +824,8 @@ impl ToolStateManager {
             .await;
 
         if let ToolExecutionState::Completed { result, .. } = &task.state {
+            self.emit_completed_stdout_stderr_chunks(&registry, task, &task_id, result)
+                .await;
             self.mirror_tool_patches(&registry, task, &task_id, result)
                 .await;
         }
@@ -959,6 +1138,85 @@ mod tests {
             .filter(|event| matches!(event.kind, AgentTaskEventKind::ToolCallStarted))
             .count();
         assert_eq!(start_count, 1);
+
+        let _ = tokio::fs::remove_file(snapshot_file).await;
+    }
+
+    #[tokio::test]
+    async fn completed_result_emits_stdout_and_stderr_stream_chunks() {
+        let snapshot_file = std::env::temp_dir().join(format!(
+            "openharness-agent-tool-events-stdout-stderr-{}.json",
+            uuid::Uuid::new_v4()
+        ));
+        let registry = Arc::new(AgentTaskRegistry::new(snapshot_file.clone()));
+        let task_snapshot = registry
+            .create_task(build_task_config(), AgentTaskKind::Background)
+            .await;
+
+        let manager = ToolStateManager::new(Arc::new(EventQueue::new(EventQueueConfig::default())));
+        manager.set_agent_task_registry(Arc::clone(&registry));
+
+        manager
+            .create_task(build_tool_task_with(
+                &task_snapshot.task_id,
+                "call_bash_1",
+                "Bash",
+                serde_json::json!({"command": "echo hi"}),
+                None,
+            ))
+            .await;
+
+        manager
+            .update_state(
+                "call_bash_1",
+                ToolExecutionState::Running {
+                    started_at: std::time::SystemTime::now(),
+                    progress: None,
+                },
+            )
+            .await;
+
+        manager
+            .update_state(
+                "call_bash_1",
+                ToolExecutionState::Completed {
+                    result: FrameworkToolResult::Result {
+                        data: serde_json::json!({
+                            "stdout": "stdout line\n",
+                            "stderr": "stderr line\n",
+                            "exit_code": 0
+                        }),
+                        result_for_assistant: Some("bash done".to_string()),
+                        image_attachments: None,
+                    },
+                    duration_ms: 42,
+                },
+            )
+            .await;
+
+        let events = registry.events(&task_snapshot.task_id).await.unwrap();
+        let stream_chunks = events
+            .iter()
+            .filter(|event| matches!(event.kind, AgentTaskEventKind::ToolCallStreamChunk))
+            .collect::<Vec<_>>();
+
+        assert_eq!(stream_chunks.len(), 2);
+        assert!(stream_chunks.iter().any(|event| {
+            event
+                .data
+                .as_ref()
+                .and_then(|data| data.get("stream_type"))
+                .and_then(|value| value.as_str())
+                == Some("stdout")
+        }));
+        assert!(stream_chunks.iter().any(|event| {
+            event
+                .data
+                .as_ref()
+                .and_then(|data| data.get("stream_type"))
+                .and_then(|value| value.as_str())
+                == Some("stderr")
+        }));
 
         let _ = tokio::fs::remove_file(snapshot_file).await;
     }
