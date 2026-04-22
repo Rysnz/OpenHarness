@@ -1,153 +1,196 @@
-**中文**  [English](README.md)
+**中文** | [English](./README.md)
 
-<div align="center">
+# OpenHarness
 
-![OpenHarness](./png/OpenHarness_title.png)
+OpenHarness 是一个面向 AI Agent 的跨平台桌面工作台。
 
-</div>
-<div align="center">
+它把 Tauri 桌面壳、React 前端、移动端配对页面，以及负责 Agent 执行、工具调用、权限控制、终端能力和远程控制的 Rust 核心整合在同一个仓库里。
 
-[![GitHub release](https://img.shields.io/github/v/release/GCWing/OpenHarness?style=flat-square&color=blue)](https://github.com/GCWing/OpenHarness/releases)
-[![Website](https://img.shields.io/badge/Website-openopenharness.com-6f42c1?style=flat-square)](https://openopenharness.com/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](https://github.com/GCWing/OpenHarness/blob/main/LICENSE)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square)](https://github.com/GCWing/OpenHarness)
+## 仓库内容
 
-</div>
+这个仓库是一个 monorepo，主要由四层组成：
 
----
+- `src/apps/desktop`：Tauri 桌面应用
+- `src/web-ui`：桌面应用使用的 React 主界面
+- `src/mobile-web`：移动端浏览器配对与遥控入口
+- `src/crates/*`：Rust 核心服务与共享库，包括 agent runtime
 
-## 简介
+辅助目录：
 
-OpenHarness 是一个Agentic OS，更是你亲密无间的伙伴。
+- `scripts`：构建、打包、引导脚本
+- `tests/e2e`：端到端测试
+- `OpenHarness-Installer`：安装包工程
+- `docs`：补充文档
 
-它将能够通过手机、手表、桌面机器人等多样的方式进行交互，它在你的生活中无处不在，它会根据你来进行自我迭代。
+## 主要能力
 
-![first_screen_screenshot](./png/first_screen_screenshot_CN.png)
+- 基于 Tauri 的桌面应用
+- React + TypeScript 主界面
+- Rust Agent 执行引擎与工具调用链路
+- 自定义 Agent 与权限配置
+- Shell 风险分析与审批流程
+- 编辑器、Git、终端、LSP 相关能力
+- 移动端配对和远程控制入口
+- Windows、macOS、Linux 多平台打包
 
----
+## 环境要求
 
-## 远程遥控
+本地构建前请准备：
 
-扫码配对，手机即刻变成桌面 Agent 的远程指挥中心。一条消息，桌面上的 AI 立刻开始工作。
+- Node.js 18 及以上
+- `pnpm`
+- Rust stable toolchain
+- 当前平台对应的 Tauri 依赖
 
-除手机浏览器扫码外，也支持接入 Telegram / 飞书 Bot/ 微信 Bot 远程下达指令，并实时查看 Agent 的执行进度。
+建议：
 
-## 双模式协同
-
-OpenHarness 提供两种模式，适配不同场景需求：
-
-- **伙伴模式（Assistant Mode）**：有温度，记住偏好，具备长期记忆。适合持续协作类任务，如维护项目、延续你的审美与工作习惯。
-- **专业模式（Professional Mode）**：省 token，直达执行，干净上下文。适合即时执行类任务，如修一个 bug、改一处样式。
-
----
-
-## Agent 体系
-
-
-| Agent            | 定位         | 核心能力                                                                    |
-| ---------------- | ---------- | ----------------------------------------------------------------------- |
-| **个人伙伴**         | 你专属的 AI 伙伴 | 长期记忆、个性设定；按需调度 Code / Cowork / 自定义 Agent，并可自我迭代成长                       |
-| **Code Agent**   | 代码代理       | 四种模式：Agentic（自主读改跑验证）/ Plan（先规划后执行）/ Debug（插桩取证→根因定位）/ Review（基于仓库规范审查） |
-| **Cowork Agent** | 知识工作代理     | 内置 PDF / DOCX / XLSX / PPTX 处理，可从 Skill 市场按需获取和扩展能力包                    |
-| **自定义 Agent**    | 垂域专家       | 通过 Markdown 快速定义专属领域 Agent                                              |
-
-
-## 生态扩展
-
-> 它会自己成长。
-
-支持 Skill、MCP（包含MCP App）、自定义Agent，此外还支持即用即生的Mini App（从一句需求生成可运行界面，并可一键打包成桌面应用）
-
----
-
-## 平台支持
-
-项目采用tauri，支持Windows、macOS、Linux，同时支持移动控制手机浏览器、Telegram、飞书、微信等。
-
----
+- Windows 环境安装最新版 Visual Studio C++ Build Tools
+- 如果经常做 release 构建，建议安装 `sccache`
 
 ## 快速开始
 
-### 直接下载使用
-
-在 [Releases](https://github.com/GCWing/OpenHarness/releases) 页面下载最新桌面端安装包，安装后配置模型即可开始使用。
-
-### 从源码构建
-
-**前置依赖：**
-
-- [Node.js](https://nodejs.org/)（推荐 LTS 版本）
-- [pnpm](https://pnpm.io/)
-- [Rust 工具链](https://rustup.rs/)
-- [Tauri 前置依赖](https://v2.tauri.app/start/prerequisites/)（桌面端开发需要）
-
-**运行指令：**
+安装依赖：
 
 ```bash
-# 安装依赖
 pnpm install
+```
 
-# 以开发模式运行桌面端
+开发模式启动桌面端：
+
+```bash
 pnpm run desktop:dev
+```
 
-# 构建桌面端
+只启动 Web 界面：
+
+```bash
+pnpm run dev:web
+```
+
+## 常用命令
+
+构建 Web 界面：
+
+```bash
+pnpm run build:web
+```
+
+构建桌面端：
+
+```bash
 pnpm run desktop:build
 ```
 
-### Windows 交付构建
-
-如果你要在 Windows 上生成可交付的 `exe`，推荐直接使用：
+构建 Windows 发布用 `exe`：
 
 ```bash
 pnpm run desktop:build:exe
 ```
 
-产物路径：
+其他常用命令：
+
+```bash
+pnpm run desktop:build:nsis
+pnpm run desktop:build:release-fast
+pnpm run cli:check
+pnpm run cli:test
+pnpm run e2e:test:smoke
+```
+
+## 交付构建说明
+
+最近项目收尾阶段主要使用的 Windows 交付构建命令是：
+
+```bash
+pnpm run desktop:build:exe
+```
+
+主要产物：
 
 - `target/release/openharness-desktop.exe`
 
 这条命令会：
 
-- 构建 `web-ui` 和 `mobile-web`
-- 触发 Tauri 桌面端 release 构建
+- 构建 `src/web-ui`
+- 准备 `src/mobile-web`
+- 触发 Tauri release 构建
 - 复用 OpenSSL 缓存
 - 在本机可用时自动启用 `sccache`
 
-推荐做法：
+需要注意：
 
-1. 不要在每次构建前手动删除 `target/`，重复交付构建会明显受益于 Cargo 和 `sccache` 的复用。
-2. 只需要 Windows 可执行文件时，优先使用 `pnpm run desktop:build:exe`，这样可以避免额外的打包步骤。
-3. 只有在确实需要完全干净重编译时，再清理 `target/`。
+- 第一次 release 构建会明显更慢
+- 保留 `target/` 能让后续重复构建更快
+- Windows 下磁盘空间不足会在链接阶段直接导致失败
+- 如果出现 `no space on device`，优先清理 `target/debug` 或旧的自定义 profile 产物
 
-### 构建说明
+## 最近收尾完成的事项
 
-- 第一次 release 构建明显慢于后续重复构建，属于正常现象。
-- 如果 `sccache` 是通过 WinGet 安装的，当前构建脚本会自动识别并启用。
-- 如果构建过程中出现 `no space on device`、磁盘空间不足之类的问题，优先清理旧的 `target/debug` 或不再使用的 profile 产物，再重新构建。
-- 桌面端启动链路已经改为按需初始化 miniapp worker，减少了应用启动时不必要的预热开销。
+最近这轮项目收尾主要完成了：
 
-更多详情请参阅[贡献指南](./CONTRIBUTING_CN.md)。
+- Windows 桌面启动链路清理
+- 减少 miniapp worker 的启动期无效预热
+- 交付构建 profile 调整
+- 在桌面构建脚本中接入 `sccache`
+- 补充可复用的构建说明文档
 
----
+## 测试
 
-## 贡献
+Rust 检查：
 
-欢迎大家贡献好的创意和代码，我们对 AI 生成代码抱有最大的接纳程度。请 PR 优先提交至 `dev` 分支，我们会定期审视后同步到主干。
+```bash
+cargo check -p openharness-desktop
+cargo test -p openharness-core agentic
+```
 
-**我们重点关注的贡献方向：**
+Web 类型检查：
 
-1. 贡献好的想法 / 创意（功能、交互、视觉等），提交 Issue
-2. 优化 Agent 系统和效果
-3. 提升系统稳定性和完善基础能力
-4. 扩展生态（Skill、MCP、LSP 插件，或对某些垂域开发场景的更好支持）
+```bash
+pnpm run type-check:web
+```
 
----
+基础烟测：
 
-## 声明
+```bash
+pnpm run e2e:test:smoke
+```
 
-1. 本项目为业余时间探索、研究构建下一代人机协同交互，非商用盈利项目。
-2. 本项目 97%+ 由 Vibe Coding 完成，代码问题也欢迎指正，可通过 AI 进行重构优化。
-3. 本项目依赖和参考了众多开源软件，感谢所有开源作者。**如侵犯您的相关权益请联系我们整改。**
+## 仓库结构
 
----
+```text
+OpenHarness-V2/
+  src/
+    apps/
+      cli/
+      desktop/
+      relay-server/
+      server/
+    crates/
+      api-layer/
+      core/
+      events/
+      transport/
+      webdriver/
+    mobile-web/
+    web-ui/
+  scripts/
+  tests/e2e/
+  OpenHarness-Installer/
+```
 
+## 参与贡献
+
+如果你准备参与开发，建议先看：
+
+1. [CONTRIBUTING.md](./CONTRIBUTING.md)
+2. [CONTRIBUTING_CN.md](./CONTRIBUTING_CN.md)
+
+提交时建议附上：
+
+- 改动范围
+- 验证命令
+- 桌面端或 Web 端的影响说明
+
+## 许可证
+
+本项目采用 [MIT License](./LICENSE)。
