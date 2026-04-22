@@ -21,14 +21,6 @@ It aims to feel less like "asking an assistant for one answer" and more like liv
 
 ![OpenHarness Screenshot](./png/first_screen_screenshot.png)
 
-## Why It Exists
-
-Most AI products are still shaped like short conversations.
-
-OpenHarness takes a different path. It treats the agent as something that belongs inside your working environment: close to your files, your terminal, your editor, your long-running tasks, and even your phone when you are away from the desk.
-
-The result is a more persistent, more operational, and more personal AI workspace.
-
 ## What It Feels Like
 
 - A companion when you want continuity, memory, and style
@@ -87,56 +79,73 @@ OpenHarness is built for:
 
 The main experience is desktop-first, with mobile web used for pairing and remote control.
 
-## For Builders
+## Getting OpenHarness
 
-If you want to run or build the project locally, here are the fastest entry points.
+### Windows
 
-### Prerequisites
+- Download the latest Windows release from [Releases](https://github.com/GCWing/OpenHarness/releases)
+- Or build locally:
 
-- Node.js 18+
-- `pnpm`
-- Rust stable
-- Tauri prerequisites for your platform
+```bash
+pnpm install
+pnpm run desktop:build:exe
+```
 
-### Run In Development
+- Installer build:
+
+```bash
+pnpm run desktop:build:nsis
+```
+
+### macOS
+
+- Download the latest macOS release from [Releases](https://github.com/GCWing/OpenHarness/releases)
+- Or build locally on macOS:
+
+```bash
+pnpm install
+pnpm run desktop:build:arm64
+```
+
+For Intel Macs:
+
+```bash
+pnpm run desktop:build:x86_64
+```
+
+### Linux
+
+- Download the latest Linux release from [Releases](https://github.com/GCWing/OpenHarness/releases)
+- Or build locally on Linux:
+
+```bash
+pnpm install
+pnpm run desktop:build:linux
+```
+
+Package-specific builds:
+
+```bash
+pnpm run desktop:build:linux:deb
+pnpm run desktop:build:linux:rpm
+pnpm run desktop:build:linux:appimage
+```
+
+## For Developers
+
+If you want to run the project in development mode:
 
 ```bash
 pnpm install
 pnpm run desktop:dev
 ```
 
-### Build The Desktop App
+Requirements:
 
-```bash
-pnpm run desktop:build
-```
-
-### Build A Windows Release Executable
-
-```bash
-pnpm run desktop:build:exe
-```
-
-Output:
-
-- `target/release/openharness-desktop.exe`
-
-## A Note On Delivery Builds
-
-Release builds are intentionally optimized for shipping, so the first full build can take a while. Repeated builds get much faster when existing artifacts are preserved.
-
-The current Windows delivery pipeline also auto-detects `sccache` when available, which helps repeated release builds.
-
-## Repository At A Glance
-
-```text
-src/apps/desktop   Tauri desktop app
-src/web-ui         Main React interface
-src/mobile-web     Mobile pairing and remote control UI
-src/crates/*       Rust core, runtime, transport, events, services
-tests/e2e          End-to-end tests
-scripts            Build and packaging scripts
-```
+- Node.js 18+
+- `pnpm`
+- Rust stable
+- Tauri prerequisites for your platform
 
 ## Contributing
 

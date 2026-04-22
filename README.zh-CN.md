@@ -21,14 +21,6 @@ OpenHarness 是一个面向 AI Agent 的桌面工作台。
 
 ![OpenHarness 截图](./png/first_screen_screenshot_CN.png)
 
-## 为什么做它
-
-大多数 AI 产品，今天仍然更像一段短对话。
-
-OpenHarness 想走另一条路。它把 Agent 当成工作环境中的常驻角色，而不是一次请求后的临时回应。它应该靠近你的桌面、项目、运行时、终端、文档，以及你离开电脑后仍然能触达它的手机。
-
-这让它更像一个持续协作的系统，而不是一个只会回复文本的界面。
-
 ## 它想带来的体验
 
 - 当你需要延续性时，它像一个真正熟悉你的伙伴
@@ -87,56 +79,73 @@ OpenHarness 面向：
 
 主体验以桌面端为核心，移动端主要负责配对和遥控。
 
-## 如果你想运行它
+## 获取 OpenHarness
 
-如果你想本地体验或参与构建，最短路径如下。
+### Windows
 
-### 环境要求
+- 直接从 [Releases](https://github.com/GCWing/OpenHarness/releases) 下载最新 Windows 版本
+- 或者在本地构建：
 
-- Node.js 18+
-- `pnpm`
-- Rust stable
-- 当前平台对应的 Tauri 依赖
+```bash
+pnpm install
+pnpm run desktop:build:exe
+```
 
-### 开发模式启动
+- 如果你需要安装包：
+
+```bash
+pnpm run desktop:build:nsis
+```
+
+### macOS
+
+- 直接从 [Releases](https://github.com/GCWing/OpenHarness/releases) 下载最新 macOS 版本
+- 或者在 macOS 本机构建：
+
+```bash
+pnpm install
+pnpm run desktop:build:arm64
+```
+
+Intel Mac 可以使用：
+
+```bash
+pnpm run desktop:build:x86_64
+```
+
+### Linux
+
+- 直接从 [Releases](https://github.com/GCWing/OpenHarness/releases) 下载最新 Linux 版本
+- 或者在 Linux 本机构建：
+
+```bash
+pnpm install
+pnpm run desktop:build:linux
+```
+
+如果你需要特定格式：
+
+```bash
+pnpm run desktop:build:linux:deb
+pnpm run desktop:build:linux:rpm
+pnpm run desktop:build:linux:appimage
+```
+
+## 给开发者的入口
+
+如果你想在本地以开发模式运行：
 
 ```bash
 pnpm install
 pnpm run desktop:dev
 ```
 
-### 构建桌面端
+环境要求：
 
-```bash
-pnpm run desktop:build
-```
-
-### 构建 Windows 发布版 `exe`
-
-```bash
-pnpm run desktop:build:exe
-```
-
-产物：
-
-- `target/release/openharness-desktop.exe`
-
-## 关于交付构建
-
-Release 构建本来就偏重交付质量，所以第一次完整构建会比较慢。只要保留已有构建产物，后续重复构建会快很多。
-
-当前 Windows 交付构建链路也会在本机存在 `sccache` 时自动启用它，用来加速重复 release 构建。
-
-## 仓库结构一览
-
-```text
-src/apps/desktop   Tauri 桌面应用
-src/web-ui         React 主界面
-src/mobile-web     移动端配对与遥控界面
-src/crates/*       Rust 核心、runtime、transport、events、services
-tests/e2e          端到端测试
-scripts            构建与打包脚本
-```
+- Node.js 18+
+- `pnpm`
+- Rust stable
+- 当前平台对应的 Tauri 依赖
 
 ## 参与贡献
 
