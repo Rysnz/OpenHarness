@@ -1,192 +1,152 @@
 [中文](./README.zh-CN.md) | **English**
 
-# OpenHarness
+<div align="center">
 
-OpenHarness is a cross-platform desktop workspace for running and managing AI agents.
+![OpenHarness](./png/OpenHarness_title.png)
 
-It combines a Tauri desktop shell, a React-based web UI, a mobile pairing experience, and a Rust core that handles agent execution, tools, permissions, terminal workflows, and remote control features.
+[![GitHub release](https://img.shields.io/github/v/release/GCWing/OpenHarness?style=flat-square&color=blue)](https://github.com/GCWing/OpenHarness/releases)
+[![Website](https://img.shields.io/badge/Website-openopenharness.com-6f42c1?style=flat-square)](https://openopenharness.com/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](./LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square)](https://github.com/GCWing/OpenHarness)
 
-## What This Repository Contains
+</div>
 
-This repository is a monorepo with four main layers:
+## OpenHarness
 
-- `src/apps/desktop`: the Tauri desktop application
-- `src/web-ui`: the main React frontend used by the desktop app
-- `src/mobile-web`: the browser-based mobile companion and pairing flow
-- `src/crates/*`: Rust services and shared core libraries, including the agent runtime
+OpenHarness is a desktop home for AI agents.
 
-Supporting directories:
+It is designed for people who want more than a chat box: a workspace where agents can think, act, run tools, edit code, work through files, stay in context, and keep going across sessions.
 
-- `scripts`: build, packaging, and bootstrap scripts
-- `tests/e2e`: end-to-end tests
-- `OpenHarness-Installer`: installer packaging project
-- `docs`: project documentation and supporting material
+It aims to feel less like "asking an assistant for one answer" and more like living beside an evolving system that can help with real work every day.
 
-## Core Capabilities
+![OpenHarness Screenshot](./png/first_screen_screenshot.png)
 
-- Desktop application built with Tauri
-- React + TypeScript web UI
-- Rust agent runtime with tool execution pipeline
-- Custom agent definitions and permissions
-- Shell risk analysis and approval flow
-- Embedded editor, Git workflows, terminal integration, and LSP-related tooling
-- Mobile web pairing and remote control entrypoints
-- Cross-platform packaging for Windows, macOS, and Linux
+## Why It Exists
 
-## Requirements
+Most AI products are still shaped like short conversations.
 
-Before building locally, make sure you have:
+OpenHarness takes a different path. It treats the agent as something that belongs inside your working environment: close to your files, your terminal, your editor, your long-running tasks, and even your phone when you are away from the desk.
 
-- Node.js 18 or newer
+The result is a more persistent, more operational, and more personal AI workspace.
+
+## What It Feels Like
+
+- A companion when you want continuity, memory, and style
+- An execution-first agent when you want something done
+- A desktop control center for code, documents, terminals, and tools
+- A remotely reachable system you can wake up from your phone
+
+## Core Experience
+
+### Agentic Desktop
+
+OpenHarness centers the experience around a desktop app, not a browser tab you forget to come back to. The desktop becomes the place where agents can actually work with context, files, tools, and runtime state.
+
+### Dual Working Modes
+
+- **Assistant Mode**: warmer, longer-memory, preference-aware, better for ongoing collaboration
+- **Professional Mode**: cleaner, leaner, more execution-focused, better for immediate tasks
+
+### Remote Control
+
+Pair a phone by scanning a QR code and use it as a command center for the desktop agent. OpenHarness also supports remote command flows through channels such as Telegram, Feishu, and WeChat bots.
+
+### Real Tools, Not Just Text
+
+OpenHarness is built around the idea that useful agents need more than words. It brings together terminals, editors, Git workflows, files, structured tools, and an agent runtime that can coordinate them.
+
+## Agent Lineup
+
+| Agent | Role | What It Is Good At |
+| --- | --- | --- |
+| Personal Assistant | Your long-term companion | Memory, personal preferences, ongoing collaboration, orchestration |
+| Code Agent | Engineering work | Planning, editing, debugging, reviewing, running tools and verification |
+| Cowork Agent | Knowledge work | Documents, office files, structured workflows, expandable capabilities |
+| Custom Agent | Specialist roles | Domain-specific behavior defined around your own needs |
+
+## Ecosystem
+
+OpenHarness is meant to grow.
+
+It supports:
+
+- Skills
+- MCP and MCP-based app integrations
+- Custom agents
+- Mini apps generated from requirements into runnable interfaces
+
+The goal is not only to ship one agent, but to support an environment where many kinds of agents and capabilities can live together.
+
+## Platform Support
+
+OpenHarness is built for:
+
+- Windows
+- macOS
+- Linux
+
+The main experience is desktop-first, with mobile web used for pairing and remote control.
+
+## For Builders
+
+If you want to run or build the project locally, here are the fastest entry points.
+
+### Prerequisites
+
+- Node.js 18+
 - `pnpm`
-- Rust stable toolchain
-- Tauri system prerequisites for your platform
+- Rust stable
+- Tauri prerequisites for your platform
 
-Recommended:
-
-- Windows developers should install the current Visual Studio C++ build tools
-- If you build release artifacts often, installing `sccache` is worthwhile
-
-## Getting Started
-
-Install dependencies:
+### Run In Development
 
 ```bash
 pnpm install
-```
-
-Run the desktop app in development mode:
-
-```bash
 pnpm run desktop:dev
 ```
 
-Run the web UI only:
-
-```bash
-pnpm run dev:web
-```
-
-## Common Commands
-
-Build the web UI:
-
-```bash
-pnpm run build:web
-```
-
-Build the desktop app:
+### Build The Desktop App
 
 ```bash
 pnpm run desktop:build
 ```
 
-Build a Windows release executable without extra bundling:
+### Build A Windows Release Executable
 
 ```bash
 pnpm run desktop:build:exe
 ```
 
-Useful alternatives:
-
-```bash
-pnpm run desktop:build:nsis
-pnpm run desktop:build:release-fast
-pnpm run cli:check
-pnpm run cli:test
-pnpm run e2e:test:smoke
-```
-
-## Release Build Notes
-
-The Windows `exe` delivery path used during recent project closeout is:
-
-```bash
-pnpm run desktop:build:exe
-```
-
-Primary output:
+Output:
 
 - `target/release/openharness-desktop.exe`
 
-What this command does:
+## A Note On Delivery Builds
 
-- builds `src/web-ui`
-- prepares `src/mobile-web`
-- runs the Tauri release build
-- reuses cached OpenSSL bootstrap assets
-- enables `sccache` automatically when available
+Release builds are intentionally optimized for shipping, so the first full build can take a while. Repeated builds get much faster when existing artifacts are preserved.
 
-Important build behavior:
+The current Windows delivery pipeline also auto-detects `sccache` when available, which helps repeated release builds.
 
-- The first release build is much slower than later builds
-- Repeated builds are faster when `target/` is kept intact
-- On Windows, low disk space can break release linking long before the final artifact is produced
-- If you see `no space on device`, clear old build outputs such as `target/debug` or stale custom profiles
-
-## Recent Project Closeout Work
-
-The latest repository cleanup and stabilization work included:
-
-- desktop startup path cleanup on Windows
-- avoiding unnecessary eager miniapp worker startup
-- release build profile tuning for delivery builds
-- `sccache` integration in the desktop build script
-- README updates for repeatable local packaging
-
-## Testing
-
-Rust checks:
-
-```bash
-cargo check -p openharness-desktop
-cargo test -p openharness-core agentic
-```
-
-Web type check:
-
-```bash
-pnpm run type-check:web
-```
-
-Smoke-level end-to-end test:
-
-```bash
-pnpm run e2e:test:smoke
-```
-
-## Repository Layout
+## Repository At A Glance
 
 ```text
-OpenHarness-V2/
-  src/
-    apps/
-      cli/
-      desktop/
-      relay-server/
-      server/
-    crates/
-      api-layer/
-      core/
-      events/
-      transport/
-      webdriver/
-    mobile-web/
-    web-ui/
-  scripts/
-  tests/e2e/
-  OpenHarness-Installer/
+src/apps/desktop   Tauri desktop app
+src/web-ui         Main React interface
+src/mobile-web     Mobile pairing and remote control UI
+src/crates/*       Rust core, runtime, transport, events, services
+tests/e2e          End-to-end tests
+scripts            Build and packaging scripts
 ```
 
 ## Contributing
 
-If you plan to contribute:
+If you want to contribute, start here:
 
-1. Read [CONTRIBUTING.md](./CONTRIBUTING.md)
-2. Keep changes focused and easy to review
-3. Prefer reproducible commands in PR descriptions
-4. Include validation notes for desktop, web, or Rust changes as appropriate
+- [CONTRIBUTING.md](./CONTRIBUTING.md)
+- [CONTRIBUTING_CN.md](./CONTRIBUTING_CN.md)
+
+Good contributions are not limited to code. Product ideas, interaction design, workflow improvements, agent capabilities, and ecosystem extensions all matter here.
 
 ## License
 
-This project is released under the [MIT License](./LICENSE).
+OpenHarness is released under the [MIT License](./LICENSE).

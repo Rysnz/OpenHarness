@@ -1,196 +1,152 @@
 **中文** | [English](./README.md)
 
-# OpenHarness
+<div align="center">
 
-OpenHarness 是一个面向 AI Agent 的跨平台桌面工作台。
+![OpenHarness](./png/OpenHarness_title.png)
 
-它把 Tauri 桌面壳、React 前端、移动端配对页面，以及负责 Agent 执行、工具调用、权限控制、终端能力和远程控制的 Rust 核心整合在同一个仓库里。
+[![GitHub release](https://img.shields.io/github/v/release/GCWing/OpenHarness?style=flat-square&color=blue)](https://github.com/GCWing/OpenHarness/releases)
+[![Website](https://img.shields.io/badge/Website-openopenharness.com-6f42c1?style=flat-square)](https://openopenharness.com/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](./LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square)](https://github.com/GCWing/OpenHarness)
 
-## 仓库内容
+</div>
 
-这个仓库是一个 monorepo，主要由四层组成：
+## OpenHarness 是什么
 
-- `src/apps/desktop`：Tauri 桌面应用
-- `src/web-ui`：桌面应用使用的 React 主界面
-- `src/mobile-web`：移动端浏览器配对与遥控入口
-- `src/crates/*`：Rust 核心服务与共享库，包括 agent runtime
+OpenHarness 是一个面向 AI Agent 的桌面工作台。
 
-辅助目录：
+它不是把 Agent 塞进一个聊天框里，而是把 Agent 放进真正的工作环境里: 文件、终端、编辑器、工具调用、长期上下文、移动端遥控，这些都属于它的日常场景。
 
-- `scripts`：构建、打包、引导脚本
-- `tests/e2e`：端到端测试
-- `OpenHarness-Installer`：安装包工程
-- `docs`：补充文档
+它想做的，不是“一次性回答问题的助手”，而是一个能长期陪你工作、持续执行任务、逐步长成你自己的 Agent 系统。
 
-## 主要能力
+![OpenHarness 截图](./png/first_screen_screenshot_CN.png)
 
-- 基于 Tauri 的桌面应用
-- React + TypeScript 主界面
-- Rust Agent 执行引擎与工具调用链路
-- 自定义 Agent 与权限配置
-- Shell 风险分析与审批流程
-- 编辑器、Git、终端、LSP 相关能力
-- 移动端配对和远程控制入口
-- Windows、macOS、Linux 多平台打包
+## 为什么做它
 
-## 环境要求
+大多数 AI 产品，今天仍然更像一段短对话。
 
-本地构建前请准备：
+OpenHarness 想走另一条路。它把 Agent 当成工作环境中的常驻角色，而不是一次请求后的临时回应。它应该靠近你的桌面、项目、运行时、终端、文档，以及你离开电脑后仍然能触达它的手机。
 
-- Node.js 18 及以上
+这让它更像一个持续协作的系统，而不是一个只会回复文本的界面。
+
+## 它想带来的体验
+
+- 当你需要延续性时，它像一个真正熟悉你的伙伴
+- 当你需要效率时，它像一个直接开始干活的执行型 Agent
+- 当你在桌面工作时，它像一个统一调度代码、文件、工具和终端的控制中心
+- 当你不在桌前时，它仍然可以被手机唤醒和遥控
+
+## 核心体验
+
+### Agentic Desktop
+
+OpenHarness 以桌面端为中心，而不是一个随手开随手关的网页标签页。桌面应用才是 Agent 真正工作的地方: 有上下文、有文件、有工具、有状态，也有持续性。
+
+### 双模式协作
+
+- **Assistant Mode**：更有陪伴感，更强调记忆、偏好与长期协作
+- **Professional Mode**：更克制、更直接、更偏执行，适合快速完成具体任务
+
+### 远程控制
+
+扫描二维码后，手机就能成为桌面 Agent 的遥控入口。除了移动端浏览器，OpenHarness 也支持通过 Telegram、飞书、微信等通道发起远程指令。
+
+### 不只是聊天
+
+OpenHarness 的出发点很明确: 有用的 Agent 不能只会说话。它需要真的接入终端、编辑器、Git、文件系统、结构化工具和执行链路，能够把事情推进下去。
+
+## Agent 阵列
+
+| Agent | 定位 | 擅长的事情 |
+| --- | --- | --- |
+| Personal Assistant | 你的长期伙伴 | 记忆、偏好、持续协作、调度能力 |
+| Code Agent | 工程执行者 | 规划、改代码、调试、审查、跑工具和验证 |
+| Cowork Agent | 知识工作助手 | 文档、办公文件、结构化处理、能力扩展 |
+| Custom Agent | 定制专家 | 为特定场景定义专属能力和行为 |
+
+## 生态方向
+
+OpenHarness 不想只停在一个内置 Agent 上。
+
+它支持：
+
+- Skills
+- MCP 与基于 MCP 的应用集成
+- 自定义 Agent
+- 从需求生成可运行界面的 Mini App
+
+目标不是只做一个“会聊天的产品”，而是做一个能持续长出新能力的 Agent 环境。
+
+## 平台支持
+
+OpenHarness 面向：
+
+- Windows
+- macOS
+- Linux
+
+主体验以桌面端为核心，移动端主要负责配对和遥控。
+
+## 如果你想运行它
+
+如果你想本地体验或参与构建，最短路径如下。
+
+### 环境要求
+
+- Node.js 18+
 - `pnpm`
-- Rust stable toolchain
+- Rust stable
 - 当前平台对应的 Tauri 依赖
 
-建议：
-
-- Windows 环境安装最新版 Visual Studio C++ Build Tools
-- 如果经常做 release 构建，建议安装 `sccache`
-
-## 快速开始
-
-安装依赖：
+### 开发模式启动
 
 ```bash
 pnpm install
-```
-
-开发模式启动桌面端：
-
-```bash
 pnpm run desktop:dev
 ```
 
-只启动 Web 界面：
-
-```bash
-pnpm run dev:web
-```
-
-## 常用命令
-
-构建 Web 界面：
-
-```bash
-pnpm run build:web
-```
-
-构建桌面端：
+### 构建桌面端
 
 ```bash
 pnpm run desktop:build
 ```
 
-构建 Windows 发布用 `exe`：
+### 构建 Windows 发布版 `exe`
 
 ```bash
 pnpm run desktop:build:exe
 ```
 
-其他常用命令：
-
-```bash
-pnpm run desktop:build:nsis
-pnpm run desktop:build:release-fast
-pnpm run cli:check
-pnpm run cli:test
-pnpm run e2e:test:smoke
-```
-
-## 交付构建说明
-
-最近项目收尾阶段主要使用的 Windows 交付构建命令是：
-
-```bash
-pnpm run desktop:build:exe
-```
-
-主要产物：
+产物：
 
 - `target/release/openharness-desktop.exe`
 
-这条命令会：
+## 关于交付构建
 
-- 构建 `src/web-ui`
-- 准备 `src/mobile-web`
-- 触发 Tauri release 构建
-- 复用 OpenSSL 缓存
-- 在本机可用时自动启用 `sccache`
+Release 构建本来就偏重交付质量，所以第一次完整构建会比较慢。只要保留已有构建产物，后续重复构建会快很多。
 
-需要注意：
+当前 Windows 交付构建链路也会在本机存在 `sccache` 时自动启用它，用来加速重复 release 构建。
 
-- 第一次 release 构建会明显更慢
-- 保留 `target/` 能让后续重复构建更快
-- Windows 下磁盘空间不足会在链接阶段直接导致失败
-- 如果出现 `no space on device`，优先清理 `target/debug` 或旧的自定义 profile 产物
-
-## 最近收尾完成的事项
-
-最近这轮项目收尾主要完成了：
-
-- Windows 桌面启动链路清理
-- 减少 miniapp worker 的启动期无效预热
-- 交付构建 profile 调整
-- 在桌面构建脚本中接入 `sccache`
-- 补充可复用的构建说明文档
-
-## 测试
-
-Rust 检查：
-
-```bash
-cargo check -p openharness-desktop
-cargo test -p openharness-core agentic
-```
-
-Web 类型检查：
-
-```bash
-pnpm run type-check:web
-```
-
-基础烟测：
-
-```bash
-pnpm run e2e:test:smoke
-```
-
-## 仓库结构
+## 仓库结构一览
 
 ```text
-OpenHarness-V2/
-  src/
-    apps/
-      cli/
-      desktop/
-      relay-server/
-      server/
-    crates/
-      api-layer/
-      core/
-      events/
-      transport/
-      webdriver/
-    mobile-web/
-    web-ui/
-  scripts/
-  tests/e2e/
-  OpenHarness-Installer/
+src/apps/desktop   Tauri 桌面应用
+src/web-ui         React 主界面
+src/mobile-web     移动端配对与遥控界面
+src/crates/*       Rust 核心、runtime、transport、events、services
+tests/e2e          端到端测试
+scripts            构建与打包脚本
 ```
 
 ## 参与贡献
 
-如果你准备参与开发，建议先看：
+如果你想参与，先看：
 
-1. [CONTRIBUTING.md](./CONTRIBUTING.md)
-2. [CONTRIBUTING_CN.md](./CONTRIBUTING_CN.md)
+- [CONTRIBUTING.md](./CONTRIBUTING.md)
+- [CONTRIBUTING_CN.md](./CONTRIBUTING_CN.md)
 
-提交时建议附上：
-
-- 改动范围
-- 验证命令
-- 桌面端或 Web 端的影响说明
+这里欢迎的不只是代码。产品想法、交互体验、工作流设计、Agent 能力、生态扩展，都是很重要的贡献方向。
 
 ## 许可证
 
-本项目采用 [MIT License](./LICENSE)。
+OpenHarness 使用 [MIT License](./LICENSE)。
