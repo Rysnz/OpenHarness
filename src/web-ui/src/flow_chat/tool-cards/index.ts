@@ -462,92 +462,11 @@ export type {
 } from './ToolCardHeaderLayoutContext';
 export { PlanDisplay } from './CreatePlanDisplay';
 export type { PlanDisplayProps } from './CreatePlanDisplay';
-
-// ==================== Collapsible explorer tools ====================
-
-import type { FlowItem, FlowToolItem } from '../types/flow-chat';
-
-/**
- * Collapsible explorer tools (only these 5).
- * They are auto-collapsed during streaming to reduce visual noise.
- */
-export const COLLAPSIBLE_TOOL_NAMES = new Set([
-  'Read', 'LS', 'Grep', 'Glob', 'WebSearch'
-]);
-
-/** Read tools (counted in readCount). */
-export const READ_TOOL_NAMES = new Set(['Read', 'LS']);
-
-/** Search tools (counted in searchCount). */
-export const SEARCH_TOOL_NAMES = new Set(['Grep', 'Glob', 'WebSearch']);
-
-/** Check whether a tool is collapsible. */
-export function isCollapsibleTool(toolName: string): boolean {
-  return COLLAPSIBLE_TOOL_NAMES.has(toolName);
-}
-
-/**
- * Check whether a FlowItem is collapsible (no context).
- * - Subagent items are never collapsed.
- * - Text needs context (use isCollapsibleItemWithContext).
- * - Thinking can be collapsed with explorer tools.
- * - Only the 5 explorer tools are collapsible.
- */
-export function isCollapsibleItem(item: FlowItem): boolean {
-  // Subagent items are never collapsed.
-  if ((item as any).isSubagentItem) return false;
-  
-  // Text: default not collapsed (needs isCollapsibleItemWithContext).
-  if (item.type === 'text') return false;
-  
-  // Thinking can be collapsed with explorer tools.
-  if (item.type === 'thinking') return true;
-  
-  // Tools: only the 5 explorer tools are collapsible.
-  if (item.type === 'tool') {
-    return isCollapsibleTool((item as FlowToolItem).toolName);
-  }
-  
-  return false;
-}
-
-/**
- * Check whether a FlowItem is collapsible with context.
- * @param item Current item
- * @param nextItem Next item (optional)
- * @param isLast Whether this is the last item
- */
-export function isCollapsibleItemWithContext(
-  item: FlowItem, 
-  nextItem: FlowItem | undefined, 
-  isLast: boolean
-): boolean {
-  // Subagent items are never collapsed.
-  if ((item as any).isSubagentItem) return false;
-  
-  // Text and thinking depend on what follows.
-  if (item.type === 'text' || item.type === 'thinking') {
-    // Last item should stay visible.
-    if (isLast || !nextItem) return false;
-    
-    // If followed by an explorer tool, collapse together.
-    if (nextItem.type === 'tool') {
-      return isCollapsibleTool((nextItem as FlowToolItem).toolName);
-    }
-    
-    // If followed by text or thinking, treat as collapsible for grouping.
-    if (nextItem.type === 'text' || nextItem.type === 'thinking') {
-      return true;
-    }
-    
-    // Otherwise do not collapse.
-    return false;
-  }
-  
-  // Tools: only the 5 explorer tools are collapsible.
-  if (item.type === 'tool') {
-    return isCollapsibleTool((item as FlowToolItem).toolName);
-  }
-  
-  return false;
-}
+export {
+  COLLAPSIBLE_TOOL_NAMES,
+  READ_TOOL_NAMES,
+  SEARCH_TOOL_NAMES,
+  isCollapsibleTool,
+  isCollapsibleItem,
+  isCollapsibleItemWithContext,
+} from './collapsibleTools';

@@ -1,5 +1,5 @@
 import type { Options } from '@wdio/types';
-import { spawn, type ChildProcess } from 'child_process';
+import { spawn, type ChildProcess, type SpawnOptions } from 'child_process';
 import * as fs from 'fs';
 import * as net from 'net';
 import * as path from 'path';
@@ -11,12 +11,23 @@ const __dirname = dirname(__filename);
 
 const DRIVER_HOST = '127.0.0.1';
 const DRIVER_PORT = Number(process.env.OPENHARNESS_E2E_WEBDRIVER_PORT || 4445);
-const DEV_SERVER_HOST = '127.0.0.1';
+const DEV_SERVER_HOST = 'localhost';
 const DEV_SERVER_PORT = 1422;
+const DEV_SERVER_URL = `http://${DEV_SERVER_HOST}:${DEV_SERVER_PORT}/`;
 
 let openharnessApp: ChildProcess | null = null;
 let devServerProcess: ChildProcess | null = null;
 let ownsDevServer = false;
+
+type EmbeddedTestrunnerConfig = Options.Testrunner & {
+  autoCompileOpts: {
+    autoCompile: boolean;
+    tsNodeOpts: {
+      transpileOnly: boolean;
+      project: string;
+    };
+  };
+};
 
 function projectRoot(): string {
   return path.resolve(__dirname, '..', '..', '..');
@@ -74,14 +85,43 @@ async function waitForDevServerIfNeeded(appPath: string): Promise<void> {
     return;
   }
 
-  const running = await isPortOpen(DEV_SERVER_PORT, [DEV_SERVER_HOST, '::1']);
-
-  if (running) {
-    console.log(`Dev server is already running on port ${DEV_SERVER_PORT}`);
+  if (await isDevServerHealthy()) {
+    console.log(`Dev server is healthy at ${DEV_SERVER_URL}`);
     return;
   }
 
   await startDevServer();
+  await waitForDevServerHealthy(60000);
+}
+
+async function isDevServerHealthy(): Promise<boolean> {
+  try {
+    const response = await fetch(DEV_SERVER_URL);
+    if (!response.ok) {
+      return false;
+    }
+
+    const html = await response.text();
+    return (
+      html.includes('id="root"') &&
+      (html.includes('/src/main.tsx') || html.includes('/@vite/client'))
+    );
+  } catch {
+    return false;
+  }
+}
+
+async function waitForDevServerHealthy(timeoutMs: number): Promise<void> {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < timeoutMs) {
+    if (await isDevServerHealthy()) {
+      return;
+    }
+    await new Promise(resolve => setTimeout(resolve, 500));
+  }
+
+  throw new Error(`Dev server ${DEV_SERVER_URL} did not become healthy within ${timeoutMs}ms`);
 }
 
 async function fetchDriverStatus(): Promise<boolean> {
@@ -166,6 +206,109 @@ async function probeDocumentReady(sessionId: string): Promise<boolean> {
   return body.value === true;
 }
 
+type DocumentDiagnostics = {
+  title: string;
+  readyState: string;
+  rootExists: boolean;
+  rootChildElementCount: number;
+  bodyChildElementCount: number;
+  bodyElementCount: number;
+  appLayoutExists: boolean;
+  mainContentExists: boolean;
+  shellExists: boolean;
+  splashVisible: boolean;
+  tauriReady: boolean;
+  bodyTextSample: string;
+  rootHtmlSample: string;
+  bodyBackground: string;
+  bootDiagnostics: {
+    stages?: string[];
+    lastStage?: string | null;
+    errors?: Array<{ stage: string; message: string }>;
+  } | null;
+  moduleImportChecks?: Array<{ module: string; ok: boolean; message?: string }>;
+  browserLogs?: BrowserLogEntry[];
+  consoleLogs?: BrowserLogEntry[];
+};
+
+async function collectDocumentDiagnostics(sessionId: string): Promise<DocumentDiagnostics> {
+  const response = await fetch(`http://${DRIVER_HOST}:${DRIVER_PORT}/session/${sessionId}/execute/sync`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      script: `async () => {
+        const root = document.getElementById('root');
+        const body = document.body;
+        const appLayout = document.querySelector('[data-testid="app-layout"], .openharness-app-layout');
+        const mainContent = document.querySelector('[data-testid="app-main-content"], .openharness-app-main-workspace');
+        const shell = document.querySelector(
+          '.openharness-nav-panel, .openharness-scene-bar, .openharness-nav-bar, .welcome-scene'
+        );
+        const splash = document.querySelector('.splash-screen');
+        const bodyStyle = body ? window.getComputedStyle(body) : null;
+        const text = body?.innerText || '';
+        const rootHtml = root?.innerHTML || '';
+        const bootDiagnostics = (window).__OPENHARNESS_BOOT_DIAGNOSTICS__ || null;
+        const moduleImportTargets = [
+          '/src/shared/utils/logger.ts',
+          '/src/infrastructure/config/services/FrontendLogLevelSync.ts',
+          '/src/infrastructure/theme/index.ts',
+          '/src/infrastructure/font-preference/index.ts',
+          '/src/app/App.tsx',
+        ];
+        const moduleImportChecks = [];
+
+        for (const modulePath of moduleImportTargets) {
+          try {
+            await import(/* @vite-ignore */ modulePath);
+            moduleImportChecks.push({ module: modulePath, ok: true });
+          } catch (error) {
+            moduleImportChecks.push({
+              module: modulePath,
+              ok: false,
+              message: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
+
+        return {
+          title: document.title || '',
+          readyState: document.readyState,
+          rootExists: Boolean(root),
+          rootChildElementCount: root?.childElementCount || 0,
+          bodyChildElementCount: body?.childElementCount || 0,
+          bodyElementCount: body ? body.getElementsByTagName('*').length : 0,
+          appLayoutExists: Boolean(appLayout),
+          mainContentExists: Boolean(mainContent),
+          shellExists: Boolean(shell),
+          splashVisible: Boolean(splash),
+          tauriReady:
+            typeof window.__TAURI__ !== 'undefined' ||
+            typeof window.__TAURI_INTERNALS__ !== 'undefined',
+          bodyTextSample: text.slice(0, 500),
+          rootHtmlSample: rootHtml.slice(0, 2000),
+          bodyBackground: bodyStyle?.backgroundColor || '',
+          bootDiagnostics,
+          moduleImportChecks,
+        };
+      }`,
+      args: [],
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Document diagnostics probe failed: ${response.status} ${await response.text()}`);
+  }
+
+  const body = await response.json() as { value?: DocumentDiagnostics };
+  if (!body.value) {
+    throw new Error('Document diagnostics probe returned no payload');
+  }
+  return body.value;
+}
+
 async function waitForEmbeddedDriverReady(timeoutMs: number = 30000): Promise<void> {
   const startedAt = Date.now();
 
@@ -205,7 +348,30 @@ async function waitForWebviewDocumentReady(timeoutMs: number = 30000): Promise<v
     await new Promise(resolve => setTimeout(resolve, 250));
   }
 
-  throw new Error(`Webview document did not become ready within ${timeoutMs}ms: ${lastError}`);
+  let diagnosticsSummary = '';
+  let sessionId: string | null = null;
+
+  try {
+    sessionId = await createProbeSession();
+    const diagnostics = await collectDocumentDiagnostics(sessionId);
+    const [browserLogs, consoleLogs] = await Promise.all([
+      fetchSessionLogs(sessionId, 'browser').catch(() => []),
+      fetchSessionLogs(sessionId, 'console').catch(() => []),
+    ]);
+    diagnostics.browserLogs = browserLogs.slice(-20);
+    diagnostics.consoleLogs = consoleLogs.slice(-20);
+    diagnosticsSummary = JSON.stringify(diagnostics, null, 2);
+  } catch (error) {
+    diagnosticsSummary = `Failed to collect diagnostics: ${error instanceof Error ? error.message : String(error)}`;
+  } finally {
+    if (sessionId) {
+      await deleteProbeSession(sessionId);
+    }
+  }
+
+  throw new Error(
+    `Webview document did not become ready within ${timeoutMs}ms: ${lastError}\nDiagnostics:\n${diagnosticsSummary}`
+  );
 }
 
 async function fetchSessionLogs(
@@ -284,14 +450,15 @@ async function waitForPort(port: number, hosts: string[], timeoutMs: number): Pr
 async function startDevServer(): Promise<void> {
   if (devServerProcess) {
     await waitForPort(DEV_SERVER_PORT, [DEV_SERVER_HOST, '::1'], 60000);
+    await waitForDevServerHealthy(60000);
     return;
   }
 
-  console.log(`Starting dev server on http://${DEV_SERVER_HOST}:${DEV_SERVER_PORT}`);
+  console.log(`Starting dev server on ${DEV_SERVER_URL}`);
 
-  const spawnOptions = {
+  const spawnOptions: SpawnOptions = {
     cwd: projectRoot(),
-    stdio: ['ignore', 'pipe', 'pipe'] as const,
+    stdio: ['ignore', 'pipe', 'pipe'],
     env: {
       ...process.env,
       TAURI_DEV_HOST: DEV_SERVER_HOST,
@@ -336,15 +503,16 @@ async function startDevServer(): Promise<void> {
   }
   ownsDevServer = true;
 
-  devServerProcess.stdout?.on('data', (data: Buffer) => {
+  const startedDevServer = devServerProcess;
+  startedDevServer.stdout?.on('data', (data: Buffer) => {
     console.log(`[dev-server] ${data.toString().trim()}`);
   });
 
-  devServerProcess.stderr?.on('data', (data: Buffer) => {
+  startedDevServer.stderr?.on('data', (data: Buffer) => {
     console.error(`[dev-server] ${data.toString().trim()}`);
   });
 
-  devServerProcess.on('exit', (code, signal) => {
+  startedDevServer.on('exit', (code, signal) => {
     console.log(`[dev-server] exited (code=${code ?? 'null'}, signal=${signal ?? 'null'})`);
     devServerProcess = null;
     ownsDevServer = false;
@@ -429,7 +597,7 @@ function sharedAfterTest(): Options.Testrunner['afterTest'] {
   };
 }
 
-export function createEmbeddedConfig(specs: string[], label: string): Options.Testrunner {
+export function createEmbeddedConfig(specs: string[], label: string): EmbeddedTestrunnerConfig {
   return {
     runner: 'local',
     autoCompileOpts: {
@@ -514,5 +682,5 @@ export function createEmbeddedConfig(specs: string[], label: string): Options.Te
       stopOpenHarnessApp();
       stopDevServer();
     },
-  };
+  } as unknown as EmbeddedTestrunnerConfig;
 }

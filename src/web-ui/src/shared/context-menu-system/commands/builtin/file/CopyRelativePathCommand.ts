@@ -4,6 +4,7 @@ import { BaseCommand } from '../../BaseCommand';
 import { CommandResult } from '../../../types/command.types';
 import { MenuContext, ContextType, FileNodeContext } from '../../../types/context.types';
 import { i18nService } from '@/infrastructure/i18n';
+import { workspaceManager } from '@/infrastructure/services/business/workspaceManager';
 
 export class CopyRelativePathCommand extends BaseCommand {
   constructor() {
@@ -31,8 +32,6 @@ export class CopyRelativePathCommand extends BaseCommand {
       let workspacePath = fileContext.workspacePath;
       
       if (!workspacePath) {
-        
-        const { workspaceManager } = await import('../../../../../infrastructure/services/business/workspaceManager');
         workspacePath = workspaceManager.getWorkspacePath();
       }
       

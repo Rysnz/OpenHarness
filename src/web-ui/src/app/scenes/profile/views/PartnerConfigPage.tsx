@@ -16,7 +16,7 @@ import {
   Input,
 } from '@/component-library';
 import { workspaceAPI } from '@/infrastructure/api/service-api/WorkspaceAPI';
-import { notificationService } from '@/shared/notification-system';
+import { notificationService } from '@/shared/notification-system/services/NotificationService';
 import { createLogger } from '@/shared/utils/logger';
 import { useWorkspaceContext } from '@/infrastructure/contexts/WorkspaceContext';
 import { WorkspaceKind } from '@/shared/types';

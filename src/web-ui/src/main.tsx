@@ -1,7 +1,4 @@
 import ReactDOM from "react-dom/client";
-import App from "./app/App";
-import AppErrorBoundary from "./app/components/AppErrorBoundary";
-import { WorkspaceProvider } from "./infrastructure/contexts/WorkspaceProvider";
 import "./app/styles/index.scss";
 
 // Manually import Monaco Editor CSS.
@@ -11,15 +8,61 @@ import 'monaco-editor/min/vs/editor/editor.main.css';
 // Font: Noto Sans SC is loaded via a <link> tag in index.html.
 // File path: public/fonts/fonts.css, served as /fonts/fonts.css.
 
-import { initializeAllTools } from "./tools";
+import { initializeAllTools } from "./tools/initializeAllTools";
 import { initContextMenuSystem } from "./shared/context-menu-system";
 import { loader } from '@monaco-editor/react';
 import { getMonacoPath, getMonacoWorkerPath, logMonacoResourceCheck } from './tools/editor/utils/monacoPathHelper';
 import { bootstrapLogger, createLogger, initLogger } from './shared/utils/logger';
+import { registerDefaultContextTypes } from './shared/context-system/core/registerDefaultTypes';
+import { registerNotificationContextMenu } from './shared/notification-system';
+import { configManager } from './infrastructure/config/services/ConfigManager';
+import { initializeFrontendLogLevelSync } from './infrastructure/config/services/FrontendLogLevelSync';
+import { fontPreferenceService } from './infrastructure/font-preference/core/FontPreferenceService';
+import { themeService } from './infrastructure/theme/core/ThemeService';
+import { monacoThemeSync } from './infrastructure/theme/integrations/MonacoThemeSync';
+import { MonacoManager } from './tools/editor/services/MonacoInitManager';
 import {
   buildReactCrashLogPayload,
   isMinifiedReactErrorMessage,
 } from './shared/utils/reactProductionError';
+
+type BootDiagnostics = {
+  stages: string[];
+  lastStage: string | null;
+  errors: Array<{ stage: string; message: string }>;
+};
+
+function getBootDiagnostics(): BootDiagnostics {
+  const key = '__OPENHARNESS_BOOT_DIAGNOSTICS__';
+  const windowWithDiagnostics = window as typeof window & {
+    [key]?: BootDiagnostics;
+  };
+
+  if (!windowWithDiagnostics[key]) {
+    windowWithDiagnostics[key] = {
+      stages: [],
+      lastStage: null,
+      errors: [],
+    };
+  }
+
+  return windowWithDiagnostics[key]!;
+}
+
+function markBootStage(stage: string): void {
+  const diagnostics = getBootDiagnostics();
+  diagnostics.lastStage = stage;
+  diagnostics.stages.push(stage);
+}
+
+function recordBootError(stage: string, error: unknown): void {
+  const diagnostics = getBootDiagnostics();
+  diagnostics.lastStage = `${stage}:error`;
+  diagnostics.errors.push({
+    stage,
+    message: error instanceof Error ? error.message : String(error),
+  });
+}
 
 // Install console forwarding before app startup so early console output is persisted too.
 bootstrapLogger();
@@ -215,35 +258,51 @@ const DEFAULT_WORKER = 'base/worker/workerMain.js';
 
 /** Logger, theme, and minimal deps — must finish before first React paint (F5 / webview reload does not re-run Tauri init script). */
 async function initializeBeforeRender(): Promise<void> {
-  await initLogger();
+  markBootStage('initializeBeforeRender:start');
 
-  const { initializeFrontendLogLevelSync } = await import('./infrastructure/config/services/FrontendLogLevelSync');
+  markBootStage('initializeBeforeRender:initLogger:start');
+  await initLogger();
+  markBootStage('initializeBeforeRender:initLogger:done');
+
+  markBootStage('initializeBeforeRender:logLevelSync:start');
   await initializeFrontendLogLevelSync();
+  markBootStage('initializeBeforeRender:logLevelSync:done');
 
   log.debug('Monaco loader configured', { vs: monacoPath, isDev });
   log.info('Initializing OpenHarness');
 
-  const { registerDefaultContextTypes } = await import('./shared/context-system/core/registerDefaultTypes');
+  markBootStage('initializeBeforeRender:registerDefaultContextTypes:start');
   registerDefaultContextTypes();
+  markBootStage('initializeBeforeRender:registerDefaultContextTypes:done');
 
+  markBootStage('initializeBeforeRender:initRecommendationProviders:start');
   const { initRecommendationProviders } = await import('./flow_chat/components/smart-recommendations');
   initRecommendationProviders();
+  markBootStage('initializeBeforeRender:initRecommendationProviders:done');
 
-  const { themeService } = await import('./infrastructure/theme');
+  markBootStage('initializeBeforeRender:themeService:start');
   await themeService.initialize();
+  markBootStage('initializeBeforeRender:themeService:done');
   log.info('Theme system initialized');
+
+  markBootStage('initializeBeforeRender:done');
 }
 
 /** Rest of startup runs after the shell is visible so refresh latency stays reasonable. */
 async function initializeAfterRender(): Promise<void> {
-  const { fontPreferenceService } = await import('./infrastructure/font-preference');
+  markBootStage('initializeAfterRender:start');
+
+  markBootStage('initializeAfterRender:fontPreference:start');
   await fontPreferenceService.initialize();
+  markBootStage('initializeAfterRender:fontPreference:done');
   log.info('Font preference initialized at startup');
 
-  const { configManager } = await import('./infrastructure/config');
+  markBootStage('initializeAfterRender:editorConfig:start');
   await configManager.getConfig('editor');
+  markBootStage('initializeAfterRender:editorConfig:done');
   log.info('Editor configuration preloaded');
 
+  markBootStage('initializeAfterRender:coreInit:start');
   const initResults = await Promise.allSettled([
     initializeAllTools(),
     (async () => {
@@ -253,18 +312,16 @@ async function initializeAfterRender(): Promise<void> {
         debug: false,
       });
 
-      const { registerNotificationContextMenu } = await import('./shared/notification-system');
       registerNotificationContextMenu();
     })(),
     (async () => {
-      const { MonacoManager } = await import('./tools/editor');
       await MonacoManager.initialize();
 
-      const { monacoThemeSync } = await import('./infrastructure/theme/integrations/MonacoThemeSync');
       await monacoThemeSync.initialize();
       log.info('Monaco theme sync initialized');
     })(),
   ]);
+  markBootStage('initializeAfterRender:coreInit:done');
 
   initResults.forEach((result, index) => {
     const names = ['Tools', 'ContextMenu', 'Editors'];
@@ -274,33 +331,102 @@ async function initializeAfterRender(): Promise<void> {
   });
 
   log.info('OpenHarness core systems initialized successfully');
+  markBootStage('initializeAfterRender:done');
 }
 
 async function startApplication(): Promise<void> {
+  markBootStage('startApplication:start');
   try {
     await initializeBeforeRender();
   } catch (error) {
+    recordBootError('initializeBeforeRender', error);
     log.error('Failed to initialize OpenHarness (pre-render)', error);
   }
 
-  // I18n Provider.
-  const { I18nProvider } = await import('./infrastructure/i18n');
+  const rootElement = document.getElementById('root') as HTMLElement | null;
+  if (!rootElement) {
+    const error = new Error('Missing #root element');
+    recordBootError('startApplication:rootLookup', error);
+    log.error('Failed to start application', error);
+    return;
+  }
 
-  ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
-    <AppErrorBoundary>
-      <I18nProvider>
-        <WorkspaceProvider>
-          <App />
-        </WorkspaceProvider>
-      </I18nProvider>
-    </AppErrorBoundary>
-  );
+  let AppModule: typeof import('./app/App');
+  let AppErrorBoundaryModule: typeof import('./app/components/AppErrorBoundary');
+  let WorkspaceProviderModule: typeof import('./infrastructure/contexts/WorkspaceProvider');
+  let I18nProviderModule: typeof import('./infrastructure/i18n');
+
+  try {
+    markBootStage('startApplication:renderModules:start');
+    [
+      AppModule,
+      AppErrorBoundaryModule,
+      WorkspaceProviderModule,
+      I18nProviderModule,
+    ] = await Promise.all([
+      import('./app/App'),
+      import('./app/components/AppErrorBoundary'),
+      import('./infrastructure/contexts/WorkspaceProvider'),
+      import('./infrastructure/i18n'),
+    ]);
+    markBootStage('startApplication:renderModules:done');
+  } catch (error) {
+    recordBootError('startApplication:renderModules', error);
+    log.error('Failed to load render modules', error);
+    rootElement.innerHTML = `
+      <div style="height:100vh;display:flex;align-items:center;justify-content:center;background:#0b0f14;color:#e5e7eb;padding:24px;box-sizing:border-box;">
+        <div style="max-width:760px;width:100%;">
+          <h2 style="margin:0;font-size:18px;font-weight:600;">OpenHarness failed to start</h2>
+          <p style="margin:12px 0 0;opacity:0.9;">${
+            error instanceof Error ? error.message : String(error)
+          }</p>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  const App = AppModule.default;
+  const AppErrorBoundary = AppErrorBoundaryModule.default;
+  const { WorkspaceProvider } = WorkspaceProviderModule;
+  const { I18nProvider } = I18nProviderModule;
+
+  try {
+    markBootStage('startApplication:render:start');
+    ReactDOM.createRoot(rootElement).render(
+      <AppErrorBoundary>
+        <I18nProvider>
+          <WorkspaceProvider>
+            <App />
+          </WorkspaceProvider>
+        </I18nProvider>
+      </AppErrorBoundary>
+    );
+    markBootStage('startApplication:render:done');
+  } catch (error) {
+    recordBootError('startApplication:render', error);
+    log.error('Failed to render application root', error);
+    rootElement.innerHTML = `
+      <div style="height:100vh;display:flex;align-items:center;justify-content:center;background:#0b0f14;color:#e5e7eb;padding:24px;box-sizing:border-box;">
+        <div style="max-width:760px;width:100%;">
+          <h2 style="margin:0;font-size:18px;font-weight:600;">OpenHarness render failed</h2>
+          <p style="margin:12px 0 0;opacity:0.9;">${
+            error instanceof Error ? error.message : String(error)
+          }</p>
+        </div>
+      </div>
+    `;
+    return;
+  }
 
   try {
     await initializeAfterRender();
   } catch (error) {
+    recordBootError('initializeAfterRender', error);
     log.error('Failed to complete post-render initialization', error);
   }
+
+  markBootStage('startApplication:done');
 }
 
 void startApplication();

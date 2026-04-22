@@ -53,7 +53,7 @@ describe('L0 Tab Bar', () => {
 
       // Use correct selector from Tab.tsx
       const tabs = await $$('.canvas-tab');
-      const tabCount = tabs.length;
+      const tabCount = await tabs.length;
 
       console.log(`[L0] Found ${tabCount} tabs`);
 
@@ -70,7 +70,7 @@ describe('L0 Tab Bar', () => {
 
       // Use correct selector from Tab.tsx
       const closeButtons = await $$('.canvas-tab__close-btn');
-      const btnCount = closeButtons.length;
+      const btnCount = await closeButtons.length;
 
       console.log(`[L0] Found ${btnCount} tab close buttons`);
 

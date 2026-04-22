@@ -17,11 +17,12 @@ import { configAPI } from '@/infrastructure/api/service-api/ConfigAPI';
 import { configManager } from '@/infrastructure/config/services/ConfigManager';
 import type { AIModelConfig, ModeConfigItem, ModeSkillInfo } from '@/infrastructure/config/types';
 import { MCPAPI, type MCPServerInfo } from '@/infrastructure/api/service-api/MCPAPI';
-import { notificationService } from '@/shared/notification-system';
+import { notificationService } from '@/shared/notification-system/services/NotificationService';
 import { createLogger } from '@/shared/utils/logger';
 import { isMcpToolName, parseMcpToolName } from '@/infrastructure/mcp/toolName';
 import { useNurseryStore } from '../nurseryStore';
 import { formatTokenCount } from './useTokenEstimate';
+import { globalEventBus } from '@/infrastructure/event-bus';
 
 const log = createLogger('TemplateConfigPage');
 
@@ -286,7 +287,6 @@ const TemplateConfigPage: React.FC = () => {
     setAgenticConfig(newConfig);
     try {
       await configAPI.setModeConfig('agentic', newConfig);
-      const { globalEventBus } = await import('@/infrastructure/event-bus');
       globalEventBus.emit('mode:config:updated');
     } catch (e) {
       log.error('Failed to toggle tool', e);
@@ -306,7 +306,6 @@ const TemplateConfigPage: React.FC = () => {
       ]);
       setAgenticConfig(modeConf);
       setModeSkills(skills);
-      const { globalEventBus } = await import('@/infrastructure/event-bus');
       globalEventBus.emit('mode:config:updated');
       notificationService.success(t('notifications.resetSuccess'));
     } catch (e) {
@@ -326,7 +325,6 @@ const TemplateConfigPage: React.FC = () => {
     setAgenticConfig(newConfig);
     try {
       await configAPI.setModeConfig('agentic', newConfig);
-      const { globalEventBus } = await import('@/infrastructure/event-bus');
       globalEventBus.emit('mode:config:updated');
     } catch (e) {
       log.error('Failed to toggle group', e);
@@ -347,7 +345,6 @@ const TemplateConfigPage: React.FC = () => {
       });
       const updatedSkills = await configAPI.getModeSkillConfigs({ modeId: 'agentic' });
       setModeSkills(updatedSkills);
-      const { globalEventBus } = await import('@/infrastructure/event-bus');
       globalEventBus.emit('mode:config:updated');
     } catch (e) {
       log.error('Failed to toggle skill', e);

@@ -31,6 +31,17 @@ pub struct FlowChatFontSnapshot {
     pub base_px: Option<u32>,
 }
 
+fn default_font_config() -> Option<FontPreferenceSnapshot> {
+    Some(FontPreferenceSnapshot::default())
+}
+
+fn default_keybindings_config() -> Option<serde_json::Value> {
+    Some(serde_json::json!({
+        "__version__": 1,
+        "overrides": {}
+    }))
+}
+
 /// Global configuration structure - matches the frontend `GlobalConfig` exactly.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -48,8 +59,14 @@ pub struct GlobalConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub themes: Option<ThemesConfig>,
     /// Web UI font size preferences (`get_config` / `set_config` path `font`).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default = "default_font_config",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub font: Option<FontPreferenceSnapshot>,
+    /// Agentic permission rules persisted by the desktop policy API.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agentic_permission_rules: Option<serde_json::Value>,
     pub version: String,
     #[serde(with = "chrono::serde::ts_milliseconds")]
     pub last_modified: chrono::DateTime<chrono::Utc>,
@@ -77,7 +94,10 @@ pub struct AppConfig {
     /// User-defined keyboard shortcut overrides.
     /// Stored as opaque JSON so the backend remains schema-agnostic;
     /// the frontend owns the versioned format (StoredKeybindingsV1).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default = "default_keybindings_config",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub keybindings: Option<serde_json::Value>,
 }
 
@@ -953,6 +973,33 @@ pub struct ConfigValidationWarning {
     pub severity: String,
 }
 
+impl Default for FontPreferenceSnapshot {
+    fn default() -> Self {
+        Self {
+            ui_size: UiFontSizeSnapshot::default(),
+            flow_chat: FlowChatFontSnapshot::default(),
+        }
+    }
+}
+
+impl Default for UiFontSizeSnapshot {
+    fn default() -> Self {
+        Self {
+            level: "default".to_string(),
+            custom_px: None,
+        }
+    }
+}
+
+impl Default for FlowChatFontSnapshot {
+    fn default() -> Self {
+        Self {
+            mode: "lift".to_string(),
+            base_px: None,
+        }
+    }
+}
+
 impl Default for GlobalConfig {
     fn default() -> Self {
         Self {
@@ -964,7 +1011,8 @@ impl Default for GlobalConfig {
             ai: AIConfig::default(),
             mcp_servers: None,
             themes: Some(ThemesConfig::default()),
-            font: None,
+            font: default_font_config(),
+            agentic_permission_rules: None,
             version: "1.0.0".to_string(),
             last_modified: chrono::Utc::now(),
         }
@@ -999,7 +1047,7 @@ impl Default for AppConfig {
             },
             session_config: AppSessionConfig::default(),
             ai_experience: AIExperienceConfig::default(),
-            keybindings: None,
+            keybindings: default_keybindings_config(),
         }
     }
 }

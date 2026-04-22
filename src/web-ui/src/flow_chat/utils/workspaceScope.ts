@@ -5,7 +5,7 @@
  * - Otherwise use host + path + connection (see `sessionBelongsToWorkspaceNavRow`).
  */
 
-import type { WorkspaceInfo } from '@/shared/types';
+import type { WorkspaceInfo } from '@/shared/types/global-state';
 import type { Session } from '../types/flow-chat';
 import { sessionBelongsToWorkspaceNavRow } from './sessionOrdering';
 

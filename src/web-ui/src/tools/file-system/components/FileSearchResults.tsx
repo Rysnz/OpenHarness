@@ -6,7 +6,7 @@ import type {
 } from '@/infrastructure/api/service-api/tauri-commands';
 import { useI18n } from '@/infrastructure/i18n';
 import { i18nService } from '@/infrastructure/i18n';
-import { notificationService } from '@/shared/notification-system';
+import { notificationService } from '@/shared/notification-system/services/NotificationService';
 import { useContextMenuStore } from '@/shared/context-menu-system';
 import { ContextType } from '@/shared/context-menu-system/types/context.types';
 import type { MenuItem } from '@/shared/context-menu-system/types/menu.types';

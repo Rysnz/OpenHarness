@@ -20,7 +20,7 @@ import { useFlowChatSync } from './useFlowChatSync';
 import { useFlowChatToolActions } from './useFlowChatToolActions';
 import { useVirtualItems, useActiveSession, useVisibleTurnInfo, type VisibleTurnInfo } from '../../store/modernFlowChatStore';
 import type { FlowChatConfig } from '../../types/flow-chat';
-import type { LineRange } from '@/component-library';
+import type { LineRange } from '@/component-library/components/Markdown';
 import { useWorkspaceContext } from '@/infrastructure/contexts/WorkspaceContext';
 import './ModernFlowChatContainer.scss';
 

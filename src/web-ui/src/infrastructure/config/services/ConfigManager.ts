@@ -5,7 +5,7 @@ import {
   ConfigValidationResult,
   ConfigExport,
 } from '../types';
-import { configAPI } from '@/infrastructure/api';
+import { configAPI } from '@/infrastructure/api/service-api/ConfigAPI';
 import { i18nService } from '@/infrastructure/i18n';
 import { createLogger } from '@/shared/utils/logger';
 import { extractProviderSegmentFromBaseUrl, matchProviderCatalogItemByBaseUrl } from './providerCatalog';

@@ -8,6 +8,8 @@
  */
 
 import { createLogger } from '@/shared/utils/logger';
+import { pathToUri } from '@/shared/utils/pathUtils';
+import { GlobalAdapterRegistry } from '@/tools/lsp/services/MonacoLspAdapter';
 
 const log = createLogger('EditorReadyManager');
 
@@ -125,8 +127,6 @@ class EditorReadyManager {
 
   private async getExistingEditor(filePath: string): Promise<any> {
     try {
-      const { GlobalAdapterRegistry } = await import('@/tools/lsp/services/MonacoLspAdapter');
-      const { pathToUri } = await import('@/shared/utils/pathUtils');
       const uri = pathToUri(filePath);
       
       const adapter = GlobalAdapterRegistry.get(uri);

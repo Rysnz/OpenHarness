@@ -172,9 +172,10 @@ describe('L1 File Tree', () => {
       }
 
       const fileNodes = await browser.$$('.openharness-file-explorer__node');
-      console.log('[L1] File nodes count:', fileNodes.length);
+      const fileNodeCount = await fileNodes.length;
+      console.log('[L1] File nodes count:', fileNodeCount);
 
-      if (fileNodes.length === 0) {
+      if (fileNodeCount === 0) {
         // Try alternative selectors
         const altSelectors = [
           '[data-file-path]',
@@ -185,20 +186,21 @@ describe('L1 File Tree', () => {
 
         for (const selector of altSelectors) {
           const nodes = await browser.$$(selector);
-          if (nodes.length > 0) {
-            console.log(`[L1] Found ${nodes.length} nodes with selector: ${selector}`);
+          const nodeCount = await nodes.length;
+          if (nodeCount > 0) {
+            console.log(`[L1] Found ${nodeCount} nodes with selector: ${selector}`);
             // Verify we can detect file nodes
-            expect(nodes.length).toBeGreaterThanOrEqual(0);
+            expect(nodeCount).toBeGreaterThanOrEqual(0);
             return;
           }
         }
 
         // If no nodes found, verify that the detection mechanism works
         console.log('[L1] No file nodes found - may not be in file tree view');
-        expect(fileNodes.length).toBeGreaterThanOrEqual(0);
+        expect(fileNodeCount).toBeGreaterThanOrEqual(0);
       } else {
         // Should have at least some files in the workspace
-        expect(fileNodes.length).toBeGreaterThan(0);
+        expect(fileNodeCount).toBeGreaterThan(0);
       }
     });
   });
@@ -211,16 +213,17 @@ describe('L1 File Tree', () => {
       }
 
       const fileNodes = await browser.$$('[data-file-path]');
-      console.log('[L1] Nodes with data-file-path:', fileNodes.length);
+      const fileNodeCount = await fileNodes.length;
+      console.log('[L1] Nodes with data-file-path:', fileNodeCount);
 
-      if (fileNodes.length > 0) {
+      if (fileNodeCount > 0) {
         const firstNode = fileNodes[0];
         const filePath = await firstNode.getAttribute('data-file-path');
         console.log('[L1] First file path:', filePath);
         expect(filePath).toBeDefined();
       } else {
         console.log('[L1] No file nodes with data-file-path found');
-        expect(fileNodes.length).toBe(0);
+        expect(fileNodeCount).toBe(0);
       }
     });
 
@@ -232,11 +235,13 @@ describe('L1 File Tree', () => {
 
       const files = await browser.$$('[data-file="true"]');
       const directories = await browser.$$('[data-is-directory="true"]');
+      const fileCount = await files.length;
+      const directoryCount = await directories.length;
 
-      console.log('[L1] Files:', files.length, 'Directories:', directories.length);
+      console.log('[L1] Files:', fileCount, 'Directories:', directoryCount);
 
-      expect(files.length).toBeGreaterThanOrEqual(0);
-      expect(directories.length).toBeGreaterThanOrEqual(0);
+      expect(fileCount).toBeGreaterThanOrEqual(0);
+      expect(directoryCount).toBeGreaterThanOrEqual(0);
     });
   });
 
@@ -248,9 +253,10 @@ describe('L1 File Tree', () => {
       }
 
       const directories = await browser.$$('[data-is-directory="true"]');
-      console.log('[L1] Directories found:', directories.length);
+      const directoryCount = await directories.length;
+      console.log('[L1] Directories found:', directoryCount);
 
-      if (directories.length === 0) {
+      if (directoryCount === 0) {
         console.log('[L1] No directories to test expand/collapse');
         this.skip();
         return;
@@ -270,7 +276,8 @@ describe('L1 File Tree', () => {
       }
 
       const dirContent = await browser.$$('.openharness-file-explorer__node-content');
-      if (dirContent.length === 0) {
+      const dirContentCount = await dirContent.length;
+      if (dirContentCount === 0) {
         console.log('[L1] No directory content to click');
         this.skip();
         return;
@@ -309,7 +316,8 @@ describe('L1 File Tree', () => {
       }
 
       const fileNodes = await browser.$$('[data-file="true"]');
-      if (fileNodes.length === 0) {
+      const fileNodeCount = await fileNodes.length;
+      if (fileNodeCount === 0) {
         console.log('[L1] No file nodes to select');
         this.skip();
         return;

@@ -22,7 +22,7 @@ async function getNavigationEntryCounts(): Promise<Record<string, number>> {
   const counts: Record<string, number> = {};
 
   for (const selector of NAV_ENTRY_SELECTORS) {
-    counts[selector] = (await browser.$$(selector)).length;
+    counts[selector] = await (await browser.$$(selector)).length;
   }
 
   return counts;
@@ -95,8 +95,9 @@ describe('L1 Navigation', () => {
       }
 
       const sections = await browser.$$('.openharness-nav-panel__section');
-      console.log('[L1] Navigation sections count:', sections.length);
-      expect(sections.length).toBeGreaterThanOrEqual(0);
+      const sectionCount = await sections.length;
+      console.log('[L1] Navigation sections count:', sectionCount);
+      expect(sectionCount).toBeGreaterThanOrEqual(0);
     });
   });
 
@@ -144,7 +145,8 @@ describe('L1 Navigation', () => {
       }
 
       const navItems = await browser.$$('.openharness-nav-panel__item');
-      if (navItems.length < 2) {
+      const navItemCount = await navItems.length;
+      if (navItemCount < 2) {
         console.log('[L1] Not enough nav items to test view switching');
         this.skip();
         return;
@@ -171,7 +173,7 @@ describe('L1 Navigation', () => {
       }
 
       const activeItems = await browser.$$('.openharness-nav-panel__item.is-active, .openharness-nav-panel__inline-item.is-active, .openharness-nav-panel__miniapp-entry.is-active');
-      const activeCount = activeItems.length;
+      const activeCount = await activeItems.length;
       console.log('[L1] Active navigation items:', activeCount);
 
       // Should have at least one active item
@@ -185,14 +187,15 @@ describe('L1 Navigation', () => {
       }
 
       const navItems = await browser.$$('.openharness-nav-panel__item');
-      if (navItems.length < 2) {
+      const navItemCount = await navItems.length;
+      if (navItemCount < 2) {
         this.skip();
         return;
       }
 
       // Get initial active item
       const initialActive = await browser.$$('.openharness-nav-panel__item.is-active, .openharness-nav-panel__inline-item.is-active, .openharness-nav-panel__miniapp-entry.is-active');
-      const initialActiveCount = initialActive.length;
+      const initialActiveCount = await initialActive.length;
       console.log('[L1] Initial active items:', initialActiveCount);
 
       // Find a clickable item (not expanded, not already active)
@@ -230,10 +233,11 @@ describe('L1 Navigation', () => {
 
       // Check for active state (don't fail if state doesn't change)
       const afterActive = await browser.$$('.openharness-nav-panel__item.is-active, .openharness-nav-panel__inline-item.is-active, .openharness-nav-panel__miniapp-entry.is-active');
-      console.log('[L1] Active items after click:', afterActive.length);
+      const afterActiveCount = await afterActive.length;
+      console.log('[L1] Active items after click:', afterActiveCount);
 
       // Verify active state detection completed
-      expect(afterActive.length).toBeGreaterThanOrEqual(0);
+      expect(afterActiveCount).toBeGreaterThanOrEqual(0);
     });
   });
 
@@ -245,7 +249,8 @@ describe('L1 Navigation', () => {
       }
 
       const sections = await browser.$$('.openharness-nav-panel__section');
-      if (sections.length === 0) {
+      const sectionCount = await sections.length;
+      if (sectionCount === 0) {
         console.log('[L1] No sections to test expand/collapse');
         this.skip();
         return;
@@ -253,9 +258,10 @@ describe('L1 Navigation', () => {
 
       // Check for expandable sections
       const expandableSections = await browser.$$('.openharness-nav-panel__section-header');
-      console.log('[L1] Expandable sections:', expandableSections.length);
+      const expandableSectionCount = await expandableSections.length;
+      console.log('[L1] Expandable sections:', expandableSectionCount);
 
-      expect(expandableSections.length).toBeGreaterThanOrEqual(0);
+      expect(expandableSectionCount).toBeGreaterThanOrEqual(0);
     });
 
     it('inline sections should be collapsible', async function () {
@@ -265,9 +271,10 @@ describe('L1 Navigation', () => {
       }
 
       const inlineLists = await browser.$$('.openharness-nav-panel__inline-list');
-      console.log('[L1] Inline lists found:', inlineLists.length);
+      const inlineListCount = await inlineLists.length;
+      console.log('[L1] Inline lists found:', inlineListCount);
 
-      expect(inlineLists.length).toBeGreaterThanOrEqual(0);
+      expect(inlineListCount).toBeGreaterThanOrEqual(0);
     });
   });
 

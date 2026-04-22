@@ -1,165 +1,209 @@
-.openharness-logo {
-  display: inline-block;
+.oh-logo-container {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
   color: currentColor;
   overflow: visible;
 
-  &__backplate {
-    fill: #0f1216;
+  .oh-logo-svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
   }
 
-  &__loop {
-    fill: none;
-    stroke-linejoin: round;
-    stroke-linecap: round;
-
-    &--base {
-      stroke: #c8d0d8;
-      stroke-width: 8;
-      opacity: 0.84;
-    }
-
-    &--flow {
-      stroke: #f7fbff;
-      stroke-width: 8;
-      stroke-dasharray: 14 26 30 134;
-      stroke-dashoffset: 0;
-      filter: drop-shadow(0 0 5px rgba(240, 246, 255, 0.7));
-    }
-
-    &--sheen {
-      stroke: rgba(255, 255, 255, 0.92);
-      stroke-width: 3;
-      stroke-dasharray: 4 18 16 166;
-      stroke-dashoffset: -80;
-      filter: drop-shadow(0 0 7px rgba(238, 244, 255, 0.72));
-    }
-  }
-
-  &__bridge {
-    fill: none;
-    stroke: #e9eef3;
-    stroke-width: 8;
+  line,
+  circle {
     stroke-linecap: round;
     stroke-linejoin: round;
-    filter: drop-shadow(0 0 3px rgba(235, 241, 248, 0.28));
   }
 
-  &__anchor {
-    fill: #0f1216;
-    stroke: #edf2f7;
+  .oh-layer-base-mark {
+    opacity: 0.28;
+    transition: opacity 0.45s ease-out;
+  }
+
+  .oh-path-base {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 5;
+  }
+
+  .oh-layer-glow-waves,
+  .oh-layer-active-hub,
+  .oh-layer-outer-ring {
+    transition: opacity 0.45s ease-out;
+  }
+
+  .oh-glow-wave {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    filter: blur(2.5px);
+    transform-origin: 60px 60px;
+  }
+
+  .oh-glow-wave--one {
+    animation: oh-logo-radiate 2.4s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+  }
+
+  .oh-glow-wave--two {
+    animation: oh-logo-radiate 2.4s cubic-bezier(0.16, 1, 0.3, 1) infinite 1.2s;
+  }
+
+  .oh-layer-outer-ring {
+    transform-origin: 60px 60px;
+    animation: oh-logo-spin 1.6s linear infinite;
+  }
+
+  .oh-ring-dynamic {
+    fill: none;
     stroke-width: 4;
+    transform-origin: 60px 60px;
+    animation: oh-logo-ring-scale 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
   }
 
-  &__anchor--center {
-    fill: #f8fbff;
-    stroke: #0f1216;
-    stroke-width: 3;
-    filter: drop-shadow(0 0 6px rgba(240, 246, 255, 0.75));
+  .oh-layer-active-hub {
+    .oh-node-left,
+    .oh-node-right,
+    .oh-node-bridge {
+      stroke-width: 5;
+    }
+
+    .oh-node-left {
+      animation: oh-logo-node-pulse 2.8s ease-in-out infinite;
+    }
+
+    .oh-node-right {
+      animation: oh-logo-node-pulse 2.8s ease-in-out infinite -1.4s;
+    }
+
+    .oh-node-bridge {
+      animation: oh-logo-bridge-pulse 2.8s ease-in-out infinite -0.7s;
+    }
   }
 
-  &__opening {
+  .oh-layer-solid-resolved {
+    opacity: 0;
+    transition: opacity 0.55s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .oh-path-solid {
     fill: none;
-    stroke: #f8fbff;
-    stroke-width: 7;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-    filter: drop-shadow(0 0 5px rgba(240, 246, 255, 0.65));
+    stroke: currentColor;
+    stroke-width: 5;
   }
 
-  &--animated {
-    .openharness-logo__backplate {
-      animation: openharness-logo-breathe 2.6s ease-in-out infinite;
-      transform-origin: 60px 60px;
+  &.oh-status-resolved {
+    .oh-layer-glow-waves,
+    .oh-layer-active-hub,
+    .oh-layer-outer-ring {
+      opacity: 0;
     }
 
-    .openharness-logo__loop--flow {
-      animation: openharness-logo-flow 2.35s linear infinite;
+    .oh-layer-base-mark {
+      opacity: 0;
     }
 
-    .openharness-logo__loop--sheen {
-      animation: openharness-logo-sheen 3.1s linear infinite;
+    .oh-layer-solid-resolved {
+      opacity: 1;
+    }
+  }
+
+  &.oh-variant-compact {
+    .oh-layer-base-mark {
+      opacity: 0.62;
     }
 
-    .openharness-logo__anchor--center {
-      animation: openharness-logo-anchor 2s ease-in-out infinite;
-      transform-origin: 60px 60px;
+    .oh-layer-active-hub {
+      opacity: 0.56;
+    }
+  }
+
+  &.oh-no-animation {
+    .oh-layer-glow-waves,
+    .oh-layer-active-hub,
+    .oh-layer-outer-ring {
+      display: none !important;
+      animation: none !important;
     }
 
-    .openharness-logo__opening {
-      animation: openharness-logo-opening 2.6s ease-in-out infinite;
-      transform-origin: 88px 22px;
+    .oh-layer-base-mark {
+      opacity: 0;
+    }
+
+    .oh-layer-solid-resolved {
+      opacity: 1 !important;
     }
   }
 }
 
-:root[data-theme-type="light"] {
-  .openharness-logo__backplate {
-    fill: #f2f5f8;
+@keyframes oh-logo-radiate {
+  0% {
+    opacity: 0.35;
+    stroke-width: 4px;
+    transform: scale(1);
   }
 
-  .openharness-logo__bridge {
-    stroke: #69737d;
-  }
-
-  .openharness-logo__anchor {
-    fill: #f2f5f8;
-    stroke: #69737d;
-  }
-
-  .openharness-logo__anchor--center {
-    fill: #ffffff;
-    stroke: #f2f5f8;
-  }
-}
-
-@keyframes openharness-logo-flow {
   100% {
-    stroke-dashoffset: -204;
+    opacity: 0;
+    stroke-width: 1px;
+    transform: scale(1.45);
   }
 }
 
-@keyframes openharness-logo-sheen {
+@keyframes oh-logo-spin {
   100% {
-    stroke-dashoffset: -284;
+    transform: rotate(360deg);
   }
 }
 
-@keyframes openharness-logo-anchor {
+@keyframes oh-logo-ring-scale {
   0%, 100% {
     transform: scale(1);
   }
-  45% {
-    transform: scale(1.16);
+
+  50% {
+    transform: scale(1.04);
   }
 }
 
-@keyframes openharness-logo-breathe {
+@keyframes oh-logo-node-pulse {
   0%, 100% {
-    transform: scale(0.98);
+    opacity: 0.08;
   }
+
   50% {
-    transform: scale(1.02);
+    opacity: 1;
   }
 }
 
-@keyframes openharness-logo-opening {
+@keyframes oh-logo-bridge-pulse {
   0%, 100% {
-    transform: rotate(0deg);
+    opacity: 0.08;
   }
+
   50% {
-    transform: rotate(5deg);
+    opacity: 0.64;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .openharness-logo--animated {
-    .openharness-logo__backplate,
-    .openharness-logo__loop--flow,
-    .openharness-logo__loop--sheen,
-    .openharness-logo__anchor--center,
-    .openharness-logo__opening {
-      animation: none;
+  .oh-logo-container {
+    .oh-layer-glow-waves,
+    .oh-layer-active-hub,
+    .oh-layer-outer-ring {
+      display: none !important;
+      animation: none !important;
+    }
+
+    .oh-layer-base-mark {
+      opacity: 0;
+    }
+
+    .oh-layer-solid-resolved {
+      opacity: 1 !important;
     }
   }
 }

@@ -13,6 +13,7 @@
       "sessionConfig": "Session behavior, tools, and timeouts.",
       "aiContext": "Rules and memory for AI context.",
       "mcpTools": "MCP servers and tool integrations.",
+      "agentPermissions": "Agent tool approvals, rules, and audit history.",
       "editor": "Editor font, display, and formatting.",
       "lsp": "Language servers and code intelligence.",
       "keyboard": "Shortcuts and key bindings."
@@ -31,6 +32,7 @@
       "aiContext": "Rules & Memory",
       "skills": "Skills",
       "mcpTools": "MCP",
+      "agentPermissions": "Permissions",
       "agents": "Agents",
       "editor": "Editor",
       "lsp": "LSP",

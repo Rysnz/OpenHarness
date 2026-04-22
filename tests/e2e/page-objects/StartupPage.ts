@@ -87,9 +87,10 @@ export class StartupPage extends BasePage {
 
   async clickRecentProject(index: number): Promise<void> {
     const items = await browser.$$(this.selectors.recentProjectItem);
+    const itemCount = await items.length;
 
-    if (index >= items.length) {
-      throw new Error(`Recent project index ${index} out of range (total: ${items.length})`);
+    if (index >= itemCount) {
+      throw new Error(`Recent project index ${index} out of range (total: ${itemCount})`);
     }
 
     await items[index].click();
@@ -128,13 +129,23 @@ export class StartupPage extends BasePage {
       console.log(`[StartupPage] Opening workspace: ${workspacePath}`);
 
       await browser.execute(async (path: string) => {
-        const { workspaceManager } = await import('/src/infrastructure/services/business/workspaceManager.ts');
+        const modulePath: string = '/src/infrastructure/services/business/workspaceManager.ts';
+        const { workspaceManager } = await import(/* @vite-ignore */ modulePath) as {
+          workspaceManager: {
+            openWorkspace(workspacePath: string): Promise<void>;
+          };
+        };
         await workspaceManager.openWorkspace(path);
       }, workspacePath);
 
       await browser.waitUntil(async () => {
         return browser.execute(async (targetPath: string) => {
-          const { globalStateAPI } = await import('/src/shared/types/global-state.ts');
+          const modulePath: string = '/src/shared/types/global-state.ts';
+          const { globalStateAPI } = await import(/* @vite-ignore */ modulePath) as {
+            globalStateAPI: {
+              getCurrentWorkspace(): Promise<{ rootPath: string } | null>;
+            };
+          };
           const currentWorkspace = await globalStateAPI.getCurrentWorkspace();
           return currentWorkspace?.rootPath === targetPath;
         }, workspacePath);

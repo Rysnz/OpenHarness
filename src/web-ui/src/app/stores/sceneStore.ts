@@ -18,7 +18,7 @@
 
 import { create } from 'zustand';
 import { SCENE_TAB_REGISTRY, MAX_OPEN_SCENES, getSceneDef, getMiniAppSceneDef } from '../scenes/registry';
-import { getSceneNav } from '../scenes/nav-registry';
+import { hasSceneNav } from '../scenes/nav-manifest';
 import { useNavSceneStore } from './navSceneStore';
 import type { SceneTab, SceneTabId } from '../components/SceneBar/types';
 
@@ -61,7 +61,7 @@ function resolveNavSceneId(sceneId: SceneTabId): SceneTabId | null {
     return 'shell';
   }
 
-  return getSceneNav(sceneId) ? sceneId : null;
+  return hasSceneNav(sceneId) ? sceneId : null;
 }
 
 interface SceneState {

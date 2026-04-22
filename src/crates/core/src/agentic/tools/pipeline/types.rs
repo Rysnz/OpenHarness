@@ -62,6 +62,12 @@ pub struct ToolExecutionContext {
     /// If not empty, only allow tools in the list to be executed
     pub allowed_tools: Vec<String>,
     pub workspace_services: Option<WorkspaceServices>,
+    /// Agent's permission mode (controls approval behavior)
+    /// Passed via context_vars key "permission_mode" if not set here
+    pub permission_mode: Option<String>,
+    /// Hook configuration for this execution
+    /// Passed via context_vars key "before_tool_call" / "after_tool_result" etc. as JSON array strings
+    pub hooks: Option<crate::agentic::agents::AgentHookConfig>,
 }
 
 /// Tool execution task

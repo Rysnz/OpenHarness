@@ -79,6 +79,77 @@ fn validate_required_string(input: &Value, field_name: &str) -> ValidationResult
     }
 }
 
+fn allowed_mcp_servers(context: Option<&ToolUseContext>) -> Option<HashSet<String>> {
+    let value = context?.custom_data.get("agent_mcp_servers")?;
+    let refs = match value {
+        Value::Array(items) => items
+            .iter()
+            .filter_map(|item| item.as_str())
+            .map(str::trim)
+            .filter(|item| !item.is_empty())
+            .map(|item| item.to_ascii_lowercase())
+            .collect::<HashSet<_>>(),
+        Value::String(items) => items
+            .split(',')
+            .map(str::trim)
+            .filter(|item| !item.is_empty())
+            .map(|item| item.to_ascii_lowercase())
+            .collect::<HashSet<_>>(),
+        _ => HashSet::new(),
+    };
+
+    Some(refs)
+}
+
+fn is_mcp_server_visible(server_id: &str, context: Option<&ToolUseContext>) -> bool {
+    let Some(allowed) = allowed_mcp_servers(context) else {
+        return true;
+    };
+
+    let normalized = server_id.trim().to_ascii_lowercase();
+    allowed.contains("*") || allowed.contains(&normalized)
+}
+
+fn validate_mcp_server_visibility(
+    input: &Value,
+    context: Option<&ToolUseContext>,
+) -> ValidationResult {
+    let server_validation = validate_required_string(input, "server_id");
+    if !server_validation.result {
+        return server_validation;
+    }
+
+    let server_id = input
+        .get("server_id")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default();
+
+    if is_mcp_server_visible(server_id, context) {
+        ValidationResult::default()
+    } else {
+        ValidationResult {
+            result: false,
+            message: Some(format!(
+                "MCP server '{}' is not available to the current agent",
+                server_id
+            )),
+            error_code: Some(403),
+            meta: None,
+        }
+    }
+}
+
+fn ensure_mcp_server_visible(server_id: &str, context: &ToolUseContext) -> OpenHarnessResult<()> {
+    if is_mcp_server_visible(server_id, Some(context)) {
+        Ok(())
+    } else {
+        Err(tool_error(format!(
+            "MCP server '{}' is not available to the current agent",
+            server_id
+        )))
+    }
+}
+
 fn render_resource_catalog(resources: &[MCPResource]) -> String {
     if resources.is_empty() {
         return "No MCP resources available.".to_string();
@@ -256,9 +327,9 @@ impl Tool for ListMCPResourcesTool {
     async fn validate_input(
         &self,
         input: &Value,
-        _context: Option<&ToolUseContext>,
+        context: Option<&ToolUseContext>,
     ) -> ValidationResult {
-        validate_required_string(input, "server_id")
+        validate_mcp_server_visibility(input, context)
     }
 
     fn render_tool_use_message(&self, input: &Value, options: &ToolRenderOptions) -> String {
@@ -276,12 +347,13 @@ impl Tool for ListMCPResourcesTool {
     async fn call_impl(
         &self,
         input: &Value,
-        _context: &ToolUseContext,
+        context: &ToolUseContext,
     ) -> OpenHarnessResult<Vec<ToolResult>> {
         let server_id = input
             .get("server_id")
             .and_then(|value| value.as_str())
             .ok_or_else(|| tool_error("server_id is required"))?;
+        ensure_mcp_server_visible(server_id, context)?;
         let refresh = input
             .get("refresh")
             .and_then(|value| value.as_bool())
@@ -364,9 +436,9 @@ impl Tool for ReadMCPResourceTool {
     async fn validate_input(
         &self,
         input: &Value,
-        _context: Option<&ToolUseContext>,
+        context: Option<&ToolUseContext>,
     ) -> ValidationResult {
-        let server_validation = validate_required_string(input, "server_id");
+        let server_validation = validate_mcp_server_visibility(input, context);
         if !server_validation.result {
             return server_validation;
         }
@@ -388,12 +460,13 @@ impl Tool for ReadMCPResourceTool {
     async fn call_impl(
         &self,
         input: &Value,
-        _context: &ToolUseContext,
+        context: &ToolUseContext,
     ) -> OpenHarnessResult<Vec<ToolResult>> {
         let server_id = input
             .get("server_id")
             .and_then(|value| value.as_str())
             .ok_or_else(|| tool_error("server_id is required"))?;
+        ensure_mcp_server_visible(server_id, context)?;
         let uri = input
             .get("uri")
             .and_then(|value| value.as_str())
@@ -478,9 +551,9 @@ impl Tool for ListMCPPromptsTool {
     async fn validate_input(
         &self,
         input: &Value,
-        _context: Option<&ToolUseContext>,
+        context: Option<&ToolUseContext>,
     ) -> ValidationResult {
-        validate_required_string(input, "server_id")
+        validate_mcp_server_visibility(input, context)
     }
 
     fn render_tool_use_message(&self, input: &Value, options: &ToolRenderOptions) -> String {
@@ -498,12 +571,13 @@ impl Tool for ListMCPPromptsTool {
     async fn call_impl(
         &self,
         input: &Value,
-        _context: &ToolUseContext,
+        context: &ToolUseContext,
     ) -> OpenHarnessResult<Vec<ToolResult>> {
         let server_id = input
             .get("server_id")
             .and_then(|value| value.as_str())
             .ok_or_else(|| tool_error("server_id is required"))?;
+        ensure_mcp_server_visible(server_id, context)?;
         let refresh = input
             .get("refresh")
             .and_then(|value| value.as_bool())
@@ -593,9 +667,9 @@ impl Tool for GetMCPPromptTool {
     async fn validate_input(
         &self,
         input: &Value,
-        _context: Option<&ToolUseContext>,
+        context: Option<&ToolUseContext>,
     ) -> ValidationResult {
-        let server_validation = validate_required_string(input, "server_id");
+        let server_validation = validate_mcp_server_visibility(input, context);
         if !server_validation.result {
             return server_validation;
         }
@@ -650,12 +724,13 @@ impl Tool for GetMCPPromptTool {
     async fn call_impl(
         &self,
         input: &Value,
-        _context: &ToolUseContext,
+        context: &ToolUseContext,
     ) -> OpenHarnessResult<Vec<ToolResult>> {
         let server_id = input
             .get("server_id")
             .and_then(|value| value.as_str())
             .ok_or_else(|| tool_error("server_id is required"))?;
+        ensure_mcp_server_visible(server_id, context)?;
         let name = input
             .get("name")
             .and_then(|value| value.as_str())
@@ -703,5 +778,79 @@ impl Tool for GetMCPPromptTool {
             }),
             Some(rendered),
         )])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn empty_context() -> ToolUseContext {
+        ToolUseContext {
+            tool_call_id: None,
+            agent_type: None,
+            session_id: None,
+            dialog_turn_id: None,
+            workspace: None,
+            custom_data: HashMap::new(),
+            stream_sink: None,
+            computer_use_host: None,
+            cancellation_token: None,
+            workspace_services: None,
+        }
+    }
+
+    fn context_with_servers(servers: Value) -> ToolUseContext {
+        let mut context = empty_context();
+        context
+            .custom_data
+            .insert("agent_mcp_servers".to_string(), servers);
+        context
+    }
+
+    #[test]
+    fn missing_agent_mcp_server_context_allows_legacy_access() {
+        let input = json!({ "server_id": "github" });
+        let validation = validate_mcp_server_visibility(&input, None);
+
+        assert!(validation.result);
+    }
+
+    #[test]
+    fn matching_agent_mcp_server_is_allowed() {
+        let input = json!({ "server_id": "notion" });
+        let context = context_with_servers(json!(["notion"]));
+        let validation = validate_mcp_server_visibility(&input, Some(&context));
+
+        assert!(validation.result);
+    }
+
+    #[test]
+    fn non_matching_agent_mcp_server_is_denied() {
+        let input = json!({ "server_id": "github" });
+        let context = context_with_servers(json!(["notion"]));
+        let validation = validate_mcp_server_visibility(&input, Some(&context));
+
+        assert!(!validation.result);
+        assert_eq!(validation.error_code, Some(403));
+    }
+
+    #[test]
+    fn wildcard_agent_mcp_server_allows_any_server() {
+        let input = json!({ "server_id": "github" });
+        let context = context_with_servers(json!(["*"]));
+        let validation = validate_mcp_server_visibility(&input, Some(&context));
+
+        assert!(validation.result);
+    }
+
+    #[test]
+    fn comma_separated_agent_mcp_servers_are_supported() {
+        let input = json!({ "server_id": "github" });
+        let context = context_with_servers(json!("notion, github"));
+        let validation = validate_mcp_server_visibility(&input, Some(&context));
+
+        assert!(validation.result);
     }
 }

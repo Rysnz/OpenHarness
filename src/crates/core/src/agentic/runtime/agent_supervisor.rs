@@ -4,8 +4,8 @@ use super::agent_task::{
     AgentTaskStatus, ForkContextMode,
 };
 use super::agent_task_registry::AgentTaskRegistry;
-use super::patch_store::{AgentPatchRecord, AgentPatchStore, PatchStatus};
 use super::agent_transcript::{AgentTranscriptEntry, AgentTranscriptStore};
+use super::patch_store::{AgentPatchRecord, AgentPatchStore, PatchStatus};
 use super::task_events::{AgentTaskEvent, AgentTaskEventKind};
 use super::team::{AgentTeam, AgentTeamMemberStatus, AgentTeamStatus, AgentTeamStore};
 use super::workspace_binding::WorkspaceIsolation;
@@ -86,7 +86,10 @@ impl AgentTaskSupervisor {
         format!("agtask-mailbox-{}", task_id.as_str())
     }
 
-    fn merge_patch_summary(target: &mut super::patch_store::AgentPatchSummary, source: &super::patch_store::AgentPatchSummary) {
+    fn merge_patch_summary(
+        target: &mut super::patch_store::AgentPatchSummary,
+        source: &super::patch_store::AgentPatchSummary,
+    ) {
         target.total += source.total;
         target.pending += source.pending;
         target.accepted += source.accepted;
@@ -146,16 +149,16 @@ impl AgentTaskSupervisor {
         let mut failed_reasons = Vec::new();
 
         for member_task_id in &team.members {
-            let task_snapshot = self
-                .registry
-                .query_task(member_task_id)
-                .await
-                .ok_or_else(|| {
-                    OpenHarnessError::NotFound(format!(
-                        "Agent team member task not found: {}",
-                        member_task_id
-                    ))
-                })?;
+            let task_snapshot =
+                self.registry
+                    .query_task(member_task_id)
+                    .await
+                    .ok_or_else(|| {
+                        OpenHarnessError::NotFound(format!(
+                            "Agent team member task not found: {}",
+                            member_task_id
+                        ))
+                    })?;
 
             let member_patch_summary = self.patch_store.summary_by_task(member_task_id).await;
             Self::merge_patch_summary(&mut patch_summary, &member_patch_summary);
@@ -243,7 +246,8 @@ impl AgentTaskSupervisor {
         }
 
         let mailbox_id = Self::mailbox_id_for_task(to_task_id);
-        let message = AgentMailboxMessage::new(content, from_task_id, Some(to_task_id.clone()), team_id);
+        let message =
+            AgentMailboxMessage::new(content, from_task_id, Some(to_task_id.clone()), team_id);
         Ok(self.mailbox_store.send(&mailbox_id, message).await)
     }
 
@@ -374,7 +378,10 @@ impl AgentTaskSupervisor {
             .unwrap_or_else(|| config.workspace_binding.root.clone())
     }
 
-    fn normalize_patch_path_for_git(repo_root: &Path, patch_path: &Path) -> OpenHarnessResult<String> {
+    fn normalize_patch_path_for_git(
+        repo_root: &Path,
+        patch_path: &Path,
+    ) -> OpenHarnessResult<String> {
         let relative = if patch_path.is_absolute() {
             patch_path.strip_prefix(repo_root).map_err(|_| {
                 OpenHarnessError::Validation(format!(
@@ -414,9 +421,7 @@ impl AgentTaskSupervisor {
     }
 
     fn normalize_git_status_path(path: &str) -> String {
-        path.trim()
-            .trim_start_matches("./")
-            .replace('\\', "/")
+        path.trim().trim_start_matches("./").replace('\\', "/")
     }
 
     async fn resolve_patch_operation_context(
@@ -449,13 +454,15 @@ impl AgentTaskSupervisor {
         let normalized_path =
             Self::normalize_patch_path_for_git(&repo_path, patch_record.relative_path.as_path())?;
 
-        let is_repository = GitService::is_repository(&repo_path).await.map_err(|error| {
-            OpenHarnessError::service(format!(
-                "Failed to inspect git repository '{}': {}",
-                repo_path.display(),
-                error
-            ))
-        })?;
+        let is_repository = GitService::is_repository(&repo_path)
+            .await
+            .map_err(|error| {
+                OpenHarnessError::service(format!(
+                    "Failed to inspect git repository '{}': {}",
+                    repo_path.display(),
+                    error
+                ))
+            })?;
 
         Ok((patch_record, repo_path, normalized_path, is_repository))
     }
@@ -630,9 +637,10 @@ impl AgentTaskSupervisor {
         }
 
         let normalized_path = Self::normalize_git_status_path(&normalized_path);
-        let tracked_in_head = GitService::get_file_content(&repo_path, &normalized_path, Some("HEAD"))
-            .await
-            .is_ok();
+        let tracked_in_head =
+            GitService::get_file_content(&repo_path, &normalized_path, Some("HEAD"))
+                .await
+                .is_ok();
 
         let rollback_result: OpenHarnessResult<()> = if !tracked_in_head {
             Self::remove_untracked_patch_path(&repo_path, &normalized_path).await
@@ -746,13 +754,15 @@ impl AgentTaskSupervisor {
             .to_string();
 
         let repo_path = task_snapshot.config.workspace_binding.root.clone();
-        let is_repository = GitService::is_repository(&repo_path).await.map_err(|error| {
-            OpenHarnessError::service(format!(
-                "Failed to inspect repository '{}': {}",
-                repo_path.display(),
-                error
-            ))
-        })?;
+        let is_repository = GitService::is_repository(&repo_path)
+            .await
+            .map_err(|error| {
+                OpenHarnessError::service(format!(
+                    "Failed to inspect repository '{}': {}",
+                    repo_path.display(),
+                    error
+                ))
+            })?;
         if !is_repository {
             return Err(OpenHarnessError::Validation(format!(
                 "Task {} root '{}' is not a git repository",
@@ -799,9 +809,7 @@ impl AgentTaskSupervisor {
                         .to_string();
                     Some(format!("merge abort failed: {}", abort_stderr))
                 }
-                Err(error) => {
-                    Some(format!("merge abort failed to execute: {}", error))
-                }
+                Err(error) => Some(format!("merge abort failed to execute: {}", error)),
             };
 
             Self::emit_patch_operation_event(
@@ -835,8 +843,10 @@ impl AgentTaskSupervisor {
         let current_records = self.patch_store.list_by_task(task_id).await;
         let mut updated_records = Vec::with_capacity(current_records.len());
         for record in current_records {
-            let updated = if matches!(record.status, PatchStatus::Rejected | PatchStatus::Conflicted)
-            {
+            let updated = if matches!(
+                record.status,
+                PatchStatus::Rejected | PatchStatus::Conflicted
+            ) {
                 record
             } else if matches!(record.status, PatchStatus::Applied) {
                 record
@@ -1183,7 +1193,10 @@ impl AgentTaskSupervisor {
                 Err(error) => {
                     if matches!(error, OpenHarnessError::Cancelled(_)) {
                         let error_text = error.to_string();
-                        let snapshot = match registry.mark_cancelled(&task_id_clone, error_text.clone()).await {
+                        let snapshot = match registry
+                            .mark_cancelled(&task_id_clone, error_text.clone())
+                            .await
+                        {
                             Ok(snapshot) => snapshot,
                             Err(_) => {
                                 let _ = registry.persist_snapshot(&task_id_clone).await;
@@ -1386,7 +1399,14 @@ mod tests {
         let tree = repository.find_tree(tree_id).unwrap();
         let signature = Signature::now("OpenHarness", "openharness@example.com").unwrap();
         repository
-            .commit(Some("HEAD"), &signature, &signature, "initial commit", &tree, &[])
+            .commit(
+                Some("HEAD"),
+                &signature,
+                &signature,
+                "initial commit",
+                &tree,
+                &[],
+            )
             .unwrap();
 
         std::fs::write(repo_path.join(file_name), modified_content).unwrap();
@@ -1488,7 +1508,11 @@ mod tests {
         (repo_path, feature_branch.to_string())
     }
 
-    fn build_patch_record(task_id: &AgentTaskId, patch_id: &str, relative_path: &str) -> AgentPatchRecord {
+    fn build_patch_record(
+        task_id: &AgentTaskId,
+        patch_id: &str,
+        relative_path: &str,
+    ) -> AgentPatchRecord {
         AgentPatchRecord {
             patch_id: patch_id.to_string(),
             task_id: task_id.clone(),
@@ -1525,7 +1549,11 @@ mod tests {
 
         supervisor
             .patch_store()
-            .upsert_patch(build_patch_record(&snapshot.task_id, "patch-apply-1", "notes.txt"))
+            .upsert_patch(build_patch_record(
+                &snapshot.task_id,
+                "patch-apply-1",
+                "notes.txt",
+            ))
             .await;
 
         let updated = supervisor
@@ -1715,7 +1743,9 @@ mod tests {
             })
             .await;
 
-        let merge_result = supervisor.merge_task_worktree_branch(&snapshot.task_id).await;
+        let merge_result = supervisor
+            .merge_task_worktree_branch(&snapshot.task_id)
+            .await;
         assert!(merge_result.is_err());
 
         let status = GitService::get_status(&repo_path).await.unwrap();
@@ -1726,7 +1756,10 @@ mod tests {
         let merge_head = repo_path.join(".git").join("MERGE_HEAD");
         assert!(!merge_head.exists());
 
-        let patches = supervisor.patch_store().list_by_task(&snapshot.task_id).await;
+        let patches = supervisor
+            .patch_store()
+            .list_by_task(&snapshot.task_id)
+            .await;
         assert_eq!(patches.len(), 1);
         assert_eq!(patches[0].status, PatchStatus::Accepted);
 
@@ -1824,7 +1857,10 @@ mod tests {
             .data
             .as_ref()
             .expect("expected metadata on PatchReady event");
-        assert_eq!(data.get("patch_count").and_then(|value| value.as_u64()), Some(1));
+        assert_eq!(
+            data.get("patch_count").and_then(|value| value.as_u64()),
+            Some(1)
+        );
         assert_eq!(
             data.get("isolation").and_then(|value| value.as_str()),
             Some("git_worktree")
@@ -1833,11 +1869,9 @@ mod tests {
             .get("changed_files")
             .and_then(|value| value.as_array())
             .expect("expected changed_files array");
-        assert!(
-            changed_files
-                .iter()
-                .any(|value| value.as_str() == Some("notes.txt"))
-        );
+        assert!(changed_files
+            .iter()
+            .any(|value| value.as_str() == Some("notes.txt")));
 
         let transcript = transcript_store.get(&snapshot.task_id).await.unwrap();
         assert!(transcript
@@ -1929,7 +1963,11 @@ mod tests {
 
         supervisor
             .registry()
-            .mark_succeeded(&success_task.task_id, "completed successfully".to_string(), None)
+            .mark_succeeded(
+                &success_task.task_id,
+                "completed successfully".to_string(),
+                None,
+            )
             .await
             .unwrap();
         supervisor
@@ -2091,11 +2129,7 @@ mod tests {
             .await;
 
         let delivered = supervisor
-            .broadcast_to_team_mailbox(
-                "team-mailbox-1",
-                "sync on patch review".to_string(),
-                None,
-            )
+            .broadcast_to_team_mailbox("team-mailbox-1", "sync on patch review".to_string(), None)
             .await
             .unwrap();
         assert_eq!(delivered.len(), 2);

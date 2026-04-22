@@ -4,7 +4,7 @@
  */
 
 import { gitAPI } from '@/infrastructure/api';
-import { diffService } from '@/tools/editor/services';
+import { diffService } from '@/tools/editor/services/DiffService';
 import { createLogger } from '@/shared/utils/logger';
 
 const log = createLogger('gitDiffService');

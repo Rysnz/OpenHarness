@@ -120,6 +120,63 @@ export interface ModeInfo {
   enabled: boolean;
 }
 
+export type PermissionAction = 'read' | 'write' | 'shell' | 'mcp' | 'worktree' | 'other';
+export type PermissionRiskLevel = 'low' | 'medium' | 'high';
+export type PermissionDecision = 'allow' | 'ask' | 'deny';
+
+export interface PermissionRule {
+  ruleId: string;
+  agentName?: string | null;
+  toolName?: string | null;
+  pathPrefix?: string | null;
+  commandContains?: string | null;
+  mcpServer?: string | null;
+  decision: PermissionDecision;
+  riskLevel: PermissionRiskLevel;
+  reason: string;
+}
+
+export interface PermissionApprovalRequest {
+  requestId: string;
+  toolCallId: string;
+  toolName: string;
+  action: PermissionAction;
+  riskLevel: PermissionRiskLevel;
+  reason: string;
+  sessionId: string;
+  dialogTurnId: string;
+  params: unknown;
+  createdAtMs: number;
+}
+
+export interface PermissionAuditRecord {
+  auditId: string;
+  toolCallId: string;
+  toolName: string;
+  action: PermissionAction;
+  riskLevel: PermissionRiskLevel;
+  decision: PermissionDecision;
+  effectiveDecision: PermissionDecision;
+  reason: string;
+  sessionId: string;
+  dialogTurnId: string;
+  approved?: boolean | null;
+  timestampMs: number;
+}
+
+export interface AgentApprovalRespondRequest {
+  toolId: string;
+  approved: boolean;
+  reason?: string | null;
+  updatedInput?: unknown;
+}
+
+export interface AgentApprovalRespondBatchResult {
+  toolId: string;
+  success: boolean;
+  error?: string | null;
+}
+
 export type AgentTaskStatus =
   | 'queued'
   | 'running'
@@ -420,6 +477,91 @@ export class AgentAPI {
       });
     } catch (error) {
       throw createTauriCommandError('reject_tool_execution', error, { sessionId, toolId, reason });
+    }
+  }
+
+  async listPendingApprovals(): Promise<PermissionApprovalRequest[]> {
+    try {
+      return await api.invoke<PermissionApprovalRequest[]>('agent_approval_list_pending');
+    } catch (error) {
+      throw createTauriCommandError('agent_approval_list_pending', error);
+    }
+  }
+
+  async respondApproval(request: AgentApprovalRespondRequest): Promise<void> {
+    try {
+      await api.invoke<void>('agent_approval_respond', { request });
+    } catch (error) {
+      throw createTauriCommandError('agent_approval_respond', error, request);
+    }
+  }
+
+  async respondApprovalsBatch(
+    items: AgentApprovalRespondRequest[]
+  ): Promise<AgentApprovalRespondBatchResult[]> {
+    try {
+      return await api.invoke<AgentApprovalRespondBatchResult[]>(
+        'agent_approval_respond_batch',
+        { request: { items } }
+      );
+    } catch (error) {
+      throw createTauriCommandError('agent_approval_respond_batch', error, { items });
+    }
+  }
+
+  async listPermissionAudits(limit = 200): Promise<PermissionAuditRecord[]> {
+    try {
+      return await api.invoke<PermissionAuditRecord[]>('agent_approval_audit_recent', {
+        request: { limit }
+      });
+    } catch (error) {
+      throw createTauriCommandError('agent_approval_audit_recent', error, { limit });
+    }
+  }
+
+  async listPermissionRules(): Promise<PermissionRule[]> {
+    try {
+      return await api.invoke<PermissionRule[]>('agent_permission_rule_list');
+    } catch (error) {
+      throw createTauriCommandError('agent_permission_rule_list', error);
+    }
+  }
+
+  async upsertPermissionRule(rule: PermissionRule): Promise<PermissionRule[]> {
+    try {
+      return await api.invoke<PermissionRule[]>('agent_permission_rule_upsert', {
+        request: { rule }
+      });
+    } catch (error) {
+      throw createTauriCommandError('agent_permission_rule_upsert', error, { rule });
+    }
+  }
+
+  async removePermissionRule(ruleId: string): Promise<PermissionRule[]> {
+    try {
+      return await api.invoke<PermissionRule[]>('agent_permission_rule_remove', {
+        request: { ruleId }
+      });
+    } catch (error) {
+      throw createTauriCommandError('agent_permission_rule_remove', error, { ruleId });
+    }
+  }
+
+  async clearPermissionRules(): Promise<PermissionRule[]> {
+    try {
+      return await api.invoke<PermissionRule[]>('agent_permission_rule_clear');
+    } catch (error) {
+      throw createTauriCommandError('agent_permission_rule_clear', error);
+    }
+  }
+
+  async replacePermissionRules(rules: PermissionRule[]): Promise<PermissionRule[]> {
+    try {
+      return await api.invoke<PermissionRule[]>('agent_permission_rule_replace_all', {
+        request: { rules }
+      });
+    } catch (error) {
+      throw createTauriCommandError('agent_permission_rule_replace_all', error, { rules });
     }
   }
   

@@ -84,7 +84,9 @@ impl AgentPatchStore {
         }
     }
 
-    fn read_persisted_store_blocking(snapshot_file: &PathBuf) -> OpenHarnessResult<PersistedPatchStore> {
+    fn read_persisted_store_blocking(
+        snapshot_file: &PathBuf,
+    ) -> OpenHarnessResult<PersistedPatchStore> {
         if !snapshot_file.exists() {
             return Ok(PersistedPatchStore::default());
         }
@@ -135,15 +137,13 @@ impl AgentPatchStore {
             OpenHarnessError::service(format!("Failed to serialize patch snapshots: {}", error))
         })?;
 
-        tokio::fs::write(snapshot_file, raw)
-            .await
-            .map_err(|error| {
-                OpenHarnessError::service(format!(
-                    "Failed to write patch snapshot file '{}': {}",
-                    snapshot_file.display(),
-                    error
-                ))
-            })
+        tokio::fs::write(snapshot_file, raw).await.map_err(|error| {
+            OpenHarnessError::service(format!(
+                "Failed to write patch snapshot file '{}': {}",
+                snapshot_file.display(),
+                error
+            ))
+        })
     }
 
     async fn persist_if_needed(&self, records: &HashMap<String, Vec<AgentPatchRecord>>) {
@@ -290,12 +290,8 @@ mod tests {
         let store = AgentPatchStore::default();
         let task_id = AgentTaskId::from("agtask-test-1");
 
-        store
-            .upsert_patch(build_record(&task_id, "patch-1"))
-            .await;
-        store
-            .upsert_patch(build_record(&task_id, "patch-2"))
-            .await;
+        store.upsert_patch(build_record(&task_id, "patch-1")).await;
+        store.upsert_patch(build_record(&task_id, "patch-2")).await;
 
         let records = store.list_by_task(&task_id).await;
         assert_eq!(records.len(), 2);
@@ -306,9 +302,7 @@ mod tests {
         let store = AgentPatchStore::default();
         let task_id = AgentTaskId::from("agtask-test-2");
 
-        store
-            .upsert_patch(build_record(&task_id, "patch-3"))
-            .await;
+        store.upsert_patch(build_record(&task_id, "patch-3")).await;
 
         let updated = store
             .set_status(&task_id, "patch-3", PatchStatus::Accepted)

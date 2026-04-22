@@ -19,7 +19,7 @@ export class BasePage {
   }
 
   async getByTestId(testId: string): Promise<WebdriverIO.Element> {
-    return $(`[data-testid="${testId}"]`);
+    return await $(`[data-testid="${testId}"]`) as unknown as WebdriverIO.Element;
   }
 
   async waitForElement(
@@ -31,7 +31,7 @@ export class BasePage {
       timeout,
       timeoutMsg: `Element ${selector} not visible within ${timeout}ms`,
     });
-    return element;
+    return element as unknown as WebdriverIO.Element;
   }
 
   async waitForTestId(
@@ -107,7 +107,7 @@ export class BasePage {
   }
 
   async executeScript<T>(script: string | ((...args: unknown[]) => T), ...args: unknown[]): Promise<T> {
-    return browser.execute(script as () => T, ...args);
+    return await browser.execute(script as () => T, ...args) as T;
   }
 
   async getTitle(): Promise<string> {

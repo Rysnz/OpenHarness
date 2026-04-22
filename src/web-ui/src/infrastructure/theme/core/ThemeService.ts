@@ -14,7 +14,7 @@ import {
   ThemeSelectionId,
 } from '../types';
 import { builtinThemes, getSystemPreferredDefaultThemeId } from '../presets';
-import { configAPI } from '@/infrastructure/api';
+import { configAPI } from '@/infrastructure/api/service-api/ConfigAPI';
 import { monacoThemeSync } from '../integrations/MonacoThemeSync';
 import { createLogger } from '@/shared/utils/logger';
 

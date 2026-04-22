@@ -8,7 +8,7 @@
  * TitleBar removed; window controls moved to NavBar, dialogs managed here.
  */
 
-import React, { useState, useCallback, useEffect, useMemo, useRef, useContext } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef, useContext, lazy, Suspense } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useWorkspaceContext } from '../../infrastructure/contexts/WorkspaceContext';
 import { useWindowControls } from '../hooks/useWindowControls';
@@ -16,27 +16,43 @@ import { usePartnerBootstrap } from '../hooks/usePartnerBootstrap';
 import { useApp } from '../hooks/useApp';
 import { useSceneStore } from '../stores/sceneStore';
 import { useShortcut } from '@/infrastructure/hooks/useShortcut';
-import { configManager } from '@/infrastructure/config';
+import { configManager } from '@/infrastructure/config/services/ConfigManager';
 
 type TransitionDirection = 'entering' | 'returning' | null;
 import { FlowChatManager } from '../../flow_chat/services/FlowChatManager';
+import { flowChatStore } from '@/flow_chat/store/FlowChatStore';
 import WorkspaceBody from './WorkspaceBody';
-import { ToolbarMode, useToolbarModeContext } from '../../flow_chat';
-import { FloatingMiniChat } from './FloatingMiniChat';
-import { NewProjectDialog } from '../components/NewProjectDialog';
-import { AboutDialog } from '../components/AboutDialog';
-import { MCPInteractionDialog } from '../components/MCPInteractionDialog/MCPInteractionDialog';
-import { WorkspaceManager } from '../../tools/workspace';
-import { workspaceAPI } from '@/infrastructure/api';
+import { ToolbarMode } from '../../flow_chat/components/toolbar-mode/ToolbarMode';
+import { useToolbarModeContext } from '../../flow_chat/components/toolbar-mode/ToolbarModeContext';
+import { workspaceAPI } from '@/infrastructure/api/service-api/WorkspaceAPI';
 import { createLogger } from '@/shared/utils/logger';
-import { useI18n } from '@/infrastructure/i18n';
-import { WorkspaceKind } from '@/shared/types';
+import { useI18n } from '@/infrastructure/i18n/hooks/useI18n';
+import { WorkspaceKind } from '@/shared/types/global-state';
 import { SSHContext } from '@/features/ssh-remote/SSHRemoteContext';
 import { shortcutManager, parseStoredKeybindings } from '@/infrastructure/services/ShortcutManager';
 import { useSessionModeStore } from '../stores/sessionModeStore';
+import { notificationService } from '@/shared/notification-system/services/NotificationService';
+import { quickActions } from '@/shared/services/ide-control/api';
 import './AppLayout.scss';
 
 const log = createLogger('AppLayout');
+const LazyFloatingMiniChat = lazy(async () => {
+  const module = await import('./FloatingMiniChat');
+  return { default: module.FloatingMiniChat };
+});
+const LazyNewProjectDialog = lazy(async () => {
+  const module = await import('../components/NewProjectDialog');
+  return { default: module.NewProjectDialog };
+});
+const LazyAboutDialog = lazy(async () => {
+  const module = await import('../components/AboutDialog');
+  return { default: module.AboutDialog };
+});
+const LazyMCPInteractionDialog = lazy(() => import('../components/MCPInteractionDialog/MCPInteractionDialog'));
+const LazyWorkspaceManager = lazy(async () => {
+  const module = await import('../../tools/workspace');
+  return { default: module.WorkspaceManager };
+});
 
 interface AppLayoutProps {
   className?: string;
@@ -215,7 +231,6 @@ const AppLayout: React.FC<AppLayoutProps> = ({ className = '' }) => {
         );
 
         let sessionId: string | undefined;
-        const { flowChatStore } = await import('@/flow_chat/store/FlowChatStore');
         if (!hasHistoricalSessions) {
           const initialSessionMode =
             currentWorkspace.workspaceKind === WorkspaceKind.Partner
@@ -245,14 +260,10 @@ const AppLayout: React.FC<AppLayoutProps> = ({ className = '' }) => {
               const fullMessage = t('appLayout.projectRequestMessage', { description: pendingDescription });
               await flowChatManager.sendMessage(fullMessage, targetSessionId);
 
-              import('@/shared/notification-system').then(({ notificationService }) => {
-                notificationService.success(t('appLayout.projectRequestSent'), { duration: 3000 });
-              });
+              notificationService.success(t('appLayout.projectRequestSent'), { duration: 3000 });
             } catch (sendError) {
               log.error('Failed to send project description', sendError);
-              import('@/shared/notification-system').then(({ notificationService }) => {
-                notificationService.error(t('appLayout.projectRequestSendFailed'), { duration: 5000 });
-              });
+              notificationService.error(t('appLayout.projectRequestSendFailed'), { duration: 5000 });
             }
           }, 500);
         }
@@ -262,7 +273,6 @@ const AppLayout: React.FC<AppLayoutProps> = ({ className = '' }) => {
           sessionStorage.removeItem('pendingOpenSettings');
           setTimeout(async () => {
             try {
-              const { quickActions } = await import('@/shared/services/ide-control');
               await quickActions.openSettings(pendingSettings);
             } catch (settingsError) {
               log.error('Failed to open pending settings', settingsError);
@@ -271,9 +281,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ className = '' }) => {
         }
       } catch (error) {
         log.error('FlowChatManager initialization failed', error);
-        import('@/shared/notification-system').then(({ notificationService }) => {
-          notificationService.error(t('appLayout.flowChatInitFailed'), { duration: 5000 });
-        });
+        notificationService.error(t('appLayout.flowChatInitFailed'), { duration: 5000 });
       }
     };
 
@@ -466,26 +474,44 @@ const AppLayout: React.FC<AppLayoutProps> = ({ className = '' }) => {
         </main>
 
         {/* Non-agent scenes: floating mini chat button */}
-        {!isWelcomeScene && !isAgentScene && <FloatingMiniChat />}
+        {!isWelcomeScene && !isAgentScene && (
+          <Suspense fallback={null}>
+            <LazyFloatingMiniChat />
+          </Suspense>
+        )}
       </div>
 
       {/* Dialogs (previously owned by TitleBar) */}
-      <NewProjectDialog
-        isOpen={showNewProjectDialog}
-        onClose={() => setShowNewProjectDialog(false)}
-        onConfirm={handleConfirmNewProject}
-        defaultParentPath={hasWorkspace ? currentWorkspace?.rootPath : undefined}
-      />
-      <AboutDialog
-        isOpen={showAboutDialog}
-        onClose={() => setShowAboutDialog(false)}
-      />
-      <WorkspaceManager
-        isVisible={showWorkspaceStatus}
-        onClose={() => setShowWorkspaceStatus(false)}
-        onWorkspaceSelect={() => {}}
-      />
-      <MCPInteractionDialog />
+      {showNewProjectDialog && (
+        <Suspense fallback={null}>
+          <LazyNewProjectDialog
+            isOpen={showNewProjectDialog}
+            onClose={() => setShowNewProjectDialog(false)}
+            onConfirm={handleConfirmNewProject}
+            defaultParentPath={hasWorkspace ? currentWorkspace?.rootPath : undefined}
+          />
+        </Suspense>
+      )}
+      {showWorkspaceStatus && (
+        <Suspense fallback={null}>
+          <LazyWorkspaceManager
+            isVisible={showWorkspaceStatus}
+            onClose={() => setShowWorkspaceStatus(false)}
+            onWorkspaceSelect={() => {}}
+          />
+        </Suspense>
+      )}
+      {showAboutDialog && (
+        <Suspense fallback={null}>
+          <LazyAboutDialog
+            isOpen={showAboutDialog}
+            onClose={() => setShowAboutDialog(false)}
+          />
+        </Suspense>
+      )}
+      <Suspense fallback={null}>
+        <LazyMCPInteractionDialog />
+      </Suspense>
     </>
   );
 };

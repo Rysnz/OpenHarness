@@ -202,7 +202,7 @@ fn workspace_root_from_input(workspace_path: Option<&str>) -> Option<PathBuf> {
 
 async fn maybe_stop_worker(state: &State<'_, AppState>, app: &MiniApp) {
     if app.runtime.worker_restart_required {
-        if let Some(ref pool) = state.js_worker_pool {
+        if let Some(pool) = state.js_worker_pool_if_initialized() {
             pool.stop(&app.id).await;
         }
         emit_miniapp_event(
@@ -219,8 +219,8 @@ async fn ensure_worker_dependencies(
     app: &mut MiniApp,
 ) -> Result<bool, String> {
     let pool = state
-        .js_worker_pool
-        .as_ref()
+        .get_js_worker_pool()
+        .await
         .ok_or_else(|| "JS Worker pool not initialized".to_string())?;
 
     let needs_install = !app.source.npm_dependencies.is_empty()
@@ -348,7 +348,7 @@ pub async fn update_miniapp(
 
 #[tauri::command]
 pub async fn delete_miniapp(state: State<'_, AppState>, app_id: String) -> Result<(), String> {
-    if let Some(ref pool) = state.js_worker_pool {
+    if let Some(pool) = state.js_worker_pool_if_initialized() {
         pool.stop(app_id.as_str()).await;
     }
     state
@@ -446,7 +446,7 @@ pub async fn grant_miniapp_path(
 
 #[tauri::command]
 pub async fn miniapp_runtime_status(state: State<'_, AppState>) -> Result<RuntimeStatus, String> {
-    let Some(ref pool) = state.js_worker_pool else {
+    let Some(pool) = state.get_js_worker_pool().await else {
         return Ok(RuntimeStatus {
             available: false,
             kind: None,
@@ -472,8 +472,8 @@ pub async fn miniapp_worker_call(
     request: MiniAppWorkerCallRequest,
 ) -> Result<Value, String> {
     let pool = state
-        .js_worker_pool
-        .as_ref()
+        .get_js_worker_pool()
+        .await
         .ok_or_else(|| "JS Worker pool not initialized".to_string())?;
     let was_running = pool.is_running(&request.app_id).await;
     let mut app = state
@@ -527,7 +527,7 @@ pub async fn miniapp_worker_call(
 
 #[tauri::command]
 pub async fn miniapp_worker_stop(state: State<'_, AppState>, app_id: String) -> Result<(), String> {
-    if let Some(ref pool) = state.js_worker_pool {
+    if let Some(pool) = state.js_worker_pool_if_initialized() {
         pool.stop(&app_id).await;
     }
     emit_miniapp_event(
@@ -542,7 +542,7 @@ pub async fn miniapp_worker_stop(state: State<'_, AppState>, app_id: String) -> 
 pub async fn miniapp_worker_list_running(
     state: State<'_, AppState>,
 ) -> Result<Vec<String>, String> {
-    let Some(ref pool) = state.js_worker_pool else {
+    let Some(pool) = state.js_worker_pool_if_initialized() else {
         return Ok(vec![]);
     };
     Ok(pool.list_running().await)
@@ -554,8 +554,8 @@ pub async fn miniapp_install_deps(
     app_id: String,
 ) -> Result<CoreInstallResult, String> {
     let pool = state
-        .js_worker_pool
-        .as_ref()
+        .get_js_worker_pool()
+        .await
         .ok_or_else(|| "JS Worker pool not initialized".to_string())?;
     let app = state
         .miniapp_manager

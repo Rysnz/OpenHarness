@@ -2,8 +2,22 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::process::Command;
 
 use super::ShellType;
+
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+fn create_command(path: &str) -> Command {
+    let mut command = Command::new(path);
+    #[cfg(windows)]
+    command.creation_flags(CREATE_NO_WINDOW);
+    command
+}
 
 /// Shell detector for finding available shells
 pub struct ShellDetector;
@@ -331,7 +345,7 @@ impl ShellDetector {
 
     #[allow(dead_code)]
     fn get_shell_version(path: &str) -> Option<String> {
-        let output = std::process::Command::new(path)
+        let output = create_command(path)
             .arg("--version")
             .output()
             .ok()?;

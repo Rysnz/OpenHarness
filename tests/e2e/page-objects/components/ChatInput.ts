@@ -77,7 +77,7 @@ export class ChatInput extends BasePage {
         const exists = await element.isExisting();
         if (exists) {
           console.log(`[ChatInput] Found input element with selector: ${selector}`);
-          return element;
+          return element as unknown as WebdriverIO.Element;
         }
       } catch (e) {
         // Continue
@@ -148,7 +148,7 @@ export class ChatInput extends BasePage {
         return await input.getText();
       } else {
         // Regular textarea
-        return await input.getValue();
+        return String(await input.getValue());
       }
     }
     return '';

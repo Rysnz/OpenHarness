@@ -4,6 +4,7 @@ import { snapshotAPI } from '@/infrastructure/api';
 import { notificationService } from '@/shared/notification-system';
 import { confirmDanger } from '@/component-library';
 import { createLogger } from '@/shared/utils/logger';
+import { globalEventBus } from '@/infrastructure/event-bus';
 import './TurnRollbackButton.scss';
 
 const log = createLogger('TurnRollbackButton');
@@ -51,8 +52,6 @@ export const TurnRollbackButton: React.FC<TurnRollbackButtonProps> = ({
       log.debug('Rollback completed', { sessionId, turnIndex, restoredFilesCount: restoredFiles.length });
       
       // Notify related components to refresh.
-      const { globalEventBus } = await import('@/infrastructure/event-bus');
-      
       // Refresh file tree.
       globalEventBus.emit('file-tree:refresh');
       

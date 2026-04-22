@@ -17,6 +17,7 @@ import { useNotification } from '@/shared/notification-system';
 import { createLogger } from '@/shared/utils/logger';
 import { useI18n } from '@/infrastructure/i18n';
 import { AlertCircle } from 'lucide-react';
+import { themeService } from '@/infrastructure/theme';
 import './DiffEditor.scss';
 
 const log = createLogger('DiffEditor');
@@ -214,7 +215,6 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
 
         let themeId = OpenHarnessDarkThemeMetadata.id;
         try {
-          const { themeService } = await import('@/infrastructure/theme');
           const currentTheme = themeService.getCurrentTheme();
           if (currentTheme) {
             themeId = currentTheme.monaco ? currentTheme.id : (currentTheme.type === 'dark' ? OpenHarnessDarkThemeMetadata.id : 'vs');
@@ -434,8 +434,6 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
     
     (async () => {
       try {
-        const { themeService } = await import('@/infrastructure/theme');
-        
         unsubscribeThemeService = themeService.on('theme:after-change', (event) => {
           if (event.theme) {
             const newThemeId = event.theme.monaco ? event.theme.id : (event.theme.type === 'dark' ? OpenHarnessDarkThemeMetadata.id : 'vs');

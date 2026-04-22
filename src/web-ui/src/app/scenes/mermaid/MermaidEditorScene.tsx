@@ -4,7 +4,7 @@ import { useI18n } from '@/infrastructure/i18n';
 import { useCurrentWorkspace } from '@/infrastructure/contexts/WorkspaceContext';
 import { MERMAID_INTERACTIVE_EXAMPLE } from '@/flow_chat/constants/mermaidExamples';
 import type { MermaidPanelData, NodeMetadata } from '@/tools/mermaid-editor/types/MermaidPanelTypes';
-import { CodeEditor } from '@/tools/editor';
+import CodeEditor from '@/tools/editor/components/CodeEditor';
 import './MermaidEditorScene.scss';
 
 const MermaidPanel = lazy(() =>

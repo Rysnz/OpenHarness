@@ -1,8 +1,8 @@
 /**
- * SplashScreen — full-screen loading overlay shown on app start.
+ * SplashScreen - full-screen loading overlay shown on app start.
  *
- * Idle:    logo larger, soft fade in/out.
- * Exiting: logo scales up and fades; backdrop dissolves.
+ * Loading: logo breathes while the app initializes.
+ * Exiting: logo resolves to the static mark while the backdrop dissolves.
  */
 
 import React, { useEffect, useCallback } from 'react';
@@ -37,6 +37,7 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ isExiting, onExited }) => {
             size={104}
             className="splash-screen__logo"
             animated
+            status={isExiting ? 'resolved' : 'loading'}
           />
         </div>
       </div>

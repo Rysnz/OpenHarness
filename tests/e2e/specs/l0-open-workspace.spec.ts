@@ -68,7 +68,8 @@ describe('L0 Workspace Opening', () => {
         await browser.pause(5000);
 
         const body = await $('body');
-        const childCount = await body.$$('*').then(els => els.length);
+        const elements = await body.$$('*');
+        const childCount = await elements.length;
         console.log(`[L0] ${(i + 1) * 5}s - DOM elements: ${childCount}`);
 
         expect(childCount).toBeGreaterThan(10);

@@ -27,6 +27,7 @@ import {
 import { ModelSelectionRadio } from './ModelSelectionRadio';
 import { open } from '@tauri-apps/plugin-dialog';
 import { createLogger } from '@/shared/utils/logger';
+import { globalEventBus } from '@/infrastructure/event-bus';
 import './AIFeaturesConfig.scss';
 import './DebugConfig.scss';
 
@@ -196,7 +197,6 @@ const SessionConfig: React.FC = () => {
         checked ? tTools('messages.autoExecuteEnabled') : tTools('messages.autoExecuteDisabled'),
         { duration: 2000 }
       );
-      const { globalEventBus } = await import('@/infrastructure/event-bus');
       globalEventBus.emit('mode:config:updated');
     } catch (error) {
       log.error('Failed to save skip_tool_confirmation', error);
@@ -214,7 +214,6 @@ const SessionConfig: React.FC = () => {
     setComputerUseEnabled(checked);
     try {
       await configManager.setConfig('ai.computer_use_enabled', checked);
-      const { globalEventBus } = await import('@/infrastructure/event-bus');
       globalEventBus.emit('mode:config:updated');
       notificationService.success(
         checked ? t('messages.saveSuccess') : t('messages.saveSuccess'),

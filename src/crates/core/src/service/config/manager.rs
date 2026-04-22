@@ -135,6 +135,7 @@ impl ConfigManager {
                 Self::ensure_models_config(&mut config.ai.models);
                 Self::add_default_agent_models_config(&mut config.ai.agent_models);
                 Self::add_default_func_agent_models_config(&mut config.ai.func_agent_models);
+                Self::ensure_optional_runtime_defaults(&mut config);
 
                 self.config = config;
 
@@ -175,6 +176,7 @@ impl ConfigManager {
         Self::ensure_models_config(&mut config.ai.models);
         Self::add_default_agent_models_config(&mut config.ai.agent_models);
         Self::add_default_func_agent_models_config(&mut config.ai.func_agent_models);
+        Self::ensure_optional_runtime_defaults(&mut config);
 
         self.config = config;
 
@@ -195,6 +197,19 @@ impl ConfigManager {
             "Auto-completed category and capabilities for {} models",
             models.len()
         );
+    }
+
+    /// Backfills optional UI-owned config sections that are expected to be addressable by path.
+    fn ensure_optional_runtime_defaults(config: &mut GlobalConfig) {
+        if config.font.is_none() {
+            config.font = Some(FontPreferenceSnapshot::default());
+        }
+        if config.app.keybindings.is_none() {
+            config.app.keybindings = Some(serde_json::json!({
+                "__version__": 1,
+                "overrides": {}
+            }));
+        }
     }
 
     /// Adds default configuration for the primary agents (`agent_models`).
@@ -666,4 +681,62 @@ pub(crate) fn migrate_0_0_0_to_1_0_0(mut config: Value) -> OpenHarnessResult<Val
 
     debug!("Migration 0.0.0 -> 1.0.0 completed");
     Ok(config)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_config_serializes_runtime_defaults() {
+        let value = serde_json::to_value(GlobalConfig::default()).expect("serialize config");
+
+        assert_eq!(value["font"]["uiSize"]["level"], "default");
+        assert_eq!(value["font"]["flowChat"]["mode"], "lift");
+        assert_eq!(value["app"]["keybindings"]["__version__"], 1);
+        assert_eq!(
+            value["app"]["keybindings"]["overrides"],
+            serde_json::json!({})
+        );
+    }
+
+    #[test]
+    fn missing_runtime_defaults_are_deserialized_with_values() {
+        let config: GlobalConfig =
+            serde_json::from_value(serde_json::json!({})).expect("deserialize config");
+        let value = serde_json::to_value(config).expect("serialize config");
+
+        assert_eq!(value["font"]["uiSize"]["level"], "default");
+        assert_eq!(value["font"]["flowChat"]["mode"], "lift");
+        assert_eq!(value["app"]["keybindings"]["__version__"], 1);
+        assert_eq!(
+            value["app"]["keybindings"]["overrides"],
+            serde_json::json!({})
+        );
+    }
+
+    #[test]
+    fn null_runtime_defaults_are_backfilled_after_loading() {
+        let mut config: GlobalConfig = serde_json::from_value(serde_json::json!({
+            "font": null,
+            "app": {
+                "keybindings": null
+            }
+        }))
+        .expect("deserialize config");
+
+        assert!(config.font.is_none());
+        assert!(config.app.keybindings.is_none());
+
+        ConfigManager::ensure_optional_runtime_defaults(&mut config);
+        let value = serde_json::to_value(config).expect("serialize config");
+
+        assert_eq!(value["font"]["uiSize"]["level"], "default");
+        assert_eq!(value["font"]["flowChat"]["mode"], "lift");
+        assert_eq!(value["app"]["keybindings"]["__version__"], 1);
+        assert_eq!(
+            value["app"]["keybindings"]["overrides"],
+            serde_json::json!({})
+        );
+    }
 }

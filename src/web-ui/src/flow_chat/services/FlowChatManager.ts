@@ -11,6 +11,7 @@ import { processingStatusManager } from './ProcessingStatusManager';
 import { FlowChatStore } from '../store/FlowChatStore';
 import { AgentService } from '../../shared/services/agent-service';
 import { stateMachineManager } from '../state-machine';
+import { setSessionCancelEffectHandler } from '../state-machine/sideEffects';
 import { EventBatcher } from './EventBatcher';
 import { createLogger } from '@/shared/utils/logger';
 import type { WorkspaceInfo } from '@/shared/types';
@@ -18,6 +19,7 @@ import {
   compareSessionsForDisplay,
   sessionBelongsToWorkspaceNavRow,
 } from '../utils/sessionOrdering';
+import { agentAPI } from '@/infrastructure/api/service-api/AgentAPI';
 
 import type { FlowChatContext, SessionConfig, DialogTurn } from './flow-chat-manager/types';
 import type { FlowToolItem, FlowTextItem, ModelRound } from '../types/flow-chat';
@@ -68,6 +70,16 @@ export class FlowChatManager {
     };
     
     this.agentService = AgentService.getInstance();
+    setSessionCancelEffectHandler(async ({ sessionId, taskId, dialogTurnId }) => {
+      this.context.flowChatStore.cancelSessionTask(sessionId);
+
+      try {
+        await agentAPI.cancelDialogTurn(taskId, dialogTurnId);
+        log.debug('Backend cancellation completed', { sessionId, taskId, dialogTurnId });
+      } catch (error) {
+        log.error('Backend cancellation failed', { sessionId, taskId, dialogTurnId, error });
+      }
+    });
   }
 
   public static getInstance(): FlowChatManager {
@@ -260,7 +272,6 @@ export class FlowChatManager {
       const sid = this.context.flowChatStore.getState().activeSessionId;
       if (sid) {
         try {
-          const { agentAPI } = await import('@/infrastructure/api/service-api/AgentAPI');
           await agentAPI.ensurePartnerBootstrap({
             sessionId: sid,
             workspacePath,

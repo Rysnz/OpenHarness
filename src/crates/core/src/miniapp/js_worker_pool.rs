@@ -4,10 +4,10 @@ use crate::miniapp::js_worker::JsWorker;
 use crate::miniapp::runtime_detect::{detect_runtime, DetectedRuntime};
 use crate::miniapp::types::{NodePermissions, NpmDep};
 use crate::util::errors::{OpenHarnessError, OpenHarnessResult};
+use crate::util::process_manager;
 use serde_json::Value;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::process::Command;
 use tokio::sync::Mutex;
 
 const MAX_WORKERS: usize = 5;
@@ -263,25 +263,29 @@ impl JsWorkerPool {
             });
         }
 
-        let (cmd, args): (&str, &[&str]) = match self.runtime.kind {
+        let output = match self.runtime.kind {
             crate::miniapp::runtime_detect::RuntimeKind::Bun => {
-                ("bun", &["install", "--production"][..])
+                process_manager::create_tokio_command(&self.runtime.path)
+                    .args(["install", "--production"])
+                    .current_dir(&app_dir)
+                    .output()
+                    .await
             }
             crate::miniapp::runtime_detect::RuntimeKind::Node => {
-                if which::which("pnpm").is_ok() {
+                let (cmd, args): (&str, &[&str]) = if which::which("pnpm").is_ok() {
                     ("pnpm", &["install", "--prod"][..])
                 } else {
                     ("npm", &["install", "--production"][..])
-                }
-            }
-        };
+                };
 
-        let output = Command::new(cmd)
-            .args(args)
-            .current_dir(&app_dir)
-            .output()
-            .await
-            .map_err(|e| OpenHarnessError::io(format!("install_deps failed: {}", e)))?;
+                process_manager::create_tokio_command(cmd)
+                    .args(args)
+                    .current_dir(&app_dir)
+                    .output()
+                    .await
+            }
+        }
+        .map_err(|e| OpenHarnessError::io(format!("install_deps failed: {}", e)))?;
 
         Ok(InstallResult {
             success: output.status.success(),

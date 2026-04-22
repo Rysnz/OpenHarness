@@ -98,6 +98,38 @@ pnpm run desktop:dev
 pnpm run desktop:build
 ```
 
+### Windows Delivery Build
+
+For a Windows `exe` delivery build, use:
+
+```bash
+pnpm run desktop:build:exe
+```
+
+Output:
+
+- `target/release/openharness-desktop.exe`
+
+What this build does:
+
+- builds `web-ui` and `mobile-web`
+- runs the Tauri desktop release build
+- reuses OpenSSL bootstrap cache
+- automatically enables `sccache` when it is available on the machine
+
+Recommended workflow:
+
+1. Keep the existing `target/` directory between builds. Repeated delivery builds are noticeably faster when Cargo and `sccache` can reuse prior artifacts.
+2. Prefer `pnpm run desktop:build:exe` when you only need the Windows executable. It avoids extra bundling work.
+3. Only clean `target/` when you really need a fully clean rebuild.
+
+### Build Notes
+
+- The first release build is expected to be much slower than later builds.
+- If `sccache` is installed through WinGet, the build script will detect and use it automatically.
+- If the build fails with `no space on device` or Windows reports insufficient disk space, clear old build outputs such as `target/debug` or unused custom profiles before retrying.
+- The desktop startup path now avoids eager miniapp worker initialization, which helps reduce unnecessary work during app launch.
+
 For more details, see the [Contributing guide](./CONTRIBUTING_CN.md).
 
 ---

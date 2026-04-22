@@ -1,23 +1,35 @@
-import { useEffect, useCallback, useState, useRef } from 'react';
+import { useEffect, useCallback, useState, useRef, lazy, Suspense } from 'react';
 import { useShortcut } from '@/infrastructure/hooks/useShortcut';
-import { ChatProvider, useAIInitialization } from '../infrastructure';
+import { ChatProvider } from '../infrastructure/contexts/ChatProvider';
+import { useAIInitialization } from '../infrastructure/hooks/useAIInitialization';
 import { ViewModeProvider } from '../infrastructure/contexts/ViewModeProvider';
-import { SSHRemoteProvider } from '../features/ssh-remote';
+import { SSHRemoteProvider } from '../features/ssh-remote/SSHRemoteProvider';
 import AppLayout from './layout/AppLayout';
 import { useCurrentModelConfig } from '../hooks/useModelConfigs';
-import { ContextMenuRenderer } from '../shared/context-menu-system/components/ContextMenuRenderer';
-import { NotificationContainer, NotificationCenter } from '../shared/notification-system';
-import { AnnouncementProvider } from '../shared/announcement-system';
-import { ConfirmDialogRenderer } from '../component-library';
+import { NotificationContainer } from '../shared/notification-system/components/NotificationContainer';
 import { createLogger } from '@/shared/utils/logger';
 import { useWorkspaceContext } from '../infrastructure/contexts/WorkspaceContext';
 import SplashScreen from './components/SplashScreen/SplashScreen';
 import { useGlobalSceneShortcuts } from './hooks/useGlobalSceneShortcuts';
+import { MCPAPI } from '../infrastructure/api/service-api/MCPAPI';
 
 // Toolbar Mode
-import { ToolbarModeProvider } from '../flow_chat';
+import { ToolbarModeProvider } from '../flow_chat/components/toolbar-mode/ToolbarModeProvider';
 
 const log = createLogger('App');
+const LazyContextMenuRenderer = lazy(async () => {
+  const module = await import('../shared/context-menu-system/components/ContextMenuRenderer');
+  return { default: module.ContextMenuRenderer };
+});
+const LazyNotificationCenter = lazy(async () => {
+  const module = await import('../shared/notification-system/components/NotificationCenter');
+  return { default: module.NotificationCenter };
+});
+const LazyAnnouncementProvider = lazy(() => import('../shared/announcement-system/components/AnnouncementProvider'));
+const LazyConfirmDialogRenderer = lazy(async () => {
+  const module = await import('../component-library/components/ConfirmDialog/ConfirmDialogRenderer');
+  return { default: module.ConfirmDialogRenderer };
+});
 /**
  * OpenHarness main application component.
  *
@@ -42,6 +54,7 @@ function App() {
   // Splash screen state
   const [splashVisible, setSplashVisible] = useState(true);
   const [splashExiting, setSplashExiting] = useState(false);
+  const [nonCriticalUiReady, setNonCriticalUiReady] = useState(false);
   const mountTimeRef = useRef(Date.now());
   const mainWindowShownRef = useRef(false);
 
@@ -58,6 +71,29 @@ function App() {
   const handleSplashExited = useCallback(() => {
     setSplashVisible(false);
   }, []);
+
+  useEffect(() => {
+    if (splashVisible) {
+      return;
+    }
+
+    const enableNonCriticalUi = () => setNonCriticalUiReady(true);
+    const idleWindow = window as Window & {
+      requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+
+    if (idleWindow.requestIdleCallback) {
+      const idleId = idleWindow.requestIdleCallback(() => enableNonCriticalUi(), { timeout: 1000 });
+
+      return () => {
+        idleWindow.cancelIdleCallback?.(idleId);
+      };
+    }
+
+    const timer = globalThis.setTimeout(enableNonCriticalUi, 200);
+    return () => globalThis.clearTimeout(timer);
+  }, [splashVisible]);
 
   const showMainWindow = useCallback(async (reason: string) => {
     if (mainWindowShownRef.current) {
@@ -116,12 +152,16 @@ function App() {
 
   // Startup logs and initialization
   useEffect(() => {
+    if (splashVisible) {
+      return;
+    }
+
     log.info('Application started, initializing systems');
     
     // Initialize IDE control system
     const initIdeControl = async () => {
       try {
-        const { initializeIdeControl } = await import('../shared/services/ide-control');
+        const { initializeIdeControl } = await import('../shared/services/ide-control/IdeControlEventBus');
         await initializeIdeControl();
         log.debug('IDE control system initialized');
       } catch (error) {
@@ -132,7 +172,6 @@ function App() {
     // Initialize MCP servers
     const initMCPServers = async () => {
       try {
-        const { MCPAPI } = await import('../infrastructure/api/service-api/MCPAPI');
         await MCPAPI.initializeServers();
         log.debug('MCP servers initialized');
       } catch (error) {
@@ -143,7 +182,7 @@ function App() {
     initIdeControl();
     initMCPServers();
     
-  }, []);
+  }, [splashVisible]);
 
   // Observe AI initialization state
   useEffect(() => {
@@ -183,17 +222,33 @@ function App() {
             <AppLayout />
 
             {/* Context menu renderer */}
-            <ContextMenuRenderer />
+            {nonCriticalUiReady && (
+              <Suspense fallback={null}>
+                <LazyContextMenuRenderer />
+              </Suspense>
+            )}
 
             {/* Notification system */}
             <NotificationContainer />
-            <NotificationCenter />
+            {nonCriticalUiReady && (
+              <Suspense fallback={null}>
+                <LazyNotificationCenter />
+              </Suspense>
+            )}
 
             {/* Confirm dialog */}
-            <ConfirmDialogRenderer />
+            {nonCriticalUiReady && (
+              <Suspense fallback={null}>
+                <LazyConfirmDialogRenderer />
+              </Suspense>
+            )}
 
             {/* Announcement / feature-demo / tips system */}
-            <AnnouncementProvider />
+            {nonCriticalUiReady && (
+              <Suspense fallback={null}>
+                <LazyAnnouncementProvider />
+              </Suspense>
+            )}
 
             {/* Startup splash — sits above everything, exits once workspace is ready */}
             {splashVisible && (

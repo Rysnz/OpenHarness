@@ -11,7 +11,8 @@ import { sessionToVirtualItems } from '../../store/modernFlowChatStore';
 import { FLOWCHAT_FOCUS_ITEM_EVENT, type FlowChatFocusItemRequest } from '../../events/flowchatNavigation';
 import { fileTabManager } from '@/shared/services/FileTabManager';
 import { createTab } from '@/shared/utils/tabUtils';
-import { IconButton, type LineRange } from '@/component-library';
+import { IconButton } from '@/component-library';
+import type { LineRange } from '@/component-library/components/Markdown';
 import { globalEventBus } from '@/infrastructure/event-bus';
 import './BtwSessionPanel.scss';
 

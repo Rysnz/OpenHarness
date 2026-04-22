@@ -14,6 +14,7 @@ import { createLogger } from '@/shared/utils/logger';
 import type { EditorConfig, EditorConfigPartial, EditorPresetName } from '../config/types';
 import { DEFAULT_EDITOR_CONFIG, mergeConfig } from '../config/defaults';
 import { getPreset } from '../config/presets';
+import { configManager } from '@/infrastructure/config/services/ConfigManager';
 
 const log = createLogger('useEditorConfig');
 
@@ -55,7 +56,6 @@ export function useEditorConfig(options: UseEditorConfigOptions = {}): UseEditor
     let unsubscribe: (() => void) | undefined;
 
     const syncConfig = async (): Promise<void> => {
-      const { configManager } = await import('@/infrastructure/config/services/ConfigManager');
       const config = await configManager.getConfig<Record<string, unknown> | null>('editor');
 
       if (config) {
@@ -65,7 +65,6 @@ export function useEditorConfig(options: UseEditorConfigOptions = {}): UseEditor
 
     void (async () => {
       try {
-        const { configManager } = await import('@/infrastructure/config/services/ConfigManager');
         await syncConfig();
         unsubscribe = configManager.watch('editor', () => {
           void syncConfig();

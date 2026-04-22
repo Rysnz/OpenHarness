@@ -320,7 +320,7 @@ const SettingsNav: React.FC = () => {
             ) : (
               <div className="openharness-settings-nav__search-results">
                 {results.map((row, index) => {
-                  const line = `${row.categoryLabel} › ${row.tabLabel}`;
+                  const line = `${row.categoryLabel} - ${row.tabLabel}`;
                   const active = activeTab === row.tabId;
                   const highlighted = highlightedIndex === index;
                   return (
@@ -368,6 +368,7 @@ const SettingsNav: React.FC = () => {
                   <button
                     key={tabDef.id}
                     type="button"
+                    data-testid={`settings-nav-item-${tabDef.id}`}
                     className={[
                       'openharness-settings-nav__item',
                       activeTab === tabDef.id && 'is-active',

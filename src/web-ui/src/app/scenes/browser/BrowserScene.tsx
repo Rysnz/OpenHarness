@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, ChevronLeft, ChevronRight, Globe, RefreshCw } from 'lucide-react';
 import { IconButton } from '@/component-library';
 import { createLogger } from '@/shared/utils/logger';
+import { resolveRestoredBrowserUrl } from '@/shared/utils/browserDevUrl';
 import { useSceneStore } from '@/app/stores/sceneStore';
 import { BLANK_TARGET_INTERCEPT_SCRIPT } from './browserInspectorScript';
 import { validateUrl, checkConnectivity } from './browserUrlCheck';
@@ -141,13 +142,13 @@ const BrowserScene: React.FC = () => {
   const webviewRef = useRef<BrowserWebviewHandle | null>(null);
   const holderWindowRef = useRef<BrowserHolderWindowHandle | null>(null);
   const webviewSequenceRef = useRef(0);
-  const currentUrlRef = useRef<string>(DEFAULT_URL);
+  const currentUrlRef = useRef<string>(resolveRestoredBrowserUrl(DEFAULT_URL, DEFAULT_URL));
   const resizeFrameRef = useRef<number | null>(null);
   const webviewLabelRef = useRef<string>('');
   const urlPollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const [inputValue, setInputValue] = useState(DEFAULT_URL);
-  const [currentUrl, setCurrentUrl] = useState(DEFAULT_URL);
+  const [inputValue, setInputValue] = useState(resolveRestoredBrowserUrl(DEFAULT_URL, DEFAULT_URL));
+  const [currentUrl, setCurrentUrl] = useState(resolveRestoredBrowserUrl(DEFAULT_URL, DEFAULT_URL));
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

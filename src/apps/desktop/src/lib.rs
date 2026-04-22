@@ -345,6 +345,11 @@ pub async fn run() {
             api::agentic_api::agent_approval_respond,
             api::agentic_api::agent_approval_respond_batch,
             api::agentic_api::agent_approval_audit_recent,
+            api::agentic_api::agent_permission_rule_list,
+            api::agentic_api::agent_permission_rule_upsert,
+            api::agentic_api::agent_permission_rule_remove,
+            api::agentic_api::agent_permission_rule_clear,
+            api::agentic_api::agent_permission_rule_replace_all,
             api::agentic_api::get_available_modes,
             api::btw_api::btw_ask,
             api::btw_api::btw_ask_stream,
@@ -813,6 +818,31 @@ async fn init_agentic_system() -> anyhow::Result<(
         event_queue.clone(),
         event_router.clone(),
     ));
+
+    match openharness_core::service::config::get_global_config_service().await {
+        Ok(config_service) => {
+            match config_service
+                .get_config::<Option<Vec<PermissionRule>>>(Some("agentic_permission_rules"))
+                .await
+            {
+                Ok(Some(rules)) if !rules.is_empty() => {
+                    if let Err(error) = coordinator.agent_permission_rule_replace_all(rules).await {
+                        log::warn!("Failed to restore persisted permission rules: {}", error);
+                    }
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    log::debug!("No persisted agentic permission rules loaded: {}", error);
+                }
+            }
+        }
+        Err(error) => {
+            log::warn!(
+                "Config service unavailable while loading permission rules: {}",
+                error
+            );
+        }
+    }
 
     coordination::ConversationCoordinator::set_global(coordinator.clone());
 

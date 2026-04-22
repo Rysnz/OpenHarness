@@ -41,6 +41,11 @@ import {
 import { useI18n } from '@/infrastructure/i18n';
 import { EditorBreadcrumb } from './EditorBreadcrumb';
 import { EditorStatusBar } from './EditorStatusBar';
+import { themeService } from '@/infrastructure/theme';
+import { normalizePath } from '@/shared/utils/pathUtils';
+import { fileTabManager } from '@/shared/services/FileTabManager';
+import { editorReadyManager } from '@/tools/editor/services/EditorReadyManager';
+import { GlobalAdapterRegistry } from '@/tools/lsp/services/MonacoLspAdapter';
 
 const log = createLogger('CodeEditor');
 import {
@@ -617,7 +622,6 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
 
         let themeId = OpenHarnessDarkThemeMetadata.id;
         try {
-          const { themeService } = await import('@/infrastructure/theme');
           const currentTheme = themeService.getCurrentTheme();
           if (currentTheme) {
             themeId = currentTheme.monaco ? currentTheme.id : (currentTheme.type === 'dark' ? OpenHarnessDarkThemeMetadata.id : 'vs');
@@ -807,10 +811,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
             
             (async () => {
               try {
-                const { normalizePath } = await import('@/shared/utils/pathUtils');
                 const normalizedPath = normalizePath(newUri);
-                
-                const { fileTabManager } = await import('@/shared/services/FileTabManager');
                 fileTabManager.openFileAndJump(
                   normalizedPath,
                   targetLine,
@@ -936,11 +937,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
           log.error('Failed to register EditorJumpService', err);
         });
         
-        import('@/tools/editor/services/EditorReadyManager').then(({ editorReadyManager }) => {
-          editorReadyManager.markEditorReady(filePath, editor);
-        }).catch(err => {
-          log.error('Failed to load EditorReadyManager', err);
-        });
+        editorReadyManager.markEditorReady(filePath, editor);
         
         if (!loadingRef.current && contentRef.current) {
           setLspReady(true);
@@ -993,11 +990,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
         log.error('Failed to unregister EditorJumpService', err);
       });
       
-      import('@/tools/editor/services/EditorReadyManager').then(({ editorReadyManager }) => {
-        editorReadyManager.cleanup(filePath);
-      }).catch(err => {
-        log.error('Failed to cleanup EditorReadyManager', err);
-      });
+      editorReadyManager.cleanup(filePath);
     };
   }, [filePath, detectedLanguage, detectLargeFileMode]);
 
@@ -1777,7 +1770,6 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
             return;
           }
           
-          const { GlobalAdapterRegistry } = await import('@/tools/lsp/services/MonacoLspAdapter');
           const modelUri = model.uri.toString();
           const adapter = GlobalAdapterRegistry.get(modelUri);
           
@@ -1802,7 +1794,6 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
             const targetColumn = definition.range.startColumn;
             
             // Use unified file tab manager to open file
-            const { fileTabManager } = await import('@/shared/services/FileTabManager');
             fileTabManager.openFileAndJump(
               definitionUri,
               targetLine,
@@ -2067,8 +2058,6 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
     
     (async () => {
       try {
-        const { themeService } = await import('@/infrastructure/theme');
-        
         unsubscribeThemeService = themeService.on('theme:after-change', (event) => {
           if (event.theme) {
             const newThemeId = event.theme.monaco ? event.theme.id : (event.theme.type === 'dark' ? OpenHarnessDarkThemeMetadata.id : 'vs');

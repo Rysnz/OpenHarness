@@ -1,6 +1,6 @@
 import React, { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { workspaceManager } from '../services/business/workspaceManager';
-import { WorkspaceInfo, WorkspaceKind } from '../../shared/types';
+import { WorkspaceInfo, WorkspaceKind } from '../../shared/types/global-state';
 import { createLogger } from '@/shared/utils/logger';
 import {
   WorkspaceContext,

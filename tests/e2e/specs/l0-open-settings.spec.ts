@@ -113,6 +113,67 @@ describe('L0 Settings Panel', () => {
         await saveStepScreenshot('l0-settings-panel-opened');
       }
     });
+
+    it('should open the agent permissions settings tab', async function () {
+      expect(hasWorkspace).toBe(true);
+
+      const permissionsItem = await $('[data-testid="settings-nav-item-agent-permissions"]');
+      expect(await permissionsItem.isExisting()).toBe(true);
+      await permissionsItem.click();
+      await browser.pause(1000);
+
+      const permissionsPage = await $('.openharness-agent-permissions');
+      expect(await permissionsPage.isExisting()).toBe(true);
+
+      const pageText = await permissionsPage.getText();
+      expect(pageText).toContain('Pending approvals');
+      expect(pageText).toContain('Rules');
+      expect(pageText).toContain('Audit trail');
+      expect(pageText).toContain('Save rule');
+
+      await saveStepScreenshot('l0-settings-agent-permissions-opened');
+    });
+
+    it('should create and remove an agent permission rule through the settings UI', async function () {
+      expect(hasWorkspace).toBe(true);
+
+      const ruleId = 'e2e-permission-rule';
+
+      const ruleIdInput = await $('[data-testid="agent-permissions-rule-id"]');
+      await ruleIdInput.setValue(ruleId);
+
+      const agentInput = await $('[data-testid="agent-permissions-agent-name"]');
+      await agentInput.setValue('agentic');
+
+      const toolInput = await $('[data-testid="agent-permissions-tool-name"]');
+      await toolInput.setValue('Bash');
+
+      const commandInput = await $('[data-testid="agent-permissions-command-contains"]');
+      await commandInput.setValue('openharness-e2e-permission-token');
+
+      const reasonInput = await $('[data-testid="agent-permissions-reason"]');
+      await reasonInput.setValue('E2E permission rule roundtrip');
+
+      const saveButton = await $('[data-testid="agent-permissions-save-rule"]');
+      await saveButton.click();
+      await browser.pause(1000);
+
+      let permissionsPage = await $('.openharness-agent-permissions');
+      let pageText = await permissionsPage.getText();
+      expect(pageText).toContain(ruleId);
+      expect(pageText).toContain('agent=agentic');
+      expect(pageText).toContain('tool=Bash');
+      expect(pageText).toContain('command has openharness-e2e-permission-token');
+      expect(pageText).toContain('E2E permission rule roundtrip');
+
+      const removeButton = await $(`[data-testid="agent-permissions-remove-${ruleId}"]`);
+      await removeButton.click();
+      await browser.pause(1000);
+
+      permissionsPage = await $('.openharness-agent-permissions');
+      pageText = await permissionsPage.getText();
+      expect(pageText).not.toContain(ruleId);
+    });
   });
 
   describe('UI stability after settings interaction', () => {
@@ -123,7 +184,8 @@ describe('L0 Settings Panel', () => {
       await browser.pause(2000);
 
       const body = await $('body');
-      const elementCount = await body.$$('*').then(els => els.length);
+      const elements = await body.$$('*');
+      const elementCount = elements.length;
       
       expect(elementCount).toBeGreaterThan(10);
       console.log('[L0] UI responsive, element count:', elementCount);

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, lazy, Suspense } from 'react';
 import {
   Settings,
   Info,
@@ -25,7 +25,6 @@ import { useToolbarModeContext } from '@/flow_chat/components/toolbar-mode/Toolb
 import { useCurrentWorkspace } from '@/infrastructure/contexts/WorkspaceContext';
 import { useNotification } from '@/shared/notification-system';
 import NotificationButton from '../../TitleBar/NotificationButton';
-import { AboutDialog } from '../../AboutDialog';
 import { RemoteConnectDialog } from '../../RemoteConnectDialog';
 import {
   RemoteConnectDisclaimerContent,
@@ -35,6 +34,11 @@ import {
   setRemoteConnectDisclaimerAgreed,
 } from '../../RemoteConnectDialog/remoteConnectDisclaimerStorage';
 import { MERMAID_INTERACTIVE_EXAMPLE } from '@/flow_chat/constants/mermaidExamples';
+
+const LazyAboutDialog = lazy(async () => {
+  const module = await import('../../AboutDialog');
+  return { default: module.AboutDialog };
+});
 
 const PersistentFooterActions: React.FC = () => {
   const { t } = useI18n('common');
@@ -361,7 +365,11 @@ const PersistentFooterActions: React.FC = () => {
           <NotificationButton className="openharness-nav-panel__footer-btn" navFooterHoverIconSwap />
         </div>
       </div>
-      <AboutDialog isOpen={showAbout} onClose={() => setShowAbout(false)} />
+      {showAbout && (
+        <Suspense fallback={null}>
+          <LazyAboutDialog isOpen={showAbout} onClose={() => setShowAbout(false)} />
+        </Suspense>
+      )}
       <RemoteConnectDialog isOpen={showRemoteConnect} onClose={() => setShowRemoteConnect(false)} />
       <Modal
         isOpen={showRemoteDisclaimer}

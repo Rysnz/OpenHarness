@@ -11,7 +11,8 @@ import { createDiffEditorTab } from '../../../shared/utils/tabUtils';
 import { snapshotAPI } from '../../../infrastructure/api';
 import { useWorkspaceContext } from '../../../infrastructure/contexts/WorkspaceContext';
 import { diffService } from '../../../tools/editor/services';
-import { notificationService } from '../../../shared/notification-system';
+import { flowChatManager } from '@/flow_chat/services/FlowChatManager';
+import { notificationService } from '@/shared/notification-system/services/NotificationService';
 import { createLogger } from '@/shared/utils/logger';
 import { createBtwChildSession } from '../../services/BtwThreadService';
 import { openBtwSessionInAuxPane } from '../../services/openBtwSession';
@@ -375,8 +376,6 @@ export const SessionFilesBadge: React.FC<SessionFilesBadgeProps> = ({
       : t('sessionFilesBadge.review.prompt', { files: fileList });
 
     try {
-      const { FlowChatManager } = await import('../../services/FlowChatManager');
-      const flowChatManager = FlowChatManager.getInstance();
       const { childSessionId } = await createBtwChildSession({
         parentSessionId: sessionId,
         workspacePath: currentWorkspace?.rootPath,

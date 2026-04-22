@@ -14,6 +14,7 @@ import type { EditorGroupId, PanelContent, CreateTabEventDetail } from '../types
 import { TAB_EVENTS } from '../types';
 import { useI18n } from '@/infrastructure/i18n';
 import { drainPendingTabs } from '@/shared/services/pendingTabQueue';
+import { resolveRestoredBrowserUrl } from '@/shared/utils/browserDevUrl';
 import { confirmDialog } from '@/component-library/components/ConfirmDialog/confirmService';
 interface UseTabLifecycleOptions {
   /** App mode / target canvas */
@@ -67,15 +68,39 @@ export const useTabLifecycle = (options: UseTabLifecycleOptions = {}): UseTabLif
     setSplitMode,
   } = useCanvasStore();
 
+  const sanitizeContent = useCallback((content: PanelContent): PanelContent => {
+    if (content.type !== 'browser') {
+      return content;
+    }
+
+    const nextUrl = resolveRestoredBrowserUrl(
+      typeof content.data?.url === 'string' ? content.data.url : undefined,
+      'https://openopenharness.com/',
+    );
+
+    if (nextUrl === content.data?.url) {
+      return content;
+    }
+
+    return {
+      ...content,
+      data: {
+        ...content.data,
+        url: nextUrl,
+      },
+    };
+  }, []);
+
   /**
    * Open in preview mode (replaces current preview tab).
    */
   const openPreview = useCallback((content: PanelContent, groupId?: EditorGroupId) => {
+    const nextContent = sanitizeContent(content);
     const targetGroupId = groupId || activeGroupId;
     
     // Check for existing tab with same content
-    if (content.metadata?.duplicateCheckKey) {
-      const existing = findTabByMetadata({ duplicateCheckKey: content.metadata.duplicateCheckKey });
+    if (nextContent.metadata?.duplicateCheckKey) {
+      const existing = findTabByMetadata({ duplicateCheckKey: nextContent.metadata.duplicateCheckKey });
       if (existing) {
         // Switch to existing tab
         switchToTab(existing.tab.id, existing.groupId);
@@ -84,18 +109,19 @@ export const useTabLifecycle = (options: UseTabLifecycleOptions = {}): UseTabLif
     }
     
     // Add preview tab (auto-replaces current preview tab)
-    addTab(content, 'preview', targetGroupId);
-  }, [activeGroupId, findTabByMetadata, switchToTab, addTab]);
+    addTab(nextContent, 'preview', targetGroupId);
+  }, [activeGroupId, findTabByMetadata, switchToTab, addTab, sanitizeContent]);
 
   /**
    * Open directly in active state.
    */
   const openActive = useCallback((content: PanelContent, groupId?: EditorGroupId) => {
+    const nextContent = sanitizeContent(content);
     const targetGroupId = groupId || activeGroupId;
     
     // Check for existing tab with same content
-    if (content.metadata?.duplicateCheckKey) {
-      const existing = findTabByMetadata({ duplicateCheckKey: content.metadata.duplicateCheckKey });
+    if (nextContent.metadata?.duplicateCheckKey) {
+      const existing = findTabByMetadata({ duplicateCheckKey: nextContent.metadata.duplicateCheckKey });
       if (existing) {
         // Switch to existing tab and ensure active state
         switchToTab(existing.tab.id, existing.groupId);
@@ -107,8 +133,8 @@ export const useTabLifecycle = (options: UseTabLifecycleOptions = {}): UseTabLif
     }
     
     // Add active tab
-    addTab(content, 'active', targetGroupId);
-  }, [activeGroupId, findTabByMetadata, switchToTab, promoteTab, addTab]);
+    addTab(nextContent, 'active', targetGroupId);
+  }, [activeGroupId, findTabByMetadata, switchToTab, promoteTab, addTab, sanitizeContent]);
 
   /**
    * Promote to active on edit.
@@ -247,12 +273,12 @@ export const useTabLifecycle = (options: UseTabLifecycleOptions = {}): UseTabLif
         enableSplitView,
       } = event.detail;
       
-      const content: PanelContent = {
+      const content: PanelContent = sanitizeContent({
         type,
         title,
         data,
         metadata: { ...metadata, duplicateCheckKey },
-      };
+      });
 
       // If split view is enabled, switch to vertical split first (top/bottom)
       if (enableSplitView && layout.splitMode === 'none') {

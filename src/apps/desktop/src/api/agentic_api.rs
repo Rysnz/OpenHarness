@@ -11,15 +11,17 @@ use openharness_core::agentic::coordination::{
     ConversationCoordinator, DialogScheduler, DialogSubmissionPolicy, DialogTriggerSource,
     PartnerBootstrapBlockReason, PartnerBootstrapEnsureOutcome, PartnerBootstrapSkipReason,
 };
-use openharness_core::agentic::{PermissionApprovalRequest, PermissionAuditRecord};
 use openharness_core::agentic::core::*;
 use openharness_core::agentic::image_analysis::ImageContextData;
 use openharness_core::agentic::runtime::{
-    AgentMailboxMessage, AgentTaskEvent, AgentTaskFilter, AgentTaskId, AgentTaskKind,
-    AgentTaskSnapshot, AgentTaskStatus, AgentTranscript, AgentPatchRecord, AgentPatchSummary,
-    AgentTeamStatus, PatchStatus,
+    AgentMailboxMessage, AgentPatchRecord, AgentPatchSummary, AgentTaskEvent, AgentTaskFilter,
+    AgentTaskId, AgentTaskKind, AgentTaskSnapshot, AgentTaskStatus, AgentTeamStatus,
+    AgentTranscript, PatchStatus,
 };
 use openharness_core::agentic::tools::image_context::get_image_context;
+use openharness_core::agentic::{PermissionApprovalRequest, PermissionAuditRecord, PermissionRule};
+
+const AGENTIC_PERMISSION_RULES_CONFIG_PATH: &str = "agentic_permission_rules";
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateSessionRequest {
@@ -305,6 +307,24 @@ pub struct AgentApprovalAuditRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct AgentPermissionRuleUpsertRequest {
+    pub rule: PermissionRule,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentPermissionRuleRemoveRequest {
+    pub rule_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentPermissionRuleReplaceRequest {
+    pub rules: Vec<PermissionRule>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CancelAgentTaskRequest {
     pub task_id: String,
     pub reason: Option<String>,
@@ -417,6 +437,17 @@ fn build_agent_task_filter(
         parent_task_id,
         session_id,
     }))
+}
+
+async fn persist_agent_permission_rules(
+    app_state: &AppState,
+    rules: Vec<PermissionRule>,
+) -> Result<(), String> {
+    app_state
+        .config_service
+        .set_config(AGENTIC_PERMISSION_RULES_CONFIG_PATH, rules)
+        .await
+        .map_err(|e| format!("Failed to persist permission rules: {}", e))
 }
 
 #[tauri::command]
@@ -1244,12 +1275,7 @@ pub async fn agent_approval_respond_batch(
         }
 
         match coordinator
-            .agent_approval_respond(
-                &tool_id,
-                item.approved,
-                item.reason,
-                item.updated_input,
-            )
+            .agent_approval_respond(&tool_id, item.approved, item.reason, item.updated_input)
             .await
         {
             Ok(_) => results.push(AgentApprovalRespondBatchResult {
@@ -1275,6 +1301,65 @@ pub async fn agent_approval_audit_recent(
 ) -> Result<Vec<PermissionAuditRecord>, String> {
     let limit = request.limit.unwrap_or(200);
     Ok(coordinator.agent_approval_audit_recent(limit).await)
+}
+
+#[tauri::command]
+pub async fn agent_permission_rule_list(
+    coordinator: State<'_, Arc<ConversationCoordinator>>,
+) -> Result<Vec<PermissionRule>, String> {
+    Ok(coordinator.agent_permission_rule_list().await)
+}
+
+#[tauri::command]
+pub async fn agent_permission_rule_upsert(
+    coordinator: State<'_, Arc<ConversationCoordinator>>,
+    app_state: State<'_, AppState>,
+    request: AgentPermissionRuleUpsertRequest,
+) -> Result<Vec<PermissionRule>, String> {
+    let rules = coordinator
+        .agent_permission_rule_upsert(request.rule)
+        .await
+        .map_err(|e| format!("Failed to upsert permission rule: {}", e))?;
+    persist_agent_permission_rules(&app_state, rules.clone()).await?;
+    Ok(rules)
+}
+
+#[tauri::command]
+pub async fn agent_permission_rule_remove(
+    coordinator: State<'_, Arc<ConversationCoordinator>>,
+    app_state: State<'_, AppState>,
+    request: AgentPermissionRuleRemoveRequest,
+) -> Result<Vec<PermissionRule>, String> {
+    let rules = coordinator
+        .agent_permission_rule_remove(&request.rule_id)
+        .await
+        .map_err(|e| format!("Failed to remove permission rule: {}", e))?;
+    persist_agent_permission_rules(&app_state, rules.clone()).await?;
+    Ok(rules)
+}
+
+#[tauri::command]
+pub async fn agent_permission_rule_clear(
+    coordinator: State<'_, Arc<ConversationCoordinator>>,
+    app_state: State<'_, AppState>,
+) -> Result<Vec<PermissionRule>, String> {
+    let rules = coordinator.agent_permission_rule_clear().await;
+    persist_agent_permission_rules(&app_state, rules.clone()).await?;
+    Ok(rules)
+}
+
+#[tauri::command]
+pub async fn agent_permission_rule_replace_all(
+    coordinator: State<'_, Arc<ConversationCoordinator>>,
+    app_state: State<'_, AppState>,
+    request: AgentPermissionRuleReplaceRequest,
+) -> Result<Vec<PermissionRule>, String> {
+    let rules = coordinator
+        .agent_permission_rule_replace_all(request.rules)
+        .await
+        .map_err(|e| format!("Failed to replace permission rules: {}", e))?;
+    persist_agent_permission_rules(&app_state, rules.clone()).await?;
+    Ok(rules)
 }
 
 #[tauri::command]

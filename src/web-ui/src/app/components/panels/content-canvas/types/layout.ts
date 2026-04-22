@@ -3,7 +3,8 @@
  * ContentCanvas layout system.
  */
 
-import type { EditorGroupState } from './tab';
+import type { CanvasTab } from './tab';
+import type { EditorGroupId } from './group';
 
 /**
  * Split modes
@@ -18,7 +19,10 @@ export type AnchorPosition = 'bottom' | 'right' | 'hidden';
 
 export type DropPosition = 'left' | 'right' | 'top' | 'bottom' | 'center';
 
-export type EditorGroupId = 'primary' | 'secondary' | 'tertiary';
+export interface EditorGroupState {
+  tabs: CanvasTab[];
+  activeTabId: string | null;
+}
 
 export interface LayoutState {
   splitMode: SplitMode;

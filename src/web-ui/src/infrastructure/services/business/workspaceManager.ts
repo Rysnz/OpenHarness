@@ -5,10 +5,11 @@ import {
   WorkspaceKind,
   globalStateAPI,
   isRemoteWorkspace,
-} from '../../../shared/types';
+} from '../../../shared/types/global-state';
 import { normalizeRemoteWorkspacePath } from '@/shared/utils/pathUtils';
 import { createLogger } from '@/shared/utils/logger';
 import { listen } from '@tauri-apps/api/event';
+import { FlowChatStore } from '@/flow_chat/store/FlowChatStore';
 
 const log = createLogger('WorkspaceManager');
 
@@ -587,8 +588,7 @@ class WorkspaceManager {
       await globalStateAPI.deletePartnerWorkspace(workspaceId);
 
       if (removedWorkspace) {
-        const { flowChatStore } = await import('@/flow_chat/store/FlowChatStore');
-        flowChatStore.removeSessionsForWorkspace(removedWorkspace);
+        FlowChatStore.getInstance().removeSessionsForWorkspace(removedWorkspace);
       }
 
       const [currentWorkspace, recentWorkspaces, openedWorkspaces] = await Promise.all([

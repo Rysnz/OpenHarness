@@ -1,5 +1,5 @@
 import type { PanelContent } from './content';
-import type { EditorGroupId } from './layout';
+import type { EditorGroupId } from './group';
 
 /**
  * Tab states

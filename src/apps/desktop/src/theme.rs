@@ -4,7 +4,7 @@ use dark_light::Mode;
 use log::{debug, error, warn};
 use openharness_core::infrastructure::try_get_path_manager_arc;
 use openharness_core::service::config::types::GlobalConfig;
-use tauri::WebviewUrl;
+use tauri::{LogicalSize, Size, WebviewUrl};
 
 #[derive(Debug, Clone)]
 pub struct ThemeConfig {
@@ -278,6 +278,17 @@ pub fn create_main_window(app_handle: &tauri::AppHandle) {
 
     match builder.build() {
         Ok(window) => {
+            #[cfg(target_os = "windows")]
+            {
+                let app_handle = app_handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+                    if let Err(error) = show_main_window(app_handle).await {
+                        error!("Backend startup window show failed: {}", error);
+                    }
+                });
+            }
+
             #[cfg(debug_assertions)]
             {
                 if std::env::var("OPENHARNESS_OPEN_DEVTOOLS")
@@ -302,22 +313,43 @@ pub async fn show_main_window(app: tauri::AppHandle) -> Result<(), String> {
     use tauri::Manager;
 
     if let Some(main_window) = app.get_webview_window("main") {
-        #[cfg(target_os = "windows")]
-        {
-            // Work around Windows startup flicker: avoid creating the native window
-            // in maximized mode, and maximize it right before showing instead.
-            main_window.maximize().map_err(|e| {
-                error!("Failed to maximize main window: {}", e);
-                format!("Failed to maximize main window: {}", e)
-            })?;
+        let ensure_sane_window_bounds = || -> Result<(), String> {
+            match main_window.outer_size() {
+                Ok(size) if size.width >= 300 && size.height >= 200 => Ok(()),
+                Ok(size) => {
+                    warn!(
+                        "Main window size looks invalid on show, restoring defaults: {}x{}",
+                        size.width, size.height
+                    );
+                    main_window
+                        .set_size(Size::Logical(LogicalSize::new(1200.0, 800.0)))
+                        .map_err(|e| format!("Failed to restore main window size: {}", e))?;
+                    main_window
+                        .center()
+                        .map_err(|e| format!("Failed to center main window: {}", e))?;
+                    Ok(())
+                }
+                Err(error) => {
+                    warn!("Failed to inspect main window size before show: {}", error);
+                    Ok(())
+                }
+            }
+        };
 
-            tokio::time::sleep(std::time::Duration::from_millis(150)).await;
-        }
+        ensure_sane_window_bounds()?;
 
         main_window.show().map_err(|e| {
             error!("Failed to show main window: {}", e);
             format!("Failed to show main window: {}", e)
         })?;
+
+        #[cfg(target_os = "windows")]
+        {
+            // On Windows, hidden frameless windows can occasionally come back with
+            // tiny bounds after startup. Re-apply sane bounds after showing too.
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            ensure_sane_window_bounds()?;
+        }
 
         main_window.set_focus().map_err(|e| {
             error!("Failed to focus main window: {}", e);

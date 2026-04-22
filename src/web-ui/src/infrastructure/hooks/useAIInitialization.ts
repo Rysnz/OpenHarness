@@ -1,10 +1,10 @@
  
 
 import { useEffect, useState, useCallback } from 'react';
-import { ModelConfig } from '../../shared/types';
+import type { ModelConfig } from '../../shared/types/chat';
 import { AIService } from '../services/api/aiService';
 import { createLogger } from '@/shared/utils/logger';
-import { useI18n } from '@/infrastructure/i18n';
+import { useI18n } from '@/infrastructure/i18n/hooks/useI18n';
 
 const log = createLogger('useAIInitialization');
 

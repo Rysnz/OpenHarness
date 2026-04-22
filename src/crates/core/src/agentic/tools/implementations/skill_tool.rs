@@ -10,6 +10,7 @@ use crate::util::errors::{OpenHarnessError, OpenHarnessResult};
 use async_trait::async_trait;
 use log::debug;
 use serde_json::{json, Value};
+use std::collections::HashSet;
 
 // Use skills module
 use super::skills::{get_skill_registry, SkillLocation};
@@ -20,6 +21,62 @@ pub struct SkillTool;
 impl SkillTool {
     pub fn new() -> Self {
         Self
+    }
+
+    fn allowed_skill_refs(context: Option<&ToolUseContext>) -> Option<HashSet<String>> {
+        let value = context?.custom_data.get("agent_skills")?;
+        let refs = match value {
+            Value::Array(items) => items
+                .iter()
+                .filter_map(|item| item.as_str())
+                .map(|item| item.trim().to_ascii_lowercase())
+                .filter(|item| !item.is_empty())
+                .collect::<HashSet<_>>(),
+            Value::String(raw) => raw
+                .split(',')
+                .map(|item| item.trim().to_ascii_lowercase())
+                .filter(|item| !item.is_empty())
+                .collect::<HashSet<_>>(),
+            _ => HashSet::new(),
+        };
+
+        if refs.is_empty() {
+            None
+        } else {
+            Some(refs)
+        }
+    }
+
+    fn skill_info_matches_allowed(
+        skill: &super::skills::SkillInfo,
+        allowed_refs: &HashSet<String>,
+    ) -> bool {
+        let candidates = [
+            skill.name.as_str(),
+            skill.key.as_str(),
+            skill.dir_name.as_str(),
+            skill.source_slot.as_str(),
+        ];
+
+        candidates
+            .iter()
+            .any(|candidate| allowed_refs.contains(&candidate.to_ascii_lowercase()))
+    }
+
+    fn skill_data_matches_allowed(
+        skill: &super::skills::SkillData,
+        allowed_refs: &HashSet<String>,
+    ) -> bool {
+        let candidates = [
+            skill.name.as_str(),
+            skill.key.as_str(),
+            skill.dir_name.as_str(),
+            skill.source_slot.as_str(),
+        ];
+
+        candidates
+            .iter()
+            .any(|candidate| allowed_refs.contains(&candidate.to_ascii_lowercase()))
     }
 
     fn render_description(&self, skills_list: String) -> String {
@@ -57,6 +114,7 @@ Important:
 
     async fn build_description_for_context(&self, context: Option<&ToolUseContext>) -> String {
         let registry = get_skill_registry();
+        let allowed_refs = Self::allowed_skill_refs(context);
         let available_skills = match context {
             Some(ctx) if ctx.is_remote() => {
                 if let Some(fs) = ctx.ws_fs() {
@@ -66,7 +124,7 @@ Important:
                         .map(|w| w.root_path_string())
                         .unwrap_or_default();
                     registry
-                        .get_resolved_skills_xml_for_remote_workspace(
+                        .get_resolved_skills_for_remote_workspace(
                             fs,
                             &root,
                             ctx.agent_type.as_deref(),
@@ -74,7 +132,7 @@ Important:
                         .await
                 } else {
                     registry
-                        .get_resolved_skills_xml_for_workspace(
+                        .get_resolved_skills_for_workspace(
                             ctx.workspace_root(),
                             ctx.agent_type.as_deref(),
                         )
@@ -83,18 +141,24 @@ Important:
             }
             Some(ctx) => {
                 registry
-                    .get_resolved_skills_xml_for_workspace(
+                    .get_resolved_skills_for_workspace(
                         ctx.workspace_root(),
                         ctx.agent_type.as_deref(),
                     )
                     .await
             }
-            None => {
-                registry
-                    .get_resolved_skills_xml_for_workspace(None, None)
-                    .await
-            }
+            None => registry.get_resolved_skills_for_workspace(None, None).await,
         };
+
+        let available_skills = available_skills
+            .into_iter()
+            .filter(|skill| {
+                allowed_refs
+                    .as_ref()
+                    .is_none_or(|refs| Self::skill_info_matches_allowed(skill, refs))
+            })
+            .map(|skill| skill.to_xml_desc())
+            .collect::<Vec<_>>();
 
         self.render_description(available_skills.join("\n"))
     }
@@ -233,6 +297,16 @@ impl Tool for SkillTool {
                 .await?
         };
 
+        if let Some(allowed_refs) = Self::allowed_skill_refs(Some(context)) {
+            if !Self::skill_data_matches_allowed(&skill_data, &allowed_refs) {
+                return Err(OpenHarnessError::tool(format!(
+                    "Skill '{}' is not visible to agent '{}'",
+                    skill_name,
+                    context.agent_type.as_deref().unwrap_or("unknown")
+                )));
+            }
+        }
+
         let location_str = match skill_data.location {
             SkillLocation::User => "user",
             SkillLocation::Project => "project",
@@ -262,5 +336,36 @@ impl Tool for SkillTool {
 impl Default for SkillTool {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::skills::{SkillInfo, SkillLocation};
+    use super::SkillTool;
+    use std::collections::HashSet;
+
+    #[test]
+    fn skill_info_matches_agent_allowed_refs_by_name_key_or_dir() {
+        let skill = SkillInfo {
+            key: "openharness:pdf".to_string(),
+            name: "pdf".to_string(),
+            description: "PDF work".to_string(),
+            path: "/skills/pdf".to_string(),
+            level: SkillLocation::User,
+            source_slot: "openharness".to_string(),
+            dir_name: "pdf".to_string(),
+            is_builtin: false,
+            group_key: None,
+        };
+
+        let allowed = HashSet::from(["pdf".to_string()]);
+        assert!(SkillTool::skill_info_matches_allowed(&skill, &allowed));
+
+        let allowed = HashSet::from(["openharness:pdf".to_string()]);
+        assert!(SkillTool::skill_info_matches_allowed(&skill, &allowed));
+
+        let allowed = HashSet::from(["xlsx".to_string()]);
+        assert!(!SkillTool::skill_info_matches_allowed(&skill, &allowed));
     }
 }

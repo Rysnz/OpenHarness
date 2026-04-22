@@ -47,6 +47,7 @@ import {
 } from './ToolEventModule';
 import {
   routeTextChunkToToolCardInternal,
+  routeToolEventToToolCard,
   routeToolEventToToolCardInternal
 } from './SubagentModule';
 
@@ -1062,15 +1063,11 @@ function handleToolEvent(
   }
   
   if (parentSessionId && parentToolId) {
-    import('./SubagentModule').then(({ routeToolEventToToolCard }) => {
-      routeToolEventToToolCard(context, parentSessionId, parentToolId, {
-        sessionId,
-        turnId,
-        toolEvent
-      }, onTodoWriteResult);
-    }).catch(error => {
-      log.error('Failed to load SubagentModule or route tool event', { sessionId, turnId, error });
-    });
+    routeToolEventToToolCard(context, parentSessionId, parentToolId, {
+      sessionId,
+      turnId,
+      toolEvent
+    }, onTodoWriteResult);
   } else {
     processToolEvent(context, sessionId, turnId, toolEvent, undefined, onTodoWriteResult);
   }

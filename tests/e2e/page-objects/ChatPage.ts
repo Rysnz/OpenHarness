@@ -133,12 +133,13 @@ export class ChatPage extends BasePage {
 
   async getLastModelResponse(): Promise<string> {
     const responses = await $$(this.selectors.modelResponse);
+    const responseCount = await responses.length;
 
-    if (responses.length === 0) {
+    if (responseCount === 0) {
       return '';
     }
 
-    return responses[responses.length - 1].getText();
+    return responses[responseCount - 1].getText();
   }
 
   async getMessageCount(): Promise<{ user: number; model: number }> {
@@ -146,8 +147,8 @@ export class ChatPage extends BasePage {
     const modelResponses = await $$(this.selectors.modelResponse);
 
     return {
-      user: userMessages.length,
-      model: modelResponses.length,
+      user: await userMessages.length,
+      model: await modelResponses.length,
     };
   }
 
@@ -165,7 +166,7 @@ export class ChatPage extends BasePage {
 
   async getToolCardCount(): Promise<number> {
     const toolCards = await $$(this.selectors.toolCard);
-    return toolCards.length;
+    return await toolCards.length;
   }
 
   async isLoading(): Promise<boolean> {
@@ -211,7 +212,7 @@ export class ChatPage extends BasePage {
         const element = await $(selector);
         const exists = await element.isExisting();
         if (exists) {
-          return await element.getValue();
+          return String(await element.getValue());
         }
       } catch (e) {
         // Continue

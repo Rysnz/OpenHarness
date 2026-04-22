@@ -10,7 +10,7 @@ import { useI18n } from '@/infrastructure/i18n/hooks/useI18n';
 import type { InsightsReport, InsightsReportMeta, InsightsStats } from '@/infrastructure/api/insightsApi';
 import { useInsightsStore } from './insightsStore';
 import { createLogger } from '@/shared/utils/logger';
-import { notificationService } from '@/shared/notification-system';
+import { notificationService } from '@/shared/notification-system/services/NotificationService';
 import '@/app/components/GalleryLayout/GalleryLayout.scss';
 import './InsightsScene.scss';
 

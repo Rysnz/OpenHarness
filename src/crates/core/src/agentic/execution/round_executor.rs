@@ -6,6 +6,7 @@ use super::stream_processor::StreamProcessor;
 use super::types::{FinishReason, RoundContext, RoundResult};
 use crate::agentic::core::Message;
 use crate::agentic::events::{AgenticEvent, EventPriority, EventQueue};
+use crate::agentic::permissions::{PermissionAuditStore, PermissionEngine};
 use crate::agentic::runtime::{AgentTaskEvent, AgentTaskEventKind, AgentTaskId, AgentTaskRegistry};
 use crate::agentic::tools::computer_use_host::ComputerUseHostRef;
 use crate::agentic::tools::pipeline::{ToolExecutionContext, ToolExecutionOptions, ToolPipeline};
@@ -54,6 +55,16 @@ impl RoundExecutor {
         self.tool_pipeline
             .as_ref()
             .and_then(|p| p.computer_use_host())
+    }
+
+    pub fn permission_engine(&self) -> Option<Arc<PermissionEngine>> {
+        self.tool_pipeline.as_ref().map(|p| p.permission_engine())
+    }
+
+    pub fn permission_audit_store(&self) -> Option<Arc<PermissionAuditStore>> {
+        self.tool_pipeline
+            .as_ref()
+            .map(|p| p.permission_audit_store())
     }
 
     pub fn set_agent_task_registry(&self, registry: Arc<AgentTaskRegistry>) {
@@ -149,6 +160,24 @@ impl RoundExecutor {
                 attempt_index + 1,
                 max_attempts
             );
+
+            if let Some(hooks) = context.context_vars.get("hooks").and_then(|raw| {
+                serde_json::from_str::<crate::agentic::agents::AgentHookConfig>(raw).ok()
+            }) {
+                let permission_engine = self.tool_pipeline.as_ref().map(|p| p.permission_engine());
+                let audit_store = self
+                    .tool_pipeline
+                    .as_ref()
+                    .map(|p| p.permission_audit_store());
+                hooks
+                    .execute_hooks(
+                        "before_model_request",
+                        &context.context_vars,
+                        permission_engine.as_deref(),
+                        audit_store.as_deref(),
+                    )
+                    .await;
+            }
 
             self.emit_agent_task_event(
                 agent_task_id.as_ref(),
@@ -421,6 +450,10 @@ impl RoundExecutor {
                 subagent_parent_info,
                 allowed_tools: context.available_tools.clone(),
                 workspace_services: context.workspace_services.clone(),
+                permission_mode: context.context_vars.get("permission_mode").cloned(),
+                hooks: context.context_vars.get("hooks").and_then(|h| {
+                    serde_json::from_str::<crate::agentic::agents::AgentHookConfig>(h).ok()
+                }),
             };
 
             // Read tool execution related configuration from global config

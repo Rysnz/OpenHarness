@@ -7,7 +7,8 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import { RefreshCw, Play, CheckCircle, ChevronDown, ChevronRight } from 'lucide-react';
 import { useI18n } from '@/infrastructure/i18n';
-import { notificationService } from '../../../shared/notification-system';
+import { flowChatManager } from '@/flow_chat/services/FlowChatManager';
+import { notificationService } from '@/shared/notification-system/services/NotificationService';
 import { createLogger } from '@/shared/utils/logger';
 import './ReproductionStepsBlock.scss';
 
@@ -47,9 +48,6 @@ export const ReproductionStepsBlock: React.FC<ReproductionStepsBlockProps> = ({
     setIsProceeding(true);
     
     try {
-      const { FlowChatManager } = await import('../../../flow_chat/services/FlowChatManager');
-      const flowChatManager = FlowChatManager.getInstance();
-      
       // Log collection note: read .openharness/debug.log
       await flowChatManager.sendMessage(
         t('reproductionSteps.userCompleted'),

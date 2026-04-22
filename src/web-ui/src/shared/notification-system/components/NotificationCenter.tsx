@@ -2,8 +2,9 @@
 
 import React, { useState, useMemo } from 'react';
 import { X, CheckCheck, Trash2, XCircle, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
-import { Search, Modal } from '@/component-library';
-import { useI18n } from '@/infrastructure/i18n';
+import { Search } from '@/component-library/components/Search';
+import { Modal } from '@/component-library/components/Modal';
+import { useI18n } from '@/infrastructure/i18n/hooks/useI18n';
 import { useNotificationHistory, useCenterOpen, useAllProgressNotifications, useAllLoadingNotifications } from '../hooks/useNotificationState';
 import { notificationService } from '../services/NotificationService';
 import { NotificationFilter, NotificationRecord, Notification } from '../types';

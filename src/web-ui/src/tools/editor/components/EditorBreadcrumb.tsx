@@ -7,6 +7,7 @@ import { getFileIconType } from '@/tools/file-system/utils/fileIcons';
 import { workspaceAPI } from '@/infrastructure/api';
 import { createLogger } from '@/shared/utils/logger';
 import { Tooltip } from '@/component-library';
+import { fileTabManager } from '@/shared/services/FileTabManager';
 import './EditorBreadcrumb.scss';
 
 const log = createLogger('EditorBreadcrumb');
@@ -350,8 +351,7 @@ export const EditorBreadcrumb: React.FC<EditorBreadcrumbProps> = ({
     } else {
       setOpenDropdown(null);
       setAnchorEl(null);
-      
-      const { fileTabManager } = await import('@/shared/services/FileTabManager');
+
       fileTabManager.openFile({
         filePath: item.path,
         fileName: item.name,

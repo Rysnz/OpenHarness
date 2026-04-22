@@ -15,7 +15,16 @@ const markdownEditorSelector = '.openharness-markdown-editor .m-editor-tiptap .P
 
 export async function openMarkdownFile(workspacePath: string, filePath: string): Promise<void> {
   await browser.execute(async (targetWorkspacePath: string, targetFilePath: string) => {
-    const { fileTabManager } = await import('/src/shared/services/FileTabManager.ts');
+    const modulePath: string = '/src/shared/services/FileTabManager.ts';
+    const { fileTabManager } = await import(/* @vite-ignore */ modulePath) as {
+      fileTabManager: {
+        openFile(args: {
+          filePath: string;
+          workspacePath: string;
+          mode?: string;
+        }): void;
+      };
+    };
     fileTabManager.openFile({
       filePath: targetFilePath,
       workspacePath: targetWorkspacePath,

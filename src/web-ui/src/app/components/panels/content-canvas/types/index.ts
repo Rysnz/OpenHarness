@@ -20,11 +20,11 @@ export type {
   SplitMode,
   AnchorPosition,
   DropPosition,
-  EditorGroupId,
   LayoutState,
   CanvasState,
   CanvasPersistState,
 } from './layout';
+export type { EditorGroupId } from './group';
 
 export {
   LAYOUT_CONFIG,

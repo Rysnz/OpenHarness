@@ -94,6 +94,38 @@ pnpm run desktop:dev
 pnpm run desktop:build
 ```
 
+### Windows 交付构建
+
+如果你要在 Windows 上生成可交付的 `exe`，推荐直接使用：
+
+```bash
+pnpm run desktop:build:exe
+```
+
+产物路径：
+
+- `target/release/openharness-desktop.exe`
+
+这条命令会：
+
+- 构建 `web-ui` 和 `mobile-web`
+- 触发 Tauri 桌面端 release 构建
+- 复用 OpenSSL 缓存
+- 在本机可用时自动启用 `sccache`
+
+推荐做法：
+
+1. 不要在每次构建前手动删除 `target/`，重复交付构建会明显受益于 Cargo 和 `sccache` 的复用。
+2. 只需要 Windows 可执行文件时，优先使用 `pnpm run desktop:build:exe`，这样可以避免额外的打包步骤。
+3. 只有在确实需要完全干净重编译时，再清理 `target/`。
+
+### 构建说明
+
+- 第一次 release 构建明显慢于后续重复构建，属于正常现象。
+- 如果 `sccache` 是通过 WinGet 安装的，当前构建脚本会自动识别并启用。
+- 如果构建过程中出现 `no space on device`、磁盘空间不足之类的问题，优先清理旧的 `target/debug` 或不再使用的 profile 产物，再重新构建。
+- 桌面端启动链路已经改为按需初始化 miniapp worker，减少了应用启动时不必要的预热开销。
+
 更多详情请参阅[贡献指南](./CONTRIBUTING_CN.md)。
 
 ---

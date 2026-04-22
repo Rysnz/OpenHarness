@@ -10,6 +10,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, ChevronLeft, ChevronRight, Globe, RefreshCw, MousePointer2 } from 'lucide-react';
 import { IconButton } from '@/component-library';
 import { createLogger } from '@/shared/utils/logger';
+import { resolveRestoredBrowserUrl } from '@/shared/utils/browserDevUrl';
 import { useSceneStore } from '@/app/stores/sceneStore';
 import { useContextStore } from '@/shared/context-system';
 import type { WebElementContext } from '@/shared/types/context';
@@ -117,7 +118,10 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ isActive, initialUrl }) => 
 
   const isTauri = useMemo(() => isTauriEnvironment(), []);
 
-  const startUrl = initialUrl ?? DEFAULT_URL;
+  const startUrl = useMemo(
+    () => resolveRestoredBrowserUrl(initialUrl, DEFAULT_URL),
+    [initialUrl],
+  );
   const viewportRef = useRef<HTMLDivElement>(null);
   const webviewRef = useRef<BrowserWebviewHandle | null>(null);
   const holderWindowRef = useRef<BrowserHolderWindowHandle | null>(null);

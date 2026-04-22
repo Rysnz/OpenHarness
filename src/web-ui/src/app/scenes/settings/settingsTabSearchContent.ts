@@ -82,6 +82,11 @@ export const SETTINGS_TAB_SEARCH_CONTENT: Record<ConfigTab, readonly SettingsTab
     { ns: 'settings/mcp', key: 'section.serverList.description' },
   ],
 
+  'agent-permissions': [
+    { ns: 'settings', key: 'configCenter.tabs.agentPermissions' },
+    { ns: 'settings', key: 'configCenter.tabDescriptions.agentPermissions' },
+  ],
+
   editor: [
     { ns: 'settings/editor', key: 'title' },
     { ns: 'settings/editor', key: 'subtitle' },

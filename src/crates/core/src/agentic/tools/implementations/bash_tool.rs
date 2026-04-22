@@ -1,3 +1,4 @@
+use crate::agentic::security::shell::{RiskLevel, ShellRiskAnalyzer};
 use crate::agentic::tools::framework::{
     Tool, ToolRenderOptions, ToolResult, ToolUseContext, ValidationResult,
 };
@@ -10,7 +11,7 @@ use crate::util::errors::{OpenHarnessError, OpenHarnessResult};
 use crate::util::types::event::{ToolExecutionProgressInfo, ToolTerminalReadyInfo};
 use async_trait::async_trait;
 use futures::StreamExt;
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use serde_json::{json, Value};
 use std::time::{Duration, Instant};
 use terminal_core::session::SessionSource;
@@ -338,6 +339,11 @@ Usage notes:
         true
     }
 
+    /// Bash tool supports streaming - it can emit progress events during execution
+    fn supports_streaming(&self) -> bool {
+        true
+    }
+
     async fn validate_input(
         &self,
         input: &Value,
@@ -463,6 +469,32 @@ Usage notes:
             .get("command")
             .and_then(|v| v.as_str())
             .ok_or_else(|| OpenHarnessError::tool("command is required".to_string()))?;
+
+        // Security: Analyze shell command for risks
+        let workspace_root = context
+            .workspace_root()
+            .map(|p| p.to_string_lossy().to_string());
+        let risk_analyzer = match workspace_root {
+            Some(ref root) => ShellRiskAnalyzer::new().with_workspace_root(root.clone()),
+            None => ShellRiskAnalyzer::new(),
+        };
+        let risk = risk_analyzer.analyze(command_str);
+
+        // Block high-risk commands
+        if risk.level == RiskLevel::Blocked {
+            return Err(OpenHarnessError::tool(format!(
+                "Command blocked: {} - {}",
+                risk.category, risk.reason
+            )));
+        }
+
+        // Log medium/high risk commands
+        if risk.level == RiskLevel::High || risk.level == RiskLevel::Medium {
+            warn!(
+                "Shell risk detected: level={:?}, category={}, reason={}",
+                risk.level, risk.category, risk.reason
+            );
+        }
 
         // Remote workspace: execute via injected workspace shell
         if context.is_remote() {
@@ -703,6 +735,15 @@ Usage notes:
                 }
                 CommandStreamEvent::Output { data } => {
                     accumulated_output.push_str(&data);
+
+                    if let Some(stream_sink) = &context.stream_sink {
+                        stream_sink
+                            .emit(json!({
+                                "stream": "stdout",
+                                "data": data.clone(),
+                            }))
+                            .await;
+                    }
 
                     let progress_event = ToolExecutionProgress(ToolExecutionProgressInfo {
                         tool_use_id: tool_use_id.clone(),

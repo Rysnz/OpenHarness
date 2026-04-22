@@ -606,7 +606,7 @@ async fn clear_active_workspace_context(state: &State<'_, AppState>, app: &AppHa
 
     *state.workspace_path.write().await = None;
 
-    if let Some(ref pool) = state.js_worker_pool {
+    if let Some(pool) = state.js_worker_pool_if_initialized() {
         pool.stop_all().await;
     }
 

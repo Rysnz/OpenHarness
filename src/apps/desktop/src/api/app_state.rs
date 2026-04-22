@@ -14,10 +14,11 @@ use openharness_core::util::errors::*;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use thiserror::Error;
-use tokio::sync::RwLock;
+use tokio::sync::{OnceCell, RwLock};
 
 /// Errors that can occur when accessing SSH remote services
 #[derive(Error, Debug)]
@@ -72,7 +73,9 @@ pub struct AppState {
     pub mcp_service: Option<Arc<mcp::MCPService>>,
     pub token_usage_service: Arc<token_usage::TokenUsageService>,
     pub miniapp_manager: Arc<MiniAppManager>,
-    pub js_worker_pool: Option<Arc<JsWorkerPool>>,
+    js_worker_pool: OnceCell<Option<Arc<JsWorkerPool>>>,
+    js_worker_path_manager: Arc<openharness_core::infrastructure::PathManager>,
+    js_worker_host_path: PathBuf,
     pub statistics: Arc<RwLock<AppStatistics>>,
     pub macos_edit_menu_mode: Arc<RwLock<crate::macos_menubar::EditMenuMode>>,
     pub start_time: std::time::Instant,
@@ -156,12 +159,6 @@ impl AppState {
         let worker_host_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("resources")
             .join("worker_host.js");
-        let js_worker_pool = JsWorkerPool::new(path_manager, worker_host_path)
-            .ok()
-            .map(Arc::new);
-        if js_worker_pool.is_none() {
-            log::warn!("JsWorkerPool not initialized (missing worker_host.js or no Bun/Node)");
-        }
 
         let statistics = Arc::new(RwLock::new(AppStatistics {
             sessions_created: 0,
@@ -278,7 +275,9 @@ impl AppState {
             mcp_service,
             token_usage_service,
             miniapp_manager,
-            js_worker_pool,
+            js_worker_pool: OnceCell::new(),
+            js_worker_path_manager: path_manager,
+            js_worker_host_path: worker_host_path,
             statistics,
             macos_edit_menu_mode: Arc::new(RwLock::new(crate::macos_menubar::EditMenuMode::System)),
             start_time,
@@ -334,6 +333,32 @@ impl AppState {
             .iter()
             .map(|tool| tool.name().to_string())
             .collect()
+    }
+
+    pub async fn get_js_worker_pool(&self) -> Option<Arc<JsWorkerPool>> {
+        self.js_worker_pool
+            .get_or_init(|| async {
+                let pool = JsWorkerPool::new(
+                    self.js_worker_path_manager.clone(),
+                    self.js_worker_host_path.clone(),
+                )
+                .ok()
+                .map(Arc::new);
+
+                if pool.is_none() {
+                    log::warn!(
+                        "JsWorkerPool not initialized (missing worker_host.js or no Bun/Node)"
+                    );
+                }
+
+                pool
+            })
+            .await
+            .clone()
+    }
+
+    pub fn js_worker_pool_if_initialized(&self) -> Option<Arc<JsWorkerPool>> {
+        self.js_worker_pool.get().and_then(|pool| pool.clone())
     }
 
     // SSH Remote connection methods

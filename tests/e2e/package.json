@@ -37,14 +37,61 @@
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
-    "@wdio/cli": "^9.0.0",
-    "@wdio/devtools-service": "^10.1.0",
-    "@wdio/local-runner": "^9.0.0",
-    "@wdio/mocha-framework": "^9.0.0",
-    "@wdio/spec-reporter": "^9.0.0",
+    "@wdio/cli": "^9.27.0",
+    "@wdio/globals": "^9.27.0",
+    "@wdio/local-runner": "^9.27.0",
+    "@wdio/mocha-framework": "^9.27.0",
+    "@wdio/spec-reporter": "^9.27.0",
+    "@wdio/types": "^9.27.0",
     "rimraf": "^5.0.0",
     "ts-node": "^10.9.2",
-    "typescript": "^5.8.0",
-    "wdio-edgedriver-service": "^3.0.3"
+    "typescript": "^5.8.0"
+  },
+  "overrides": {
+    "anymatch": {
+      "picomatch": "2.3.2"
+    },
+    "archiver-utils": {
+      "lodash": "4.18.1"
+    },
+    "basic-ftp": "5.3.0",
+    "cheerio": {
+      "undici": "7.24.6"
+    },
+    "edgedriver": {
+      "fast-xml-parser": "5.7.1"
+    },
+    "glob@10.5.0": {
+      "minimatch": "9.0.7"
+    },
+    "jest-message-util": {
+      "picomatch": "4.0.4"
+    },
+    "jest-util": {
+      "picomatch": "4.0.4"
+    },
+    "micromatch": {
+      "picomatch": "2.3.2"
+    },
+    "minimatch@5.1.8": {
+      "brace-expansion": "2.0.3"
+    },
+    "minimatch@9.0.7": {
+      "brace-expansion": "2.0.3"
+    },
+    "mocha": {
+      "minimatch": "5.1.8",
+      "serialize-javascript": "7.0.5"
+    },
+    "puppeteer-core": {
+      "ws": "8.20.0"
+    },
+    "readdir-glob": {
+      "minimatch": "5.1.8"
+    },
+    "readdirp": {
+      "picomatch": "2.3.2"
+    },
+    "tar-fs": "3.1.2"
   }
 }

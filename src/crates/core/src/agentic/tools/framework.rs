@@ -7,8 +7,41 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
+use std::future::Future;
 use std::path::Path;
+use std::pin::Pin;
+use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
+
+type ToolStreamFuture = Pin<Box<dyn Future<Output = ()> + Send>>;
+type ToolStreamCallback = dyn Fn(Value) -> ToolStreamFuture + Send + Sync + 'static;
+
+#[derive(Clone)]
+pub struct ToolStreamSink {
+    emit: Arc<ToolStreamCallback>,
+}
+
+impl std::fmt::Debug for ToolStreamSink {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ToolStreamSink").finish_non_exhaustive()
+    }
+}
+
+impl ToolStreamSink {
+    pub fn new<F, Fut>(emit: F) -> Self
+    where
+        F: Fn(Value) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = ()> + Send + 'static,
+    {
+        Self {
+            emit: Arc::new(move |data| Box::pin(emit(data))),
+        }
+    }
+
+    pub async fn emit(&self, data: Value) {
+        (self.emit)(data).await;
+    }
+}
 
 /// Tool use context
 #[derive(Debug, Clone)]
@@ -20,6 +53,8 @@ pub struct ToolUseContext {
     pub workspace: Option<WorkspaceBinding>,
     /// Extended context data passed from execution layer to tools.
     pub custom_data: HashMap<String, Value>,
+    /// Optional sink for tools that can emit task stream chunks while running.
+    pub stream_sink: Option<ToolStreamSink>,
     /// Desktop automation (Computer use); only set in OpenHarness desktop.
     pub computer_use_host: Option<crate::agentic::tools::computer_use_host::ComputerUseHostRef>,
     // Cancel tool execution more timely, especially for tools like TaskTool that need to run for a long time

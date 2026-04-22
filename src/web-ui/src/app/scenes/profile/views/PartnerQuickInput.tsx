@@ -16,7 +16,7 @@ import { IconButton, Textarea } from '@/component-library';
 import { flowChatManager } from '@/flow_chat/services/FlowChatManager';
 import { openMainSession } from '@/flow_chat/services/openBtwSession';
 import { useWorkspaceContext } from '@/infrastructure/contexts/WorkspaceContext';
-import { notificationService } from '@/shared/notification-system';
+import { notificationService } from '@/shared/notification-system/services/NotificationService';
 import { createLogger } from '@/shared/utils/logger';
 import './PartnerQuickInput.scss';
 

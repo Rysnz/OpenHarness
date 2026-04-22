@@ -14,6 +14,9 @@ import { useCallback, useRef, useEffect } from 'react';
 import { getRuntimeColors } from '../theme/mermaidTheme';
 import { createLogger } from '@/shared/utils/logger';
 import type { NodeMetadata, TooltipData } from '../types/MermaidPanelTypes';
+import { appManager } from '@/app/services/AppManager';
+import { globalEventBus } from '@/infrastructure/event-bus/EventBus';
+import { fileTabManager } from '@/shared/services/FileTabManager';
 
 const log = createLogger('useSvgInteraction');
 
@@ -341,9 +344,6 @@ export function useSvgInteraction(options: SvgInteractionOptions): SvgInteractio
             if (onFileNavigateRef.current) {
               onFileNavigateRef.current(metadata.file_path, metadata.line_number || 1, metadata);
             } else if (metadata.node_type === 'directory') {
-              const { appManager } = await import('@/app/services/AppManager');
-              const { globalEventBus } = await import('@/infrastructure/event-bus/EventBus');
-              
               appManager.updateLayout({
                 leftPanelActiveTab: 'files',
                 leftPanelCollapsed: false
@@ -355,7 +355,6 @@ export function useSvgInteraction(options: SvgInteractionOptions): SvgInteractio
               });
             } else {
               const targetLine = metadata.line_number || 1;
-              const { fileTabManager } = await import('@/shared/services/FileTabManager');
               fileTabManager.openFileAndJump(metadata.file_path, targetLine, 1, {
                 splitView: true,
                 targetGroup: 'secondary',

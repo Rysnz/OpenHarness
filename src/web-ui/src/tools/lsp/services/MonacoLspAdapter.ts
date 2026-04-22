@@ -10,6 +10,8 @@ import { WorkspaceLspManager } from './WorkspaceLspManager';
 import { getMonacoLanguage } from '@/infrastructure/language-detection';
 import { createLogger } from '@/shared/utils/logger';
 import { i18nService } from '@/infrastructure/i18n';
+import { monacoModelManager } from '@/tools/editor/services/MonacoModelManager';
+import { normalizePath } from '@/shared/utils/pathUtils';
 import type { CompletionItem } from '../types';
 
 const log = createLogger('MonacoLspAdapter');
@@ -571,8 +573,6 @@ export class MonacoLspAdapter {
           return;
         }
 
-
-        const { normalizePath } = await import('@/shared/utils/pathUtils');
         const filePath = normalizePath(uriString);
 
 
@@ -582,8 +582,6 @@ export class MonacoLspAdapter {
 
         const language = this.detectLanguageFromPath(filePath);
 
-
-        const { monacoModelManager } = await import('@/tools/editor/services/MonacoModelManager');
         monacoModelManager.getOrCreateModel(
           filePath,
           language,
@@ -1626,8 +1624,6 @@ export class MonacoLspAdapter {
     const isMarkdownFile = jump.fileName.toLowerCase().endsWith('.md');
     const editorType = isMarkdownFile ? 'markdown-editor' : 'code-editor';
     
-
-    const { normalizePath } = await import('@/shared/utils/pathUtils');
     const normalizedPath = normalizePath(jump.targetPath);
     
 

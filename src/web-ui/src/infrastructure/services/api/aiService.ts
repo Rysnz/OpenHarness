@@ -5,6 +5,7 @@ import { aiApi } from '../../api';
 import { notificationService } from '../../../shared/notification-system';
 import { createLogger } from '@/shared/utils/logger';
 import { i18nService } from '@/infrastructure/i18n';
+import { globalStateAPI } from '../../../shared/types/global-state';
 
 const log = createLogger('AIService');
 // ToolExecution types are handled by backend now
@@ -158,8 +159,6 @@ class AIService {
   
   private async getCurrentWorkspacePath(): Promise<string | undefined> {
     try {
-      
-      const { globalStateAPI } = await import('../../../shared/types/global-state');
       const workspace = await globalStateAPI.getCurrentWorkspace();
       
       if (workspace && workspace.rootPath) {

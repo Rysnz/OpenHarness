@@ -1,8 +1,8 @@
 /**
  * Global state and app-level API types.
  */
-import { globalAPI } from '@/infrastructure/api';
-import { workspaceAPI } from '@/infrastructure/api';
+import { globalAPI } from '@/infrastructure/api/service-api/GlobalAPI';
+import { workspaceAPI } from '@/infrastructure/api/service-api/WorkspaceAPI';
 import type {
   ApplicationState as APIApplicationState,
   AppStatus as APIAppStatus,

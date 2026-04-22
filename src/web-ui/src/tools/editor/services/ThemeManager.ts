@@ -6,6 +6,8 @@
 import * as monaco from 'monaco-editor';
 import { OpenHarnessDarkTheme, OpenHarnessDarkThemeMetadata } from '../themes/openharness-dark.theme';
 import { createLogger } from '@/shared/utils/logger';
+import { themeService } from '@/infrastructure/theme/core/ThemeService';
+import { monacoThemeSync } from '@/infrastructure/theme/integrations/MonacoThemeSync';
 
 const log = createLogger('ThemeManager');
 
@@ -134,7 +136,6 @@ class ThemeManager {
   
   private async syncWithThemeService(): Promise<void> {
     try {
-      const { themeService } = await import('@/infrastructure/theme');
       const currentTheme = themeService.getCurrentTheme();
       
       if (currentTheme) {
@@ -143,7 +144,6 @@ class ThemeManager {
           : (currentTheme.type === 'dark' ? this.getDefaultThemeId() : 'vs');
         
         this.currentThemeId = themeId;
-        const { monacoThemeSync } = await import('@/infrastructure/theme/integrations/MonacoThemeSync');
         monacoThemeSync.syncTheme(currentTheme);
       }
       

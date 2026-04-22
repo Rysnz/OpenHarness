@@ -212,7 +212,7 @@ describe('L1 UI Navigation', () => {
   describe('UI state consistency', () => {
     it('page should not have console errors', async () => {
       try {
-        const logs = await browser.getLogs('browser');
+        const logs = await browser.getLogs('browser') as Array<{ level?: string; message?: string }>;
         const errors = logs.filter(log => log.level === 'SEVERE');
         
         if (errors.length > 0) {

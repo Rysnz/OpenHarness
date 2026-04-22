@@ -6,7 +6,7 @@
 import { spawnSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { readdirSync } from 'fs';
+import { existsSync, mkdirSync, readdirSync } from 'fs';
 import { ensureOpenSslWindows } from './ensure-openssl-windows.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -22,6 +22,94 @@ function tauriBuildArgsFromArgv() {
   return args.slice(i);
 }
 
+function findExecutable(name) {
+  const locator = process.platform === 'win32' ? 'where' : 'which';
+  const result = spawnSync(locator, [name], {
+    encoding: 'utf8',
+    shell: false,
+  });
+
+  if (result.status !== 0) {
+    return null;
+  }
+
+  return result.stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean) ?? null;
+}
+
+function findWindowsWingetExecutable(name) {
+  if (process.platform !== 'win32') {
+    return null;
+  }
+
+  const localAppData = process.env.LOCALAPPDATA;
+  if (!localAppData) {
+    return null;
+  }
+
+  const packagesDir = join(localAppData, 'Microsoft', 'WinGet', 'Packages');
+  try {
+    const packageDirs = readdirSync(packagesDir, { withFileTypes: true });
+    for (const entry of packageDirs) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+
+      const nestedDir = join(packagesDir, entry.name);
+      const nestedEntries = readdirSync(nestedDir, { withFileTypes: true });
+      for (const nestedEntry of nestedEntries) {
+        if (!nestedEntry.isDirectory()) {
+          continue;
+        }
+        const nestedCandidate = join(nestedDir, nestedEntry.name, `${name}.exe`);
+        if (existsSync(nestedCandidate)) {
+          return nestedCandidate;
+        }
+      }
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function configureRustCompilerCache(root, env) {
+  const sccache = findExecutable('sccache') ?? findWindowsWingetExecutable('sccache');
+  if (!sccache) {
+    console.log('[build-cache] sccache not found; using direct rustc');
+    return null;
+  }
+
+  const cacheDir = join(root, '.openharness', 'cache', 'sccache');
+  mkdirSync(cacheDir, { recursive: true });
+
+  env.RUSTC_WRAPPER = sccache;
+  env.SCCACHE_DIR ??= cacheDir;
+  env.SCCACHE_CACHE_SIZE ??= '20G';
+  env.SCCACHE_IDLE_TIMEOUT ??= '0';
+
+  const start = spawnSync(sccache, ['--start-server'], {
+    encoding: 'utf8',
+    env,
+    shell: false,
+  });
+  const startupOutput = `${start.stdout ?? ''}${start.stderr ?? ''}`.toLowerCase();
+  const alreadyRunning = startupOutput.includes('address in use');
+  if (start.status !== 0 && !alreadyRunning) {
+    if (start.stderr) {
+      process.stderr.write(start.stderr);
+    }
+    console.warn('[build-cache] Failed to start sccache server; continuing with wrapper enabled');
+  }
+
+  console.log(`[build-cache] Using sccache: ${sccache}`);
+  console.log(`[build-cache] Cache dir: ${env.SCCACHE_DIR}`);
+  return sccache;
+}
+
 async function main() {
   const forward = tauriBuildArgsFromArgv();
 
@@ -29,13 +117,14 @@ async function main() {
 
   const desktopDir = join(ROOT, 'src', 'apps', 'desktop');
   // Tauri CLI reads CI and rejects numeric "1" (common in CI providers).
-  process.env.CI = 'true';
+  const buildEnv = { ...process.env, CI: 'true' };
+  const sccache = configureRustCompilerCache(ROOT, buildEnv);
 
   const tauriConfig = join(desktopDir, 'tauri.conf.json');
   const tauriBin = join(ROOT, 'node_modules', '.bin', 'tauri');
   const r = spawnSync(tauriBin, ['build', '--config', tauriConfig, ...forward], {
     cwd: desktopDir,
-    env: process.env,
+    env: buildEnv,
     stdio: 'inherit',
     shell: true,
   });
@@ -47,6 +136,14 @@ async function main() {
 
   if (r.status === 0 && process.platform === 'darwin') {
     patchDmgExtras(ROOT);
+  }
+
+  if (sccache) {
+    spawnSync(sccache, ['--show-stats'], {
+      env: buildEnv,
+      stdio: 'inherit',
+      shell: false,
+    });
   }
 
   process.exit(r.status ?? 1);

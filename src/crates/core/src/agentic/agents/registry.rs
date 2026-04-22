@@ -157,11 +157,42 @@ async fn get_subagent_configs() -> HashMap<String, SubAgentConfig> {
 }
 
 fn merge_dynamic_mcp_tools(
-    mut configured_tools: Vec<String>,
+    configured_tools: Vec<String>,
     registered_tool_names: &[String],
 ) -> Vec<String> {
+    merge_dynamic_mcp_tools_for_servers(configured_tools, registered_tool_names, &["*".to_string()])
+}
+
+fn mcp_server_name_from_tool(tool_name: &str) -> Option<&str> {
+    tool_name
+        .strip_prefix("mcp__")
+        .and_then(|rest| rest.split_once("__").map(|(server, _)| server))
+}
+
+fn mcp_tool_visible_for_servers(tool_name: &str, mcp_servers: &[String]) -> bool {
+    let Some(server_name) = mcp_server_name_from_tool(tool_name) else {
+        return true;
+    };
+
+    mcp_servers.iter().any(|configured| {
+        let configured = configured.trim();
+        configured == "*" || configured.eq_ignore_ascii_case(server_name)
+    })
+}
+
+fn merge_dynamic_mcp_tools_for_servers(
+    mut configured_tools: Vec<String>,
+    registered_tool_names: &[String],
+    mcp_servers: &[String],
+) -> Vec<String> {
+    configured_tools.retain(|tool_name| mcp_tool_visible_for_servers(tool_name, mcp_servers));
+
     for tool_name in registered_tool_names {
         if !tool_name.starts_with("mcp__") {
+            continue;
+        }
+
+        if !mcp_tool_visible_for_servers(tool_name, mcp_servers) {
             continue;
         }
 
@@ -176,6 +207,17 @@ fn merge_dynamic_mcp_tools(
     }
 
     configured_tools
+}
+
+fn apply_disallowed_tools(mut tools: Vec<String>, disallowed_tools: &[String]) -> Vec<String> {
+    let denied: HashSet<String> = disallowed_tools
+        .iter()
+        .map(|tool| tool.trim().to_ascii_lowercase())
+        .filter(|tool| !tool.is_empty())
+        .collect();
+
+    tools.retain(|tool| !denied.contains(&tool.trim().to_ascii_lowercase()));
+    tools
 }
 
 /// Agent category
@@ -425,7 +467,30 @@ impl AgentRegistry {
 
                 merge_dynamic_mcp_tools(resolved_tools, &registered_tool_names)
             }
-            AgentCategory::SubAgent | AgentCategory::Hidden => entry.agent.default_tools(),
+            AgentCategory::SubAgent | AgentCategory::Hidden => {
+                let Some(definition) = self.get_agent_definition(agent_type, workspace_root) else {
+                    return entry.agent.default_tools();
+                };
+                let registered_tool_names = get_all_registered_tool_names().await;
+                let valid_tools: HashSet<String> = registered_tool_names.iter().cloned().collect();
+                let base_tools = if definition.allowed_tools.is_empty() {
+                    entry.agent.default_tools()
+                } else {
+                    definition.allowed_tools.clone()
+                };
+                let filtered_tools: Vec<String> = base_tools
+                    .into_iter()
+                    .filter(|tool| valid_tools.contains(tool))
+                    .collect();
+                let filtered_tools =
+                    apply_disallowed_tools(filtered_tools, &definition.disallowed_tools);
+
+                merge_dynamic_mcp_tools_for_servers(
+                    filtered_tools,
+                    &registered_tool_names,
+                    &definition.mcp_servers,
+                )
+            }
         }
     }
 
@@ -1196,7 +1261,10 @@ pub fn get_agent_registry() -> Arc<AgentRegistry> {
 
 #[cfg(test)]
 mod tests {
-    use super::{default_model_id_for_builtin_agent, merge_dynamic_mcp_tools};
+    use super::{
+        apply_disallowed_tools, default_model_id_for_builtin_agent,
+        merge_dynamic_mcp_tools_for_servers,
+    };
 
     #[test]
     fn top_level_modes_default_to_auto() {
@@ -1212,7 +1280,7 @@ mod tests {
     }
 
     #[test]
-    fn merge_dynamic_mcp_tools_appends_registered_mcp_tools_once() {
+    fn merge_dynamic_mcp_tools_filters_by_visible_servers() {
         let configured_tools = vec!["Read".to_string(), "Bash".to_string()];
         let registered_tool_names = vec![
             "Read".to_string(),
@@ -1221,7 +1289,36 @@ mod tests {
             "mcp__notion__notion-search".to_string(),
         ];
 
-        let merged = merge_dynamic_mcp_tools(configured_tools, &registered_tool_names);
+        let merged = merge_dynamic_mcp_tools_for_servers(
+            configured_tools,
+            &registered_tool_names,
+            &["notion".to_string()],
+        );
+
+        assert_eq!(
+            merged,
+            vec![
+                "Read".to_string(),
+                "Bash".to_string(),
+                "mcp__notion__notion-search".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn merge_dynamic_mcp_tools_star_keeps_existing_behavior() {
+        let configured_tools = vec!["Read".to_string(), "Bash".to_string()];
+        let registered_tool_names = vec![
+            "Read".to_string(),
+            "mcp__notion__notion-search".to_string(),
+            "mcp__github__list_issues".to_string(),
+        ];
+
+        let merged = merge_dynamic_mcp_tools_for_servers(
+            configured_tools,
+            &registered_tool_names,
+            &["*".to_string()],
+        );
 
         assert_eq!(
             merged,
@@ -1232,5 +1329,13 @@ mod tests {
                 "mcp__github__list_issues".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn disallowed_tools_take_priority_over_allowed_tools() {
+        let tools = vec!["Read".to_string(), "Bash".to_string(), "Write".to_string()];
+        let filtered = apply_disallowed_tools(tools, &["bash".to_string()]);
+
+        assert_eq!(filtered, vec!["Read".to_string(), "Write".to_string()]);
     }
 }

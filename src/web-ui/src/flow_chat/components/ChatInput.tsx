@@ -45,6 +45,7 @@ import type { SceneTabId } from '@/app/components/SceneBar/types';
 import type { SkillInfo } from '@/infrastructure/config/types';
 import { aiExperienceConfigService } from '@/infrastructure/config/services/AIExperienceConfigService';
 import MCPAPI, { type MCPPrompt, type MCPPromptMessage, type MCPServerInfo } from '@/infrastructure/api/service-api/MCPAPI';
+import { agentAPI } from '@/infrastructure/api/service-api/AgentAPI';
 import { deriveChatInputPetMood } from '../utils/chatInputPetMood';
 import { ChatInputPixelPet } from './ChatInputPixelPet';
 import './ChatInput.scss';
@@ -693,7 +694,6 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   React.useEffect(() => {
     const fetchAvailableModes = async () => {
       try {
-        const { agentAPI } = await import('@/infrastructure/api/service-api/AgentAPI');
         const modes = await agentAPI.getAvailableModes();
         dispatchMode({ type: 'SET_AVAILABLE_MODES', payload: modes });
       } catch (error) {
@@ -1199,7 +1199,6 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     setSlashCommandState({ isActive: false, kind: 'modes', query: '', selectedIndex: 0 });
 
     try {
-      const { agentAPI } = await import('@/infrastructure/api');
       await agentAPI.compactSession({
         sessionId: effectiveTargetSessionId,
         workspacePath: effectiveTargetSession.workspacePath,

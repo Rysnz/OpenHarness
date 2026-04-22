@@ -5,6 +5,7 @@
  */
 import type { LineRange } from '@/component-library/components/Markdown';
 import { createLogger } from '@/shared/utils/logger';
+import { fileTabManager } from './FileTabManager';
 
 const log = createLogger('EditorJumpService');
 
@@ -159,8 +160,6 @@ class EditorJumpService {
       this.jumpTo(normalized, line, column);
     } else {
       
-      
-      const { fileTabManager } = await import('./FileTabManager');
       fileTabManager.openFileAndJump(filePath, line, column);
     }
   }
@@ -175,7 +174,6 @@ class EditorJumpService {
       this.jumpToRange(normalized, range);
     } else {
       
-      const { fileTabManager } = await import('./FileTabManager');
       fileTabManager.openFileAndJumpToRange(filePath, range);
     }
   }

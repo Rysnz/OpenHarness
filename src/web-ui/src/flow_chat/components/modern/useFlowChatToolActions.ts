@@ -5,6 +5,7 @@
 import { useCallback } from 'react';
 import { notificationService } from '@/shared/notification-system';
 import { createLogger } from '@/shared/utils/logger';
+import { agentService } from '@/shared/services/agent-service';
 import { flowChatStore } from '../../store/FlowChatStore';
 import type { DialogTurn, FlowItem, FlowToolItem, ModelRound } from '../../types/flow-chat';
 
@@ -77,7 +78,6 @@ export function useFlowChatToolActions() {
         throw new Error('No active session ID');
       }
 
-      const { agentService } = await import('../../../shared/services/agent-service');
       await agentService.confirmToolExecution(
         activeSessionId,
         toolId,
@@ -110,7 +110,6 @@ export function useFlowChatToolActions() {
         throw new Error('No active session ID');
       }
 
-      const { agentService } = await import('../../../shared/services/agent-service');
       await agentService.confirmToolExecution(
         activeSessionId,
         toolId,

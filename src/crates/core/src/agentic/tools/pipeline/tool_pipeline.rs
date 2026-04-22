@@ -7,19 +7,25 @@ use super::state_manager::ToolStateManager;
 use super::types::*;
 use crate::agentic::core::{ToolCall, ToolExecutionState, ToolResult as ModelToolResult};
 use crate::agentic::permissions::{
-    PermissionApprovalQueue, PermissionApprovalRequest, PermissionAuditRecord,
+    AgentPermissionMode, PermissionApprovalQueue, PermissionApprovalRequest, PermissionAuditRecord,
     PermissionAuditStore, PermissionDecision, PermissionEngine, PermissionEvaluation,
+    PermissionRule,
 };
 use crate::agentic::runtime::{AgentPatchStore, AgentTaskRegistry};
 use crate::agentic::tools::computer_use_host::ComputerUseHostRef;
-use crate::agentic::tools::framework::{ToolResult as FrameworkToolResult, ToolUseContext};
+use crate::agentic::tools::framework::{
+    ToolResult as FrameworkToolResult, ToolStreamSink, ToolUseContext,
+};
 use crate::agentic::tools::registry::ToolRegistry;
 use crate::util::errors::{OpenHarnessError, OpenHarnessResult};
 use dashmap::DashMap;
 use futures::future::join_all;
 use log::{debug, error, info, warn};
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
 use std::time::Instant;
 use tokio::sync::{oneshot, RwLock as TokioRwLock};
 use tokio::time::{timeout, Duration};
@@ -205,6 +211,7 @@ fn convert_to_framework_result(model_result: &ModelToolResult) -> FrameworkToolR
 pub enum ConfirmationResponse {
     Confirmed,
     Rejected(String),
+    Denied(String),
 }
 
 /// Tool pipeline
@@ -227,10 +234,13 @@ impl ToolPipeline {
         state_manager: Arc<ToolStateManager>,
         computer_use_host: Option<ComputerUseHostRef>,
     ) -> Self {
+        // Initialize permission engine with default shell analyzer
+        let permission_engine = Arc::new(PermissionEngine::default());
+
         Self {
             tool_registry,
             state_manager,
-            permission_engine: Arc::new(PermissionEngine::default()),
+            permission_engine,
             approval_queue: Arc::new(PermissionApprovalQueue::default()),
             permission_audit_store: Arc::new(PermissionAuditStore::default()),
             confirmation_channels: Arc::new(DashMap::new()),
@@ -271,6 +281,26 @@ impl ToolPipeline {
         self.permission_audit_store.list_recent(limit).await
     }
 
+    pub async fn list_permission_rules(&self) -> Vec<PermissionRule> {
+        self.permission_engine.list_rules().await
+    }
+
+    pub async fn upsert_permission_rule(&self, rule: PermissionRule) {
+        self.permission_engine.upsert_rule(rule).await;
+    }
+
+    pub async fn remove_permission_rule(&self, rule_id: &str) -> bool {
+        self.permission_engine.remove_rule(rule_id).await
+    }
+
+    pub async fn clear_permission_rules(&self) {
+        self.permission_engine.clear_rules().await;
+    }
+
+    pub async fn replace_permission_rules(&self, rules: Vec<PermissionRule>) {
+        self.permission_engine.replace_rules(rules).await;
+    }
+
     async fn append_permission_audit(
         &self,
         task: &ToolTask,
@@ -290,6 +320,31 @@ impl ToolPipeline {
         self.permission_audit_store.append(record).await;
     }
 
+    fn hook_context_for_task(
+        task: &ToolTask,
+        tool_result: Option<&str>,
+        error: Option<&str>,
+    ) -> HashMap<String, String> {
+        let mut context = task.context.context_vars.clone();
+        context.insert("session_id".to_string(), task.context.session_id.clone());
+        context.insert(
+            "dialog_turn_id".to_string(),
+            task.context.dialog_turn_id.clone(),
+        );
+        context.insert("agent_type".to_string(), task.context.agent_type.clone());
+        context.insert("tool_call_id".to_string(), task.tool_call.tool_id.clone());
+        context.insert("tool_name".to_string(), task.tool_call.tool_name.clone());
+
+        if let Some(result) = tool_result {
+            context.insert("tool_result".to_string(), result.to_string());
+        }
+        if let Some(error) = error {
+            context.insert("error".to_string(), error.to_string());
+        }
+
+        context
+    }
+
     async fn evaluate_permission_for_task(&self, task: &ToolTask) -> PermissionEvaluation {
         let needs_permissions = {
             let registry = self.tool_registry.read().await;
@@ -299,11 +354,34 @@ impl ToolPipeline {
                 .unwrap_or(true)
         };
 
+        // Check for agent-specific permission mode override (does NOT modify global state)
+        let agent_permission_mode = task
+            .context
+            .permission_mode
+            .as_ref()
+            .or_else(|| task.context.context_vars.get("permission_mode"))
+            .and_then(|mode_str| AgentPermissionMode::from_string(mode_str));
+
+        // Pass override to evaluation (no global mutation)
+        let mut permission_input = task.tool_call.arguments.clone();
+        if let serde_json::Value::Object(ref mut object) = permission_input {
+            object.insert(
+                "_permission_context".to_string(),
+                serde_json::json!({
+                    "agent_type": task.context.agent_type.clone(),
+                    "session_id": task.context.session_id.clone(),
+                    "dialog_turn_id": task.context.dialog_turn_id.clone(),
+                    "tool_call_id": task.tool_call.tool_id.clone(),
+                }),
+            );
+        }
+
         self.permission_engine
             .evaluate(
                 &task.tool_call.tool_name,
-                &task.tool_call.arguments,
+                &permission_input,
                 needs_permissions,
+                agent_permission_mode,
             )
             .await
     }
@@ -608,10 +686,21 @@ impl ToolPipeline {
 
         let is_streaming = tool.supports_streaming();
         let tool_needs_permissions = tool.needs_permissions(Some(&tool_args));
-        let permission_evaluation = self
-            .permission_engine
-            .evaluate(&tool_name, &tool_args, tool_needs_permissions)
-            .await;
+
+        // Execute before_tool_call hooks if configured
+        if let Some(ref hooks) = task.context.hooks {
+            let hook_context = Self::hook_context_for_task(&task, None, None);
+            hooks
+                .execute_hooks(
+                    "before_tool_call",
+                    &hook_context,
+                    Some(self.permission_engine.as_ref()),
+                    Some(self.permission_audit_store.as_ref()),
+                )
+                .await;
+        }
+
+        let permission_evaluation = self.evaluate_permission_for_task(&task).await;
 
         self.append_permission_audit(&task, &permission_evaluation, None, None)
             .await;
@@ -736,6 +825,27 @@ impl ToolPipeline {
                         reason
                     )));
                 }
+                Some(Ok(ConfirmationResponse::Denied(reason))) => {
+                    let _ = self
+                        .approval_queue
+                        .remove_by_tool_call(&task.tool_call.tool_id)
+                        .await;
+
+                    self.state_manager
+                        .update_state(
+                            &tool_id,
+                            ToolExecutionState::Failed {
+                                error: reason.clone(),
+                                is_retryable: false,
+                            },
+                        )
+                        .await;
+
+                    return Err(OpenHarnessError::Validation(format!(
+                        "Tool confirmation denied by permission policy: {}",
+                        reason
+                    )));
+                }
                 Some(Err(_)) => {
                     // Channel closed
                     let _ = self
@@ -832,6 +942,29 @@ impl ToolPipeline {
                 .await;
         }
 
+        // Re-fetch task from state_manager to get any updated arguments after confirmation
+        let task = self.state_manager.get_task(&tool_id).ok_or_else(|| {
+            OpenHarnessError::NotFound(format!("Tool task not found: {}", tool_id))
+        })?;
+
+        // Re-evaluate permissions with updated arguments
+        let permission_evaluation = self.evaluate_permission_for_task(&task).await;
+        if matches!(
+            permission_evaluation.effective_decision,
+            PermissionDecision::Deny
+        ) {
+            self.state_manager
+                .update_state(
+                    &tool_id,
+                    ToolExecutionState::Failed {
+                        error: permission_evaluation.reason.clone(),
+                        is_retryable: false,
+                    },
+                )
+                .await;
+            return Err(OpenHarnessError::Validation(permission_evaluation.reason));
+        }
+
         let result = self
             .execute_with_retry(&task, cancellation_token.clone(), tool)
             .await;
@@ -841,6 +974,19 @@ impl ToolPipeline {
         match result {
             Ok(tool_result) => {
                 let duration_ms = start_time.elapsed().as_millis() as u64;
+
+                // Execute after_tool_result hooks if configured
+                if let Some(ref hooks) = task.context.hooks {
+                    let ctx = Self::hook_context_for_task(&task, Some("success"), None);
+                    hooks
+                        .execute_hooks(
+                            "after_tool_result",
+                            &ctx,
+                            Some(self.permission_engine.as_ref()),
+                            Some(self.permission_audit_store.as_ref()),
+                        )
+                        .await;
+                }
 
                 self.state_manager
                     .update_state(
@@ -867,6 +1013,20 @@ impl ToolPipeline {
             Err(e) => {
                 let error_msg = e.to_string();
                 let is_retryable = task.options.max_retries > 0;
+
+                // Execute after_tool_result hooks even on failure
+                if let Some(ref hooks) = task.context.hooks {
+                    let ctx =
+                        Self::hook_context_for_task(&task, Some("error"), Some(error_msg.as_str()));
+                    hooks
+                        .execute_hooks(
+                            "after_tool_result",
+                            &ctx,
+                            Some(self.permission_engine.as_ref()),
+                            Some(self.permission_audit_store.as_ref()),
+                        )
+                        .await;
+                }
 
                 self.state_manager
                     .update_state(
@@ -942,6 +1102,27 @@ impl ToolPipeline {
             ));
         }
 
+        let stream_sink = if tool.supports_streaming() {
+            let stream_task = task.clone();
+            let stream_state_manager = Arc::clone(&self.state_manager);
+            let chunk_counter = Arc::new(AtomicUsize::new(0));
+
+            Some(ToolStreamSink::new(move |data| {
+                let stream_task = stream_task.clone();
+                let stream_state_manager = Arc::clone(&stream_state_manager);
+                let chunk_counter = Arc::clone(&chunk_counter);
+
+                async move {
+                    let chunk_index = chunk_counter.fetch_add(1, Ordering::SeqCst) + 1;
+                    stream_state_manager
+                        .emit_stream_chunk_event(&stream_task, data, chunk_index)
+                        .await;
+                }
+            }))
+        } else {
+            None
+        };
+
         // Build tool context (pass all resource IDs)
         let tool_context = ToolUseContext {
             tool_call_id: Some(task.tool_call.tool_id.clone()),
@@ -997,8 +1178,23 @@ impl ToolPipeline {
                     }
                 }
 
+                if let Some(agent_skills) = task.context.context_vars.get("agent_skills") {
+                    if let Ok(value) = serde_json::from_str::<serde_json::Value>(agent_skills) {
+                        map.insert("agent_skills".to_string(), value);
+                    }
+                }
+
+                if let Some(agent_mcp_servers) = task.context.context_vars.get("agent_mcp_servers")
+                {
+                    if let Ok(value) = serde_json::from_str::<serde_json::Value>(agent_mcp_servers)
+                    {
+                        map.insert("agent_mcp_servers".to_string(), value);
+                    }
+                }
+
                 map
             },
+            stream_sink,
             computer_use_host: self.computer_use_host.clone(),
             cancellation_token: Some(cancellation_token),
             workspace_services: task.context.workspace_services.clone(),
@@ -1222,6 +1418,37 @@ impl ToolPipeline {
         })?;
         let permission_evaluation = self.evaluate_permission_for_task(&task_after_update).await;
 
+        // Check if updated parameters trigger Deny - if so, reject the confirmation
+        if matches!(
+            permission_evaluation.effective_decision,
+            PermissionDecision::Deny
+        ) {
+            // Must also remove from confirmation_channels and notify waiting thread to prevent hang
+            if let Some((_, tx)) = self.confirmation_channels.remove(tool_id) {
+                let _ = tx.send(ConfirmationResponse::Denied(
+                    permission_evaluation.reason.clone(),
+                ));
+            }
+            let _ = self.approval_queue.remove_by_tool_call(tool_id).await;
+            self.append_permission_audit(
+                &task_after_update,
+                &permission_evaluation,
+                Some(false),
+                Some("Updated parameters triggered deny".to_string()),
+            )
+            .await;
+            self.state_manager
+                .update_state(
+                    tool_id,
+                    ToolExecutionState::Failed {
+                        error: permission_evaluation.reason.clone(),
+                        is_retryable: false,
+                    },
+                )
+                .await;
+            return Err(OpenHarnessError::Validation(permission_evaluation.reason));
+        }
+
         // Get sender from map and send confirmation response
         if let Some((_, tx)) = self.confirmation_channels.remove(tool_id) {
             let _ = tx.send(ConfirmationResponse::Confirmed);
@@ -1297,5 +1524,270 @@ impl ToolPipeline {
 
             Ok(())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agentic::events::{AgenticEvent, EventQueue, EventQueueConfig, ToolEventData};
+    use crate::agentic::tools::framework::{Tool, ValidationResult};
+    use async_trait::async_trait;
+    use serde_json::{json, Value};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[derive(Debug)]
+    struct PipelineTestTool {
+        name: &'static str,
+        supports_streaming: bool,
+        needs_permissions: bool,
+        calls: Arc<AtomicUsize>,
+    }
+
+    #[async_trait]
+    impl Tool for PipelineTestTool {
+        fn name(&self) -> &str {
+            self.name
+        }
+
+        async fn description(&self) -> OpenHarnessResult<String> {
+            Ok(format!("{} test tool", self.name))
+        }
+
+        fn input_schema(&self) -> Value {
+            json!({
+                "type": "object",
+                "properties": {
+                    "command": { "type": "string" }
+                }
+            })
+        }
+
+        fn supports_streaming(&self) -> bool {
+            self.supports_streaming
+        }
+
+        fn needs_permissions(&self, _input: Option<&Value>) -> bool {
+            self.needs_permissions
+        }
+
+        async fn validate_input(
+            &self,
+            _input: &Value,
+            _context: Option<&ToolUseContext>,
+        ) -> ValidationResult {
+            ValidationResult::default()
+        }
+
+        async fn call_impl(
+            &self,
+            _input: &Value,
+            context: &ToolUseContext,
+        ) -> OpenHarnessResult<Vec<FrameworkToolResult>> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            if let Some(stream_sink) = &context.stream_sink {
+                stream_sink
+                    .emit(json!({
+                        "stream": "stdout",
+                        "data": "streamed output"
+                    }))
+                    .await;
+            }
+
+            Ok(vec![FrameworkToolResult::ok(
+                json!({"ok": true}),
+                Some("ok".to_string()),
+            )])
+        }
+    }
+
+    fn test_context(permission_mode: Option<&str>) -> ToolExecutionContext {
+        ToolExecutionContext {
+            session_id: "session_1".to_string(),
+            dialog_turn_id: "turn_1".to_string(),
+            agent_type: "agentic".to_string(),
+            workspace: None,
+            context_vars: HashMap::new(),
+            subagent_parent_info: None,
+            allowed_tools: Vec::new(),
+            workspace_services: None,
+            permission_mode: permission_mode.map(|mode| mode.to_string()),
+            hooks: None,
+        }
+    }
+
+    async fn build_pipeline_with_tool(
+        tool: PipelineTestTool,
+    ) -> (Arc<ToolPipeline>, Arc<ToolStateManager>, Arc<EventQueue>) {
+        let event_queue = Arc::new(EventQueue::new(EventQueueConfig::default()));
+        let state_manager = Arc::new(ToolStateManager::new(Arc::clone(&event_queue)));
+        let registry = Arc::new(TokioRwLock::new(ToolRegistry::new()));
+        registry.write().await.register_tool(Arc::new(tool));
+        let pipeline = Arc::new(ToolPipeline::new(
+            registry,
+            Arc::clone(&state_manager),
+            None,
+        ));
+        (pipeline, state_manager, event_queue)
+    }
+
+    #[tokio::test]
+    async fn initial_permission_evaluation_uses_agent_permission_override() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let (pipeline, state_manager, _) = build_pipeline_with_tool(PipelineTestTool {
+            name: "PermissionProbe",
+            supports_streaming: false,
+            needs_permissions: true,
+            calls: Arc::clone(&calls),
+        })
+        .await;
+
+        let results = pipeline
+            .execute_tools(
+                vec![ToolCall {
+                    tool_id: "call-agent-deny".to_string(),
+                    tool_name: "PermissionProbe".to_string(),
+                    arguments: json!({"command":"echo ok"}),
+                    is_error: false,
+                }],
+                test_context(Some("deny")),
+                ToolExecutionOptions {
+                    confirm_before_run: false,
+                    ..ToolExecutionOptions::default()
+                },
+            )
+            .await
+            .expect("pipeline should convert tool denial into an error result");
+
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        assert_eq!(results.len(), 1);
+        assert!(results[0].result.is_error);
+
+        let task = state_manager
+            .get_task("call-agent-deny")
+            .expect("tool task should be tracked");
+        assert!(matches!(task.state, ToolExecutionState::Failed { .. }));
+    }
+
+    #[tokio::test]
+    async fn updated_approval_denied_by_permissions_unblocks_and_stays_failed() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let (pipeline, state_manager, _) = build_pipeline_with_tool(PipelineTestTool {
+            name: "Bash",
+            supports_streaming: false,
+            needs_permissions: true,
+            calls: Arc::clone(&calls),
+        })
+        .await;
+
+        let mut rule = PermissionRule::new("deny-updated-danger", PermissionDecision::Deny);
+        rule.tool_name = Some("Bash".to_string());
+        rule.command_contains = Some("rm -rf".to_string());
+        rule.reason = "Updated command is denied".to_string();
+        pipeline.upsert_permission_rule(rule).await;
+
+        let run_pipeline = Arc::clone(&pipeline);
+        let execution = tokio::spawn(async move {
+            run_pipeline
+                .execute_tools(
+                    vec![ToolCall {
+                        tool_id: "call-updated-deny".to_string(),
+                        tool_name: "Bash".to_string(),
+                        arguments: json!({"command":"echo ok"}),
+                        is_error: false,
+                    }],
+                    test_context(None),
+                    ToolExecutionOptions {
+                        confirm_before_run: false,
+                        confirmation_timeout_secs: Some(10),
+                        ..ToolExecutionOptions::default()
+                    },
+                )
+                .await
+        });
+
+        for _ in 0..100 {
+            if !pipeline.list_pending_approvals().await.is_empty() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert_eq!(pipeline.list_pending_approvals().await.len(), 1);
+
+        let confirm_error = pipeline
+            .confirm_tool(
+                "call-updated-deny",
+                Some(json!({"command":"rm -rf /tmp/openharness-test"})),
+            )
+            .await
+            .expect_err("updated denied arguments should reject confirmation");
+        assert!(confirm_error
+            .to_string()
+            .contains("Updated command is denied"));
+
+        let results = tokio::time::timeout(Duration::from_secs(2), execution)
+            .await
+            .expect("executor should not hang after denied updated approval")
+            .expect("join should succeed")
+            .expect("pipeline should return an error result");
+
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        assert!(results[0].result.is_error);
+        let task = state_manager
+            .get_task("call-updated-deny")
+            .expect("tool task should remain tracked");
+        assert!(matches!(task.state, ToolExecutionState::Failed { .. }));
+        assert!(pipeline.list_pending_approvals().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn streaming_tool_sink_emits_realtime_stream_chunk_event() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let (pipeline, _, event_queue) = build_pipeline_with_tool(PipelineTestTool {
+            name: "StreamingProbe",
+            supports_streaming: true,
+            needs_permissions: false,
+            calls: Arc::clone(&calls),
+        })
+        .await;
+
+        let results = pipeline
+            .execute_tools(
+                vec![ToolCall {
+                    tool_id: "call-stream".to_string(),
+                    tool_name: "StreamingProbe".to_string(),
+                    arguments: json!({}),
+                    is_error: false,
+                }],
+                test_context(None),
+                ToolExecutionOptions {
+                    confirm_before_run: false,
+                    ..ToolExecutionOptions::default()
+                },
+            )
+            .await
+            .expect("streaming test tool should execute");
+
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert!(!results[0].result.is_error);
+
+        let envelopes = event_queue.dequeue_batch(100).await;
+        let stream_chunk = envelopes
+            .into_iter()
+            .find_map(|envelope| match envelope.event {
+                AgenticEvent::ToolEvent { tool_event, .. } => match tool_event {
+                    ToolEventData::StreamChunk { data, .. } => Some(data),
+                    _ => None,
+                },
+                _ => None,
+            });
+
+        assert_eq!(
+            stream_chunk,
+            Some(json!({
+                "stream": "stdout",
+                "data": "streamed output"
+            }))
+        );
     }
 }

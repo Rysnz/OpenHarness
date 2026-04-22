@@ -975,9 +975,7 @@ impl Tool for TaskTool {
                         }),
                         result_for_assistant: Some(format!(
                             "Updated patch {} for task {}. Current status: {:?}.",
-                            patch_id,
-                            task_id,
-                            patch.status,
+                            patch_id, task_id, patch.status,
                         )),
                         image_attachments: None,
                     }])

@@ -8,9 +8,10 @@
 import React, { useCallback, memo } from 'react';
 import { FlowChatContainer, ChatInput } from '../../../flow_chat';
 import { useCanvasStore } from '../../components/panels/content-canvas/stores/canvasStore';
-import type { LineRange } from '@/component-library';
+import type { LineRange } from '@/component-library/components/Markdown';
 import path from 'path-browserify';
 import { createLogger } from '@/shared/utils/logger';
+import { fileTabManager } from '@/shared/services/FileTabManager';
 
 import './ChatPane.scss';
 
@@ -56,7 +57,6 @@ const ChatPaneInner: React.FC<ChatPaneProps> = ({
       });
     }
 
-    const { fileTabManager } = await import('@/shared/services/FileTabManager');
     fileTabManager.openFile({
       filePath: absoluteFilePath,
       fileName,

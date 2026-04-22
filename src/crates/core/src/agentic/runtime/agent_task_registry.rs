@@ -563,14 +563,21 @@ mod tests {
             .await
             .unwrap();
 
-        let premature_wait = timeout(Duration::from_millis(25), registry.wait_for_terminal(&task_id)).await;
+        let premature_wait = timeout(
+            Duration::from_millis(25),
+            registry.wait_for_terminal(&task_id),
+        )
+        .await;
         assert!(premature_wait.is_err());
 
         registry.notify_completion(&task_id).await.unwrap();
-        let terminal = timeout(Duration::from_millis(200), registry.wait_for_terminal(&task_id))
-            .await
-            .expect("wait_for_terminal should complete after notify")
-            .unwrap();
+        let terminal = timeout(
+            Duration::from_millis(200),
+            registry.wait_for_terminal(&task_id),
+        )
+        .await
+        .expect("wait_for_terminal should complete after notify")
+        .unwrap();
 
         assert_eq!(terminal.status, AgentTaskStatus::Succeeded);
 

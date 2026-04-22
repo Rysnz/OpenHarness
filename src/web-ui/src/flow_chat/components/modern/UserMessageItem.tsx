@@ -13,7 +13,8 @@ import { flowChatStore } from '../../store/FlowChatStore';
 import { snapshotAPI } from '@/infrastructure/api';
 import { notificationService } from '@/shared/notification-system';
 import { globalEventBus } from '@/infrastructure/event-bus';
-import { ReproductionStepsBlock, Tooltip, confirmDanger } from '@/component-library';
+import { Tooltip, confirmDanger } from '@/component-library';
+import { ReproductionStepsBlock } from '@/component-library/components/Markdown';
 import { createLogger } from '@/shared/utils/logger';
 import './UserMessageItem.scss';
 
@@ -124,7 +125,6 @@ export const UserMessageItem = React.memo<UserMessageItemProps>(
         flowChatStore.truncateDialogTurnsFrom(sessionId, turnIndex);
 
         // 2) Refresh file tree and open editors.
-        const { globalEventBus } = await import('@/infrastructure/event-bus');
         globalEventBus.emit('file-tree:refresh');
         restoredFiles.forEach(filePath => {
           globalEventBus.emit('editor:file-changed', { filePath });

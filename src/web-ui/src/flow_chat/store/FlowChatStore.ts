@@ -22,9 +22,12 @@ import {
   deriveSessionRelationshipFromMetadata,
   normalizeSessionRelationship,
 } from '../utils/sessionMetadata';
-import type { WorkspaceInfo } from '@/shared/types';
+import type { WorkspaceInfo } from '@/shared/types/global-state';
 import { sessionBelongsToWorkspaceNavRow } from '../utils/sessionOrdering';
 import { sessionMatchesWorkspace } from '../utils/workspaceScope';
+import { sessionAPI } from '@/infrastructure/api/service-api/SessionAPI';
+import { agentAPI } from '@/infrastructure/api/service-api/AgentAPI';
+import { configManager } from '@/infrastructure/config/services/ConfigManager';
 
 const log = createLogger('FlowChatStore');
 
@@ -192,7 +195,7 @@ export class FlowChatStore {
     remoteConnectionId?: string,
     remoteSshHost?: string
   ): void {
-    import('../state-machine').then(({ stateMachineManager }) => {
+    import('../state-machine/SessionStateMachineManager').then(({ stateMachineManager }) => {
       stateMachineManager.getOrCreate(sessionId);
     });
     
@@ -245,7 +248,7 @@ export class FlowChatStore {
     remoteConnectionId?: string,
     remoteSshHost?: string
   ): void {
-    import('../state-machine').then(({ stateMachineManager }) => {
+    import('../state-machine/SessionStateMachineManager').then(({ stateMachineManager }) => {
       stateMachineManager.getOrCreate(sessionId);
     });
 
@@ -531,13 +534,12 @@ export class FlowChatStore {
       return;
     }
 
-    const { stateMachineManager } = await import('../state-machine');
+    const { stateMachineManager } = await import('../state-machine/SessionStateMachineManager');
     sessionIdsToDelete.forEach(id => {
       stateMachineManager.delete(id);
     });
 
     try {
-      const { agentAPI } = await import('@/infrastructure/api');
       const deleteResults = await Promise.allSettled(
         sessionIdsToDelete.map(async id => {
           const sess = this.state.sessions.get(id);
@@ -1367,7 +1369,6 @@ export class FlowChatStore {
    */
   private async saveCancelledDialogTurn(sessionId: string, turnId: string): Promise<void> {
     try {
-      const { sessionAPI } = await import('@/infrastructure/api');
       const session = this.state.sessions.get(sessionId);
       if (!session) {
         log.warn('Session not found, skipping save', { sessionId, turnId });
@@ -1476,10 +1477,9 @@ export class FlowChatStore {
     remoteSshHost?: string
   ): Promise<void> {
     try {
-      const { sessionAPI } = await import('@/infrastructure/api');
       const sessions = await sessionAPI.listSessions(workspacePath, remoteConnectionId, remoteSshHost);
 
-      const { stateMachineManager } = await import('../state-machine');
+      const { stateMachineManager } = await import('../state-machine/SessionStateMachineManager');
       sessions.forEach(metadata => {
         stateMachineManager.getOrCreate(metadata.sessionId);
       });
@@ -1492,7 +1492,6 @@ export class FlowChatStore {
         
         let maxContextTokens = 128128;
         try {
-          const { configManager } = await import('@/infrastructure/config/services/ConfigManager');
           const models = await configManager.getConfig<any[]>('ai.models') || [];
           
           if (metadata.modelName) {
@@ -1588,17 +1587,15 @@ export class FlowChatStore {
     remoteSshHost?: string
   ): Promise<void> {
     try {
-      const { stateMachineManager } = await import('../state-machine');
+      const { stateMachineManager } = await import('../state-machine/SessionStateMachineManager');
       stateMachineManager.getOrCreate(sessionId);
       
       try {
-        const { agentAPI } = await import('@/infrastructure/api');
         await agentAPI.restoreSession(sessionId, workspacePath, remoteConnectionId, remoteSshHost);
       } catch (error) {
         log.warn('Backend session restore failed (may be new session)', { sessionId, error });
       }
       
-      const { sessionAPI } = await import('@/infrastructure/api');
       const turns = await sessionAPI.loadSessionTurns(
         sessionId,
         workspacePath,

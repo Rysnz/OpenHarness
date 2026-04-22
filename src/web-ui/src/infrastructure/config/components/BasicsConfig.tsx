@@ -2,15 +2,13 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { FontPreferencePanel } from '@/infrastructure/font-preference';
 import { useTranslation } from 'react-i18next';
 import { FolderOpen } from 'lucide-react';
-import {
-  Alert,
-  Select,
-  Switch,
-  Tooltip,
-  ConfigPageLoading,
-  ConfigPageMessage,
-} from '@/component-library';
-import { configAPI, workspaceAPI } from '@/infrastructure/api';
+import { Alert } from '@/component-library/components/Alert';
+import { Select } from '@/component-library/components/Select';
+import { Switch } from '@/component-library/components/Switch';
+import { Tooltip } from '@/component-library/components/Tooltip';
+import { ConfigPageLoading, ConfigPageMessage } from '@/component-library/components/ConfigPage';
+import { configAPI } from '@/infrastructure/api/service-api/ConfigAPI';
+import { workspaceAPI } from '@/infrastructure/api/service-api/WorkspaceAPI';
 import { systemAPI } from '@/infrastructure/api/service-api/SystemAPI';
 import { getTerminalService } from '@/tools/terminal';
 import type { ShellInfo } from '@/tools/terminal/types/session';
@@ -21,7 +19,7 @@ import {
   SYSTEM_THEME_ID,
 } from '@/infrastructure/theme';
 import { themeService } from '@/infrastructure/theme/core/ThemeService';
-import { useLanguageSelector } from '@/infrastructure/i18n';
+import { useLanguageSelector } from '@/infrastructure/i18n/hooks/useI18n';
 import type { LocaleId } from '@/infrastructure/i18n/types';
 import {
   ConfigPageContent,

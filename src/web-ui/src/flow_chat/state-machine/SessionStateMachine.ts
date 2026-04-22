@@ -11,6 +11,7 @@ import {
   StateTransition,
 } from './types';
 import { getNextState, PHASE_TRANSITIONS } from './transitions';
+import { runSessionCancelEffects } from './sideEffects';
 import { createLogger } from '@/shared/utils/logger';
 
 const log = createLogger('SessionStateMachine');
@@ -258,19 +259,11 @@ export class SessionStateMachineImpl {
     const state = this.currentState;
 
     if (event === SessionExecutionEvent.USER_CANCEL && this.context.taskId && this.context.currentDialogTurnId) {
-      const { flowChatStore } = await import('@/flow_chat/store/FlowChatStore');
-      flowChatStore.cancelSessionTask(this.sessionId);
-
-      const sessionId = this.context.taskId;
-      const dialogTurnId = this.context.currentDialogTurnId;
-      const { agentAPI } = await import('@/infrastructure/api');
-      
-      try {
-        await agentAPI.cancelDialogTurn(sessionId, dialogTurnId);
-        log.debug('Backend cancellation completed', { sessionId, dialogTurnId });
-      } catch (error) {
-        log.error('Backend cancellation failed', { sessionId, dialogTurnId, error });
-      }
+      await runSessionCancelEffects({
+        sessionId: this.sessionId,
+        taskId: this.context.taskId,
+        dialogTurnId: this.context.currentDialogTurnId,
+      });
     }
 
     if (state === SessionExecutionState.IDLE && this.context.planner?.isActive) {

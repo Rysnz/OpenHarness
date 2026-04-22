@@ -14,6 +14,8 @@ import { registerMermaidLanguage } from '../languages/mermaid.language';
 import { registerTomlLanguage } from '../languages/toml.language';
 import { themeManager } from './ThemeManager';
 import { createLogger } from '@/shared/utils/logger';
+import { fileTabManager } from '@/shared/services/FileTabManager';
+import { normalizePath } from '@/shared/utils/pathUtils';
 
 const log = createLogger('MonacoInitManager');
 
@@ -168,13 +170,11 @@ class MonacoInitManager {
             }
           }
           
-          const { normalizePath } = await import('@/shared/utils/pathUtils');
           const normalizedPath = normalizePath(resource.toString());
           
           log.debug('Cross-file jump', { normalizedPath, targetLine, targetColumn });
           
           try {
-            const { fileTabManager } = await import('@/shared/services/FileTabManager');
             const workspacePath = normalizedPath.substring(0, normalizedPath.lastIndexOf('/'));
             
             fileTabManager.openFileAndJump(
@@ -275,10 +275,8 @@ class MonacoInitManager {
         event.stopPropagation();
         
         try {
-          const { normalizePath } = await import('@/shared/utils/pathUtils');
           const normalizedPath = normalizePath(filePath);
           
-          const { fileTabManager } = await import('@/shared/services/FileTabManager');
           const workspacePath = normalizedPath.substring(0, normalizedPath.lastIndexOf('/'));
           
           fileTabManager.openFileAndJump(normalizedPath, lineNumber, 1, { workspacePath });

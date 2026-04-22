@@ -94,6 +94,7 @@ fn build_tool_context(workspace_path: Option<&str>) -> ToolUseContext {
         workspace: normalized_workspace_path
             .map(|path| WorkspaceBinding::new(None, PathBuf::from(path))),
         custom_data: HashMap::new(),
+        stream_sink: None,
         computer_use_host: None,
         cancellation_token: None,
         workspace_services: None,

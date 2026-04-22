@@ -186,15 +186,16 @@ describe('L1 Editor', () => {
       }
 
       const tabs = await browser.$$('[role="tab"], .openharness-tab, [class*="tab-item"]');
-      console.log('[L1] Tabs found:', tabs.length);
+      const tabCount = await tabs.length;
+      console.log('[L1] Tabs found:', tabCount);
 
-      if (tabs.length > 0) {
+      if (tabCount > 0) {
         const firstTab = tabs[0];
         const tabText = await firstTab.getText();
         console.log('[L1] First tab text:', tabText);
       }
 
-      expect(tabs.length).toBeGreaterThanOrEqual(0);
+      expect(tabCount).toBeGreaterThanOrEqual(0);
     });
   });
 
@@ -206,8 +207,9 @@ describe('L1 Editor', () => {
       }
 
       const tabs = await browser.$$('[role="tab"], .openharness-tab, [class*="tab-item"]');
+      const tabCount = await tabs.length;
 
-      if (tabs.length < 2) {
+      if (tabCount < 2) {
         console.log('[L1] Not enough tabs to test switching');
         this.skip();
         return;
@@ -226,7 +228,7 @@ describe('L1 Editor', () => {
 
       console.log('[L1] Switched back to first tab');
       await saveStepScreenshot('l1-editor-first-tab');
-      expect(tabs.length).toBeGreaterThanOrEqual(2);
+      expect(tabCount).toBeGreaterThanOrEqual(2);
     });
 
     it('tabs should have close buttons', async function () {
@@ -236,9 +238,10 @@ describe('L1 Editor', () => {
       }
 
       const closeButtons = await browser.$$('[class*="tab-close"], .openharness-tab__close, [data-testid^="tab-close"]');
-      console.log('[L1] Tab close buttons:', closeButtons.length);
+      const closeButtonCount = await closeButtons.length;
+      console.log('[L1] Tab close buttons:', closeButtonCount);
 
-      expect(closeButtons.length).toBeGreaterThanOrEqual(0);
+      expect(closeButtonCount).toBeGreaterThanOrEqual(0);
     });
   });
 
@@ -251,9 +254,10 @@ describe('L1 Editor', () => {
 
       // Check for modified indicator on tabs
       const modifiedTabs = await browser.$$('[class*="modified"], [class*="unsaved"], [data-modified="true"]');
-      console.log('[L1] Modified/unsaved tabs:', modifiedTabs.length);
+      const modifiedTabCount = await modifiedTabs.length;
+      console.log('[L1] Modified/unsaved tabs:', modifiedTabCount);
 
-      expect(modifiedTabs.length).toBeGreaterThanOrEqual(0);
+      expect(modifiedTabCount).toBeGreaterThanOrEqual(0);
     });
   });
 

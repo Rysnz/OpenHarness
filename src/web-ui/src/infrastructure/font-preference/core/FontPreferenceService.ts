@@ -1,6 +1,6 @@
-
-import { configAPI } from '@/infrastructure/api';
+import { configAPI } from '@/infrastructure/api/service-api/ConfigAPI';
 import { createLogger } from '@/shared/utils/logger';
+import { themeService } from '@/infrastructure/theme/core/ThemeService';
 import {
   FontPreference,
   FontPreferenceEvent,
@@ -41,7 +41,6 @@ export class FontPreferenceService {
 
     if (!this.themeSyncRegistered) {
       this.themeSyncRegistered = true;
-      const { themeService } = await import('@/infrastructure/theme');
       themeService.on('theme:after-change', () => {
         this.applyPreference(this.preference);
       });

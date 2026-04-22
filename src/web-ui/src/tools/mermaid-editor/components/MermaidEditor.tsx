@@ -12,7 +12,7 @@ import { OpenHarnessLoading } from '@/component-library/components/OpenHarnessLo
 import { Sparkles } from 'lucide-react';
 import { aiApi } from '../../../infrastructure/api';
 import { useI18n } from '@/infrastructure/i18n';
-import { notificationService } from '@/shared/notification-system';
+import { notificationService } from '@/shared/notification-system/services/NotificationService';
 
 import { downloadDir, join } from '@tauri-apps/api/path';
 import { writeFile } from '@tauri-apps/plugin-fs';

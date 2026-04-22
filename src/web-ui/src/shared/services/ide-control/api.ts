@@ -15,6 +15,9 @@ import {
 import { PanelContent, TabData } from '@/app/components/panels/base/types';
 import type { LineRange } from '@/component-library/components/Markdown';
 import { normalizeSettingsTab } from '@/app/scenes/settings/settingsConfig';
+import { useSettingsStore } from '@/app/scenes/settings/settingsStore';
+import { fileTabManager } from '@/shared/services/FileTabManager';
+import { createTab } from '@/shared/utils/tabUtils';
 
 const panelController = new PanelController();
 
@@ -52,8 +55,6 @@ export const ideControl = {
   navigation: {
      
     goToFile: async (filePath: string, options?: NavigateOptions): Promise<void> => {
-      const { fileTabManager } = await import('@/shared/services/FileTabManager');
-      
       const jumpToRange = options?.range || (options?.line ? { start: options.line, end: options.column ? options.line : undefined } : undefined);
       fileTabManager.openFile({
         filePath,
@@ -70,7 +71,6 @@ export const ideControl = {
       line: number,
       column?: number
     ): Promise<void> => {
-      const { fileTabManager } = await import('@/shared/services/FileTabManager');
       fileTabManager.openFile({
         filePath,
         jumpToLine: line,
@@ -84,7 +84,6 @@ export const ideControl = {
       filePath: string,
       range: LineRange
     ): Promise<void> => {
-      const { fileTabManager } = await import('@/shared/services/FileTabManager');
       fileTabManager.openFile({
         filePath,
         jumpToRange: range,
@@ -149,7 +148,6 @@ export const ideControl = {
   tab: {
      
     create: async (content: PanelContent, options?: TabOptions): Promise<void> => {
-      const { createTab } = await import('@/shared/utils/tabUtils');
       createTab({
         type: content.type,
         title: content.title,
@@ -240,11 +238,9 @@ export const quickActions = {
    
    
   openSettings: (section?: string) => {
-    import('@/app/scenes/settings/settingsStore').then(({ useSettingsStore }) => {
-      if (section) {
-        useSettingsStore.getState().setActiveTab(normalizeSettingsTab(section));
-      }
-    });
+    if (section) {
+      useSettingsStore.getState().setActiveTab(normalizeSettingsTab(section));
+    }
     window.dispatchEvent(new CustomEvent('scene:open', { detail: { sceneId: 'settings' } }));
   },
 

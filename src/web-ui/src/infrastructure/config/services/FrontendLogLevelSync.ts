@@ -1,4 +1,4 @@
-import { configAPI } from '@/infrastructure/api';
+import { configAPI } from '@/infrastructure/api/service-api/ConfigAPI';
 import { LogLevel, createLogger, logger } from '@/shared/utils/logger';
 import type { BackendLogLevel } from '../types';
 import { configManager } from './ConfigManager';
@@ -68,7 +68,7 @@ function applyFrontendLogLevel(level: string | null | undefined, source: string)
 
 async function resolveInitialLogLevel(): Promise<string | undefined> {
   const [savedLevelResult, runtimeInfoResult] = await Promise.allSettled([
-    configManager.getConfig<BackendLogLevel>(LOGGING_LEVEL_PATH),
+    configAPI.getConfig(LOGGING_LEVEL_PATH, { skipRetryOnNotFound: true }) as Promise<BackendLogLevel | undefined>,
     configAPI.getRuntimeLoggingInfo(),
   ]);
 
@@ -93,13 +93,17 @@ export async function initializeFrontendLogLevelSync(): Promise<void> {
 
   initialized = true;
 
-  configManager.onConfigChange((path, _oldValue, newValue) => {
-    if (path !== LOGGING_LEVEL_PATH) {
-      return;
-    }
+  try {
+    configManager.onConfigChange((path, _oldValue, newValue) => {
+      if (path !== LOGGING_LEVEL_PATH) {
+        return;
+      }
 
-    applyFrontendLogLevel(typeof newValue === 'string' ? newValue : undefined, 'config_change');
-  });
+      applyFrontendLogLevel(typeof newValue === 'string' ? newValue : undefined, 'config_change');
+    });
+  } catch (error) {
+    log.warn('Failed to attach frontend log level config watcher', error);
+  }
 
   try {
     const initialLevel = await resolveInitialLogLevel();

@@ -23,10 +23,6 @@ export {
 export { useI18n, useLanguageSelector, useLanguageDetect } from './hooks';
 export type { UseI18nReturn } from './hooks';
 
-// Components
-export { LanguageSelector } from './components';
-export type { LanguageSelectorProps } from './components';
-
 // Presets
 export {
   DEFAULT_LOCALE,

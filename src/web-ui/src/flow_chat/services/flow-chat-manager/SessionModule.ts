@@ -12,6 +12,7 @@ import { normalizeRemoteWorkspacePath } from '@/shared/utils/pathUtils';
 import { WorkspaceKind, type WorkspaceInfo } from '@/shared/types';
 import type { FlowChatContext, SessionConfig } from './types';
 import { touchSessionActivity, cleanupSaveState } from './PersistenceModule';
+import { configManager } from '@/infrastructure/config/services/ConfigManager';
 
 const log = createLogger('SessionModule');
 const pendingSessionCreations = new Map<string, Promise<string>>();
@@ -128,7 +129,6 @@ const requireSessionWorkspacePath = (
  */
 export async function getModelMaxTokens(modelName?: string): Promise<number> {
   try {
-    const configManager = await import('@/infrastructure/config/services/ConfigManager').then(m => m.configManager);
     const models = await configManager.getConfig<any[]>('ai.models') || [];
     
     if (modelName) {

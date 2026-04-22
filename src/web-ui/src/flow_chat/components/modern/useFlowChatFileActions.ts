@@ -7,7 +7,7 @@ import path from 'path-browserify';
 import { createLogger } from '@/shared/utils/logger';
 import { notificationService } from '@/shared/notification-system';
 import { fileTabManager } from '@/shared/services/FileTabManager';
-import type { LineRange } from '@/component-library';
+import type { LineRange } from '@/component-library/components/Markdown';
 
 const log = createLogger('useFlowChatFileActions');
 

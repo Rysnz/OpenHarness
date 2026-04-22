@@ -1,5 +1,5 @@
 import React from 'react';
-import { MarkdownRenderer } from '@/component-library';
+import { MarkdownRenderer } from '@/component-library/components/Markdown';
 import './Preview.scss';
 
 interface PreviewProps {

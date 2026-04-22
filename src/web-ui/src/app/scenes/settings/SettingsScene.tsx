@@ -9,14 +9,15 @@
 import React, { lazy, Suspense } from 'react';
 import { useSettingsStore } from './settingsStore';
 import './SettingsScene.scss';
-import AIModelConfig from '../../../infrastructure/config/components/AIModelConfig';
-import SessionConfig from '../../../infrastructure/config/components/SessionConfig';
-import AIRulesMemoryConfig from '../../../infrastructure/config/components/AIRulesMemoryConfig';
-import McpToolsConfig from '../../../infrastructure/config/components/McpToolsConfig';
-import EditorConfig from '../../../infrastructure/config/components/EditorConfig';
-import BasicsConfig from '../../../infrastructure/config/components/BasicsConfig';
 
 const KeyboardShortcutsTab = lazy(() => import('./components/KeyboardShortcutsTab'));
+const AIModelConfig = lazy(() => import('../../../infrastructure/config/components/AIModelConfig'));
+const SessionConfig = lazy(() => import('../../../infrastructure/config/components/SessionConfig'));
+const AIRulesMemoryConfig = lazy(() => import('../../../infrastructure/config/components/AIRulesMemoryConfig'));
+const McpToolsConfig = lazy(() => import('../../../infrastructure/config/components/McpToolsConfig'));
+const AgentPermissionsConfig = lazy(() => import('../../../infrastructure/config/components/AgentPermissionsConfig'));
+const EditorConfig = lazy(() => import('../../../infrastructure/config/components/EditorConfig'));
+const BasicsConfig = lazy(() => import('../../../infrastructure/config/components/BasicsConfig'));
 
 const SettingsScene: React.FC = () => {
   const activeTab = useSettingsStore(s => s.activeTab);
@@ -41,6 +42,7 @@ const SettingsScene: React.FC = () => {
     case 'session-config':   Content = SessionConfig;        break;
     case 'ai-context':       Content = AIRulesMemoryConfig; break;
     case 'mcp-tools':        Content = McpToolsConfig;      break;
+    case 'agent-permissions': Content = AgentPermissionsConfig; break;
     case 'editor':           Content = EditorConfig;         break;
   }
 
@@ -48,7 +50,9 @@ const SettingsScene: React.FC = () => {
     <div className="openharness-settings-scene">
       {Content && (
         <div key={activeTab} className="openharness-settings-scene__content-wrapper">
-          <Content />
+          <Suspense fallback={null}>
+            <Content />
+          </Suspense>
         </div>
       )}
     </div>

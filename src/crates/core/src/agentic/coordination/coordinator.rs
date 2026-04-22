@@ -13,13 +13,15 @@ use crate::agentic::events::{
 };
 use crate::agentic::execution::{ContextCompactionOutcome, ExecutionContext, ExecutionEngine};
 use crate::agentic::image_analysis::ImageContextData;
-use crate::agentic::permissions::{PermissionApprovalRequest, PermissionAuditRecord};
+use crate::agentic::permissions::{
+    PermissionApprovalRequest, PermissionAuditRecord, PermissionRule,
+};
 use crate::agentic::round_preempt::DialogRoundPreemptSource;
 use crate::agentic::runtime::{
-    AgentTaskConfig, AgentTaskExecutionOutput, AgentTaskExecutor, AgentTaskFilter, AgentTaskId,
-    AgentTaskKind, AgentTaskSnapshot, AgentTaskSupervisor, AgentTranscriptEntry,
-    AgentMailboxMessage, AgentPatchRecord, AgentPatchSummary, AgentTeamStatus,
-    ForkContextMode, PatchStatus,
+    AgentMailboxMessage, AgentPatchRecord, AgentPatchSummary, AgentTaskConfig,
+    AgentTaskExecutionOutput, AgentTaskExecutor, AgentTaskFilter, AgentTaskId, AgentTaskKind,
+    AgentTaskSnapshot, AgentTaskSupervisor, AgentTeamStatus, AgentTranscriptEntry, ForkContextMode,
+    PatchStatus,
 };
 use crate::agentic::session::SessionManager;
 use crate::agentic::tools::pipeline::{SubagentParentInfo, ToolPipeline};
@@ -29,6 +31,7 @@ use crate::service::bootstrap::{
 };
 use crate::util::errors::{OpenHarnessError, OpenHarnessResult};
 use log::{debug, error, info, warn};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::OnceLock;
@@ -142,6 +145,51 @@ pub struct ConversationCoordinator {
     scheduler_notify_tx: OnceLock<mpsc::Sender<(String, TurnOutcome)>>,
     /// Round-boundary yield (same source as scheduler's yield flags); injected after construction
     round_preempt_source: OnceLock<Arc<dyn DialogRoundPreemptSource>>,
+}
+
+fn clean_optional_rule_field(value: &mut Option<String>) {
+    if let Some(inner) = value {
+        let trimmed = inner.trim();
+        if trimmed.is_empty() {
+            *value = None;
+        } else if trimmed.len() != inner.len() {
+            *inner = trimmed.to_string();
+        }
+    }
+}
+
+fn sanitize_permission_rule(rule: &mut PermissionRule) {
+    rule.rule_id = rule.rule_id.trim().to_string();
+    rule.reason = rule.reason.trim().to_string();
+    clean_optional_rule_field(&mut rule.agent_name);
+    clean_optional_rule_field(&mut rule.tool_name);
+    clean_optional_rule_field(&mut rule.path_prefix);
+    clean_optional_rule_field(&mut rule.command_contains);
+    clean_optional_rule_field(&mut rule.mcp_server);
+}
+
+fn validate_permission_rule(rule: &PermissionRule) -> OpenHarnessResult<()> {
+    if rule.rule_id.is_empty() {
+        return Err(OpenHarnessError::Validation(
+            "rule_id is required".to_string(),
+        ));
+    }
+    if rule.reason.is_empty() {
+        return Err(OpenHarnessError::Validation(
+            "reason is required".to_string(),
+        ));
+    }
+    if rule.agent_name.is_none()
+        && rule.tool_name.is_none()
+        && rule.path_prefix.is_none()
+        && rule.command_contains.is_none()
+        && rule.mcp_server.is_none()
+    {
+        return Err(OpenHarnessError::Validation(
+            "permission rule must include at least one matcher".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 impl ConversationCoordinator {
@@ -1928,7 +1976,9 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
         }
 
         if approved {
-            self.tool_pipeline.confirm_tool(tool_id, updated_input).await
+            self.tool_pipeline
+                .confirm_tool(tool_id, updated_input)
+                .await
         } else {
             let reason = reason.unwrap_or_else(|| "Rejected by approval response".to_string());
             self.tool_pipeline.reject_tool(tool_id, reason).await
@@ -1937,6 +1987,59 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
 
     pub async fn agent_approval_audit_recent(&self, limit: usize) -> Vec<PermissionAuditRecord> {
         self.tool_pipeline.list_permission_audits(limit).await
+    }
+
+    pub async fn agent_permission_rule_list(&self) -> Vec<PermissionRule> {
+        self.tool_pipeline.list_permission_rules().await
+    }
+
+    pub async fn agent_permission_rule_upsert(
+        &self,
+        mut rule: PermissionRule,
+    ) -> OpenHarnessResult<Vec<PermissionRule>> {
+        sanitize_permission_rule(&mut rule);
+        validate_permission_rule(&rule)?;
+        self.tool_pipeline.upsert_permission_rule(rule).await;
+        Ok(self.tool_pipeline.list_permission_rules().await)
+    }
+
+    pub async fn agent_permission_rule_remove(
+        &self,
+        rule_id: &str,
+    ) -> OpenHarnessResult<Vec<PermissionRule>> {
+        let rule_id = rule_id.trim();
+        if rule_id.is_empty() {
+            return Err(OpenHarnessError::Validation(
+                "rule_id is required".to_string(),
+            ));
+        }
+
+        self.tool_pipeline.remove_permission_rule(rule_id).await;
+        Ok(self.tool_pipeline.list_permission_rules().await)
+    }
+
+    pub async fn agent_permission_rule_clear(&self) -> Vec<PermissionRule> {
+        self.tool_pipeline.clear_permission_rules().await;
+        Vec::new()
+    }
+
+    pub async fn agent_permission_rule_replace_all(
+        &self,
+        mut rules: Vec<PermissionRule>,
+    ) -> OpenHarnessResult<Vec<PermissionRule>> {
+        let mut seen_rule_ids = HashSet::new();
+        for rule in &mut rules {
+            sanitize_permission_rule(rule);
+            validate_permission_rule(rule)?;
+            if !seen_rule_ids.insert(rule.rule_id.clone()) {
+                return Err(OpenHarnessError::Validation(format!(
+                    "duplicate permission rule_id: {}",
+                    rule.rule_id
+                )));
+            }
+        }
+        self.tool_pipeline.replace_permission_rules(rules).await;
+        Ok(self.tool_pipeline.list_permission_rules().await)
     }
 
     /// Reject tool execution

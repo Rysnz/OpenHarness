@@ -47,7 +47,7 @@
     "immer": "^11.1.3",
     "katex": "^0.16.25",
     "lucide-react": "^0.541.0",
-    "mermaid": "^11.10.1",
+    "mermaid": "^11.14.0",
     "monaco-editor": "^0.52.2",
     "partial-json": "^0.1.7",
     "path-browserify": "^1.0.1",
@@ -68,7 +68,7 @@
     "remark-rehype": "^11.1.2",
     "unified": "^11.0.5",
     "unist-util-visit": "^5.0.0",
-    "yaml": "^2.8.2",
+    "yaml": "^2.8.3",
     "zustand": "^5.0.10"
   },
   "devDependencies": {
@@ -85,10 +85,10 @@
     "eslint-plugin-react-refresh": "^0.4.20",
     "globals": "^16.0.0",
     "jsdom": "^29.0.1",
-    "sass": "^1.93.2",
+    "sass": "^1.99.0",
     "typescript": "~5.8.3",
     "typescript-eslint": "^8.29.0",
-    "vite": "^7.0.4",
+    "vite": "^7.3.2",
     "vitest": "^4.1.0"
   }
 }

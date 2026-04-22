@@ -227,10 +227,7 @@ impl ToolStateManager {
         )
     }
 
-    fn extract_candidate_paths(
-        tool_name: &str,
-        result_data: &serde_json::Value,
-    ) -> Vec<String> {
+    fn extract_candidate_paths(tool_name: &str, result_data: &serde_json::Value) -> Vec<String> {
         let mut paths = Vec::new();
 
         let mut push_path = |value: Option<&serde_json::Value>| {
@@ -322,11 +319,15 @@ impl ToolStateManager {
                 .and_then(|value| value.as_u64())
                 .unwrap_or(start_line);
             let old_preview = Self::truncate_preview_text(
-                result_data.get("old_string").and_then(|value| value.as_str()),
+                result_data
+                    .get("old_string")
+                    .and_then(|value| value.as_str()),
                 160,
             );
             let new_preview = Self::truncate_preview_text(
-                result_data.get("new_string").and_then(|value| value.as_str()),
+                result_data
+                    .get("new_string")
+                    .and_then(|value| value.as_str()),
                 160,
             );
 
@@ -375,7 +376,8 @@ impl ToolStateManager {
         };
 
         let result_data = result.content();
-        let candidate_paths = Self::extract_candidate_paths(&task.tool_call.tool_name, &result_data);
+        let candidate_paths =
+            Self::extract_candidate_paths(&task.tool_call.tool_name, &result_data);
         if candidate_paths.is_empty() {
             return;
         }
@@ -385,11 +387,19 @@ impl ToolStateManager {
             .map(|path| {
                 let relative_path = Self::normalize_patch_path(task, &path);
                 AgentPatchRecord {
-                    patch_id: Self::build_patch_id(task_id, &task.tool_call.tool_id, &relative_path),
+                    patch_id: Self::build_patch_id(
+                        task_id,
+                        &task.tool_call.tool_id,
+                        &relative_path,
+                    ),
                     task_id: task_id.clone(),
                     tool_call_id: task.tool_call.tool_id.clone(),
                     relative_path: relative_path.clone(),
-                    diff_preview: Self::build_patch_diff_preview(task, &relative_path, &result_data),
+                    diff_preview: Self::build_patch_diff_preview(
+                        task,
+                        &relative_path,
+                        &result_data,
+                    ),
                     full_diff_ref: None,
                     status: PatchStatus::Pending,
                 }
@@ -927,6 +937,8 @@ mod tests {
                 subagent_parent_info: None,
                 allowed_tools: Vec::new(),
                 workspace_services: None,
+                permission_mode: None,
+                hooks: None,
             },
             ToolExecutionOptions::default(),
         )
@@ -1086,7 +1098,9 @@ mod tests {
         let manager = ToolStateManager::new(Arc::new(EventQueue::new(EventQueueConfig::default())));
         manager.set_agent_task_registry(Arc::clone(&registry));
 
-        manager.create_task(build_tool_task(&task_snapshot.task_id)).await;
+        manager
+            .create_task(build_tool_task(&task_snapshot.task_id))
+            .await;
 
         manager
             .update_state(

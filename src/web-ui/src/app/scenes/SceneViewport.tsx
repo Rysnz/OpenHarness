@@ -14,13 +14,13 @@ import { useSceneManager } from '../hooks/useSceneManager';
 import { useI18n } from '@/infrastructure/i18n/hooks/useI18n';
 import { useDialogCompletionNotify } from '../hooks/useDialogCompletionNotify';
 import { ProcessingIndicator } from '@/flow_chat/components/modern/ProcessingIndicator';
-import SettingsScene from './settings/SettingsScene';
 import PartnerScene from './partner/PartnerScene';
 import SessionScene from './session/SessionScene';
 import './SceneViewport.scss';
 
 // Session is the primary interaction path. Keep it in the main scene bundle so
 // first open does not stall on a lazy chunk fetch/parse before FlowChat mounts.
+const SettingsScene   = lazy(() => import('./settings/SettingsScene'));
 const TerminalScene   = lazy(() => import('./terminal/TerminalScene'));
 const GitScene        = lazy(() => import('./git/GitScene'));
 const FileViewerScene = lazy(() => import('./file-viewer/FileViewerScene'));

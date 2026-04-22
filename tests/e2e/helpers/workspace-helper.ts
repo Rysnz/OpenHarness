@@ -16,7 +16,12 @@ export interface WorkspaceState {
  */
 export async function openWorkspaceThroughFrontend(workspacePath: string): Promise<void> {
   await browser.execute(async (targetWorkspacePath: string) => {
-    const { workspaceManager } = await import('/src/infrastructure/services/business/workspaceManager.ts');
+    const modulePath: string = '/src/infrastructure/services/business/workspaceManager.ts';
+    const { workspaceManager } = await import(/* @vite-ignore */ modulePath) as {
+      workspaceManager: {
+        openWorkspace(path: string): Promise<void>;
+      };
+    };
     await workspaceManager.openWorkspace(targetWorkspacePath);
   }, workspacePath);
 }
@@ -26,7 +31,13 @@ export async function openWorkspaceThroughFrontend(workspacePath: string): Promi
  */
 export async function getWorkspaceState(): Promise<WorkspaceState> {
   return browser.execute(async () => {
-    const { globalStateAPI } = await import('/src/shared/types/global-state.ts');
+    const modulePath: string = '/src/shared/types/global-state.ts';
+    const { globalStateAPI } = await import(/* @vite-ignore */ modulePath) as {
+      globalStateAPI: {
+        getCurrentWorkspace(): Promise<{ rootPath: string } | null>;
+        getOpenedWorkspaces(): Promise<Array<{ rootPath: string }>>;
+      };
+    };
     const currentWorkspace = await globalStateAPI.getCurrentWorkspace();
     const openedWorkspaces = await globalStateAPI.getOpenedWorkspaces();
     const workspaceLabels = Array.from(document.querySelectorAll('.openharness-nav-panel__workspace-item-label'))

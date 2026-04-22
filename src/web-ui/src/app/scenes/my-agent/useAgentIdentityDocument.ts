@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { workspaceAPI } from '@/infrastructure/api/service-api/WorkspaceAPI';
 import { fileSystemService } from '@/tools/file-system/services/FileSystemService';
-import { ideControl } from '@/shared/services/ide-control';
+import { ideControl } from '@/shared/services/ide-control/api';
 import { createLogger } from '@/shared/utils/logger';
 import {
   EMPTY_IDENTITY_DOCUMENT,

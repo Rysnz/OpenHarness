@@ -8,7 +8,7 @@ import {
   GitOperationType
 } from '../types';
 import { gitService, gitEventService } from '../services';
-import { notificationService } from '@/shared/notification-system';
+import { notificationService } from '@/shared/notification-system/services/NotificationService';
 import { createLogger } from '@/shared/utils/logger';
 import { useI18n } from '@/infrastructure/i18n';
 

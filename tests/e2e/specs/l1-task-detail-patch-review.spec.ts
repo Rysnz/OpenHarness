@@ -369,7 +369,7 @@ async function waitForPatchReviewPanel(taskId: string): Promise<WebdriverIO.Elem
   await panel.waitForDisplayed({ timeout: 20000 });
 
   await browser.waitUntil(async () => {
-    return (await panel.$$('.task-detail-panel__patch-loading')).length === 0;
+    return await (await panel.$$('.task-detail-panel__patch-loading')).length === 0;
   }, {
     timeout: 10000,
     interval: 200,
@@ -377,14 +377,14 @@ async function waitForPatchReviewPanel(taskId: string): Promise<WebdriverIO.Elem
   });
 
   await browser.waitUntil(async () => {
-    return (await panel.$$('.task-detail-panel__patch-status')).length > 0;
+    return await (await panel.$$('.task-detail-panel__patch-status')).length > 0;
   }, {
     timeout: 10000,
     interval: 200,
     timeoutMsg: `Task detail patch records did not render for task ${taskId}`,
   });
 
-  return panel;
+  return panel as unknown as WebdriverIO.Element;
 }
 
 async function waitForMergeInvocation(): Promise<void> {
@@ -463,7 +463,7 @@ describe('L1 Task Detail Patch Review', () => {
     await waitForMergeInvocation();
 
     await browser.waitUntil(async () => {
-      return (await panel.$$('.task-detail-panel__patch-success')).length > 0;
+      return await (await panel.$$('.task-detail-panel__patch-success')).length > 0;
     }, {
       timeout: 10000,
       interval: 200,
@@ -474,7 +474,7 @@ describe('L1 Task Detail Patch Review', () => {
     expect(/(成功|success)/i.test(successText)).toBe(true);
 
     await browser.waitUntil(async () => {
-      return (await panel.$$('.task-detail-panel__patch-status--applied')).length > 0;
+      return await (await panel.$$('.task-detail-panel__patch-status--applied')).length > 0;
     }, {
       timeout: 10000,
       interval: 200,
@@ -508,7 +508,7 @@ describe('L1 Task Detail Patch Review', () => {
     await waitForMergeInvocation();
 
     await browser.waitUntil(async () => {
-      return (await panel.$$('.task-detail-panel__patch-error')).length > 0;
+      return await (await panel.$$('.task-detail-panel__patch-error')).length > 0;
     }, {
       timeout: 10000,
       interval: 200,
@@ -518,8 +518,8 @@ describe('L1 Task Detail Patch Review', () => {
     const errorText = await (await panel.$('.task-detail-panel__patch-error')).getText();
     expect(/(失败|failed|error)/i.test(errorText)).toBe(true);
 
-    const statusCount = (await panel.$$('.task-detail-panel__patch-status')).length;
-    const appliedCount = (await panel.$$('.task-detail-panel__patch-status--applied')).length;
+    const statusCount = await (await panel.$$('.task-detail-panel__patch-status')).length;
+    const appliedCount = await (await panel.$$('.task-detail-panel__patch-status--applied')).length;
     expect(statusCount).toBeGreaterThan(0);
     expect(appliedCount).toBe(0);
 

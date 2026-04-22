@@ -5,7 +5,7 @@
 
 import { createContext, useContext } from 'react';
 import type { FlowChatConfig, Session } from '../../types/flow-chat';
-import type { LineRange } from '@/component-library';
+import type { LineRange } from '@/component-library/components/Markdown';
 
 export interface FlowChatContextValue {
   // File and panel actions

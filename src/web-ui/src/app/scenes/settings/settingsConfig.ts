@@ -11,6 +11,7 @@ export type ConfigTab =
   | 'session-config'
   | 'ai-context'
   | 'mcp-tools'
+  | 'agent-permissions'
   // | 'lsp' // temporarily hidden from config center
   | 'editor'
   | 'keyboard';
@@ -128,6 +129,23 @@ export const SETTINGS_CATEGORIES: ConfigCategoryDef[] = [
         labelKey: 'configCenter.tabs.mcpTools',
         descriptionKey: 'configCenter.tabDescriptions.mcpTools',
         keywords: ['mcp', 'server', 'plugin', 'stdio', 'sse', 'tools'],
+      },
+      {
+        id: 'agent-permissions',
+        labelKey: 'configCenter.tabs.agentPermissions',
+        descriptionKey: 'configCenter.tabDescriptions.agentPermissions',
+        keywords: [
+          'agent',
+          'permission',
+          'approval',
+          'audit',
+          'rules',
+          'shell',
+          'risk',
+          'deny',
+          'allow',
+          'ask',
+        ],
       },
     ],
   },

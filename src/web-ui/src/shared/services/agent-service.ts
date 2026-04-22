@@ -8,6 +8,14 @@ import { agentAPI } from '@/infrastructure/api/service-api/AgentAPI';
 import { toolAPI } from '@/infrastructure/api/service-api/ToolAPI';
 import { listen } from '@tauri-apps/api/event';
 import { createLogger } from '@/shared/utils/logger';
+import { stateMachineManager } from '@/flow_chat/state-machine';
+import type {
+  AgentApprovalRespondBatchResult,
+  AgentApprovalRespondRequest,
+  PermissionApprovalRequest,
+  PermissionAuditRecord,
+  PermissionRule,
+} from '@/infrastructure/api/service-api/AgentAPI';
 
 const log = createLogger('AgentService');
 const hasTauriRuntime = (): boolean =>
@@ -122,44 +130,28 @@ export class AgentService {
       
       
       if (toolEvent.tool_name === 'TodoWrite' && toolEvent.type === 'tool_start') {
-        
-        Promise.all([
-          import('@/flow_chat/services/FlowChatManager'),
-          import('@/flow_chat/state-machine')
-        ]).then(([{ FlowChatManager }, { stateMachineManager }]) => {
-          const todos = toolEvent.input?.todos || [];
-          const merge = toolEvent.input?.merge || false;
-          
-          
-          const flowChatManager = FlowChatManager.getInstance();
-          const sessionId = flowChatManager.getSessionIdByTaskId(toolEvent.task_id);
-          
-          if (sessionId) {
-            const machine = stateMachineManager.get(sessionId);
-            if (machine) {
-              const context = machine.getContext();
-              
-              
-              if (merge && context.planner) {
-                
-                const existingTodos = context.planner.todos;
-                const todoMap = new Map(existingTodos.map(t => [t.id, t]));
-                todos.forEach((todo: any) => {
-                  todoMap.set(todo.id, todo);
-                });
-                context.planner.todos = Array.from(todoMap.values());
-              } else {
-                
-                context.planner = {
-                  todos,
-                  isActive: true
-                };
-              }
-            }
+        const todos = toolEvent.input?.todos || [];
+        const merge = toolEvent.input?.merge || false;
+        const sessionId = toolEvent.task_id;
+
+        const machine = stateMachineManager.get(sessionId);
+        if (machine) {
+          const context = machine.getContext();
+
+          if (merge && context.planner) {
+            const existingTodos = context.planner.todos;
+            const todoMap = new Map(existingTodos.map(t => [t.id, t]));
+            todos.forEach((todo: any) => {
+              todoMap.set(todo.id, todo);
+            });
+            context.planner.todos = Array.from(todoMap.values());
+          } else {
+            context.planner = {
+              todos,
+              isActive: true
+            };
           }
-        }).catch(err => {
-          log.error('Failed to update state machine Planner', err);
-        });
+        }
       }
       
       if (toolEvent.task_id) {
@@ -647,6 +639,44 @@ export class AgentService {
     };
     
     return toolAPI.confirmToolExecution(requestPayload);
+  }
+
+  async listPendingApprovals(): Promise<PermissionApprovalRequest[]> {
+    return agentAPI.listPendingApprovals();
+  }
+
+  async respondApproval(request: AgentApprovalRespondRequest): Promise<void> {
+    return agentAPI.respondApproval(request);
+  }
+
+  async respondApprovalsBatch(
+    items: AgentApprovalRespondRequest[]
+  ): Promise<AgentApprovalRespondBatchResult[]> {
+    return agentAPI.respondApprovalsBatch(items);
+  }
+
+  async listPermissionAudits(limit = 200): Promise<PermissionAuditRecord[]> {
+    return agentAPI.listPermissionAudits(limit);
+  }
+
+  async listPermissionRules(): Promise<PermissionRule[]> {
+    return agentAPI.listPermissionRules();
+  }
+
+  async upsertPermissionRule(rule: PermissionRule): Promise<PermissionRule[]> {
+    return agentAPI.upsertPermissionRule(rule);
+  }
+
+  async removePermissionRule(ruleId: string): Promise<PermissionRule[]> {
+    return agentAPI.removePermissionRule(ruleId);
+  }
+
+  async clearPermissionRules(): Promise<PermissionRule[]> {
+    return agentAPI.clearPermissionRules();
+  }
+
+  async replacePermissionRules(rules: PermissionRule[]): Promise<PermissionRule[]> {
+    return agentAPI.replacePermissionRules(rules);
   }
 }
 

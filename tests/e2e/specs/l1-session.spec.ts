@@ -197,8 +197,9 @@ describe('L1 Session', () => {
       }
 
       const sessionItems = await browser.$$('.openharness-nav-panel__inline-item');
+      const sessionItemCount = await sessionItems.length;
 
-      if (sessionItems.length < 2) {
+      if (sessionItemCount < 2) {
         console.log('[L1] Not enough sessions to test switching');
         this.skip();
         return;
@@ -215,7 +216,7 @@ describe('L1 Session', () => {
       await browser.pause(500);
 
       console.log('[L1] Switched back to first session');
-      expect(sessionItems.length).toBeGreaterThanOrEqual(2);
+      expect(sessionItemCount).toBeGreaterThanOrEqual(2);
     });
 
     it('active session should be highlighted', async function () {
@@ -225,9 +226,10 @@ describe('L1 Session', () => {
       }
 
       const activeSessions = await browser.$$('.openharness-nav-panel__inline-item.is-active');
-      console.log('[L1] Active sessions:', activeSessions.length);
+      const activeSessionCount = await activeSessions.length;
+      console.log('[L1] Active sessions:', activeSessionCount);
 
-      expect(activeSessions.length).toBeGreaterThanOrEqual(0);
+      expect(activeSessionCount).toBeGreaterThanOrEqual(0);
     });
   });
 
@@ -239,7 +241,8 @@ describe('L1 Session', () => {
       }
 
       const sessionItems = await browser.$$('.openharness-nav-panel__inline-item');
-      if (sessionItems.length === 0) {
+      const sessionItemCount = await sessionItems.length;
+      if (sessionItemCount === 0) {
         console.log('[L1] No sessions to test rename');
         this.skip();
         return;

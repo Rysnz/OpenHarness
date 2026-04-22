@@ -569,6 +569,7 @@ mod tests {
             dialog_turn_id: None,
             workspace: None,
             custom_data: std::collections::HashMap::new(),
+            stream_sink: None,
             computer_use_host: None,
             cancellation_token: None,
             workspace_services: None,

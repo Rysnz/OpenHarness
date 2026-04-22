@@ -25,6 +25,9 @@ pub mod runtime;
 // Agent permission / approval / audit module
 pub mod permissions;
 
+// Shell security analysis module
+pub mod security;
+
 /// Round-boundary yield when user queues a message during an active turn
 pub mod round_preempt;
 
@@ -49,23 +52,23 @@ pub use core::*;
 pub use events::{queue, router, types as event_types};
 pub use execution::*;
 pub use image_analysis::{ImageAnalyzer, MessageEnhancer};
-pub use persistence::PersistenceManager;
 pub use permissions::{
     PermissionAction, PermissionApprovalQueue, PermissionApprovalRequest, PermissionAuditRecord,
     PermissionAuditStore, PermissionDecision, PermissionEngine, PermissionEvaluation,
-    PermissionMode, PermissionRiskLevel,
+    PermissionMode, PermissionRiskLevel, PermissionRule,
 };
+pub use persistence::PersistenceManager;
 pub use round_preempt::{
     DialogRoundPreemptSource, NoopDialogRoundPreemptSource, SessionRoundYieldFlags,
 };
 pub use runtime::workspace_binding::WorkspaceBinding as RuntimeWorkspaceBinding;
 pub use runtime::{
     AgentPatchRecord, AgentPatchStore, AgentPatchSummary, AgentTaskConfig, AgentTaskEvent,
-    AgentTaskEventKind,
-    AgentTaskFilter, AgentTaskId, AgentTaskKind, AgentTaskRegistry, AgentTaskSnapshot,
-    AgentTaskStatus, AgentTaskSupervisor, AgentTranscript, AgentTranscriptEntry,
+    AgentTaskEventKind, AgentTaskFilter, AgentTaskId, AgentTaskKind, AgentTaskRegistry,
+    AgentTaskSnapshot, AgentTaskStatus, AgentTaskSupervisor, AgentTranscript, AgentTranscriptEntry,
     AgentTranscriptStore, CleanupPolicy, ForkContextMode, PatchStatus, WorkspaceIsolation,
 };
+pub use security::shell::{ShellDialect, ShellRiskAnalyzer};
 pub use session::*;
 pub use side_question::*;
 pub use workspace::{WorkspaceBackend, WorkspaceBinding};

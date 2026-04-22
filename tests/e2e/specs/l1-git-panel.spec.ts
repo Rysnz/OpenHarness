@@ -143,8 +143,9 @@ describe('L1 Git Panel', () => {
       let changesFound = false;
       for (const selector of changeSelectors) {
         const elements = await browser.$$(selector);
-        if (elements.length > 0) {
-          console.log(`[L1] File changes found: ${selector}, count: ${elements.length}`);
+        const elementCount = await elements.length;
+        if (elementCount > 0) {
+          console.log(`[L1] File changes found: ${selector}, count: ${elementCount}`);
           changesFound = true;
           break;
         }
@@ -173,8 +174,9 @@ describe('L1 Git Panel', () => {
       let statusFound = false;
       for (const className of statusClasses) {
         const elements = await browser.$$(`.${className}`);
-        if (elements.length > 0) {
-          console.log(`[L1] Files with status ${className}: ${elements.length}`);
+        const elementCount = await elements.length;
+        if (elementCount > 0) {
+          console.log(`[L1] Files with status ${className}: ${elementCount}`);
           statusFound = true;
           break;
         }
@@ -194,9 +196,10 @@ describe('L1 Git Panel', () => {
       }
 
       const sections = await browser.$$('[class*="staged"], [class*="unstaged"], [class*="changes-section"]');
-      console.log('[L1] Change sections found:', sections.length);
+      const sectionCount = await sections.length;
+      console.log('[L1] Change sections found:', sectionCount);
 
-      expect(sections.length).toBeGreaterThanOrEqual(0);
+      expect(sectionCount).toBeGreaterThanOrEqual(0);
     });
   });
 
@@ -235,7 +238,8 @@ describe('L1 Git Panel', () => {
       let actionsFound = false;
       for (const selector of actionSelectors) {
         const elements = await browser.$$(selector);
-        if (elements.length > 0) {
+        const elementCount = await elements.length;
+        if (elementCount > 0) {
           console.log(`[L1] File actions found: ${selector}`);
           actionsFound = true;
           break;
@@ -258,16 +262,18 @@ describe('L1 Git Panel', () => {
       }
 
       const files = await browser.$$('.wcv-file');
-      if (files.length === 0) {
+      const fileCount = await files.length;
+      if (fileCount === 0) {
         console.log('[L1] No files to test diff view');
         this.skip();
         return;
       }
 
       const selectedFiles = await browser.$$('.wcv-file--selected');
-      console.log('[L1] Currently selected files:', selectedFiles.length);
+      const selectedFileCount = await selectedFiles.length;
+      console.log('[L1] Currently selected files:', selectedFileCount);
 
-      expect(selectedFiles.length).toBeGreaterThanOrEqual(0);
+      expect(selectedFileCount).toBeGreaterThanOrEqual(0);
     });
   });
 

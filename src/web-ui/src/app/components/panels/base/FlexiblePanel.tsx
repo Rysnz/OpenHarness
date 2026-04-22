@@ -1,8 +1,16 @@
 import React, { useCallback, memo, useMemo } from 'react';
 import { Download, Copy, X, AlertCircle } from 'lucide-react';
-import { MarkdownRenderer, IconButton } from '@/component-library';
-import { CodeEditor, MarkdownEditor, ImageViewer, DiffEditor } from '@/tools/editor';
-import { useI18n } from '@/infrastructure/i18n';
+import { IconButton } from '@/component-library';
+import { MarkdownRenderer } from '@/component-library/components/Markdown';
+import CodeEditor from '@/tools/editor/components/CodeEditor';
+import { DiffEditor } from '@/tools/editor/components/DiffEditor';
+import ImageViewer from '@/tools/editor/components/ImageViewer';
+import MarkdownEditor from '@/tools/editor/components/MarkdownEditor';
+import { monacoModelManager } from '@/tools/editor/services/MonacoModelManager';
+import { ConnectedTerminal } from '@/tools/terminal';
+import { flowChatStore } from '@/flow_chat/store/FlowChatStore';
+import { flowChatManager } from '@/flow_chat/services/FlowChatManager';
+import { useI18n } from '@/infrastructure/i18n/hooks/useI18n';
 import { createLogger } from '@/shared/utils/logger';
 import { globalEventBus } from '@/infrastructure/event-bus';
 
@@ -52,11 +60,7 @@ const PlanViewer = React.lazy(() =>
 );
 
 // Uses ConnectedTerminal to auto-connect backend
-const TerminalTabPanel = React.lazy(() => 
-  import('@/tools/terminal').then(module => ({ 
-    default: module.ConnectedTerminal 
-  }))
-);
+const TerminalTabPanel = React.lazy(() => Promise.resolve({ default: ConnectedTerminal }));
 
 const BrowserPanel = React.lazy(() =>
   import('@/app/scenes/browser/BrowserPanel')
@@ -122,12 +126,10 @@ const FlexiblePanel: React.FC<ExtendedFlexiblePanelProps> = memo(({
     const filePath = content?.data?.filePath;
     if (!filePath || !onDirtyStateChange) return;
     
-    import('@/tools/editor/services/MonacoModelManager').then(({ monacoModelManager }) => {
-      const metadata = monacoModelManager.getModelMetadata(filePath);
-      if (metadata !== undefined) {
-        onDirtyStateChange(metadata.isDirty);
-      }
-    }).catch(() => {});
+    const metadata = monacoModelManager.getModelMetadata(filePath);
+    if (metadata !== undefined) {
+      onDirtyStateChange(metadata.isDirty);
+    }
   }, [content?.type, content?.data?.filePath, onDirtyStateChange]);
 
   const handleClose = useCallback(async () => {
@@ -332,40 +334,36 @@ const FlexiblePanel: React.FC<ExtendedFlexiblePanelProps> = memo(({
                     // Write back updated mermaid code to flowChatStore and persist to disk.
                     const source = mermaidData._source;
                     if (source?.type === 'tool-call' && source.toolCallId && newData.mermaid_code) {
-                      import('@/flow_chat/store/FlowChatStore').then(({ flowChatStore }) => {
-                        import('@/flow_chat/services/FlowChatManager').then(({ flowChatManager }) => {
-                          const state = flowChatStore.getState();
-                          const activeSessionId = state.activeSessionId;
-                          if (!activeSessionId) return;
+                      const state = flowChatStore.getState();
+                      const activeSessionId = state.activeSessionId;
+                      if (!activeSessionId) return;
 
-                          const session = state.sessions.get(activeSessionId);
-                          if (!session) return;
+                      const session = state.sessions.get(activeSessionId);
+                      if (!session) return;
 
-                          for (const turn of session.dialogTurns) {
-                            for (const round of turn.modelRounds) {
-                              const item = round.items.find(
-                                (it: any) =>
-                                  it.type === 'tool' &&
-                                  (it.toolCall?.id === source.toolCallId || it.id === source.toolItemId)
-                              );
-                              if (item) {
-                                const toolItem = item as any;
-                                flowChatStore.updateModelRoundItem(activeSessionId, turn.id, toolItem.id, {
-                                  toolCall: {
-                                    ...toolItem.toolCall,
-                                    input: {
-                                      ...toolItem.toolCall.input,
-                                      mermaid_code: newData.mermaid_code,
-                                    }
-                                  }
-                                } as any);
-                                flowChatManager.saveDialogTurn(activeSessionId, turn.id).catch(() => {});
-                                return;
+                      for (const turn of session.dialogTurns) {
+                        for (const round of turn.modelRounds) {
+                          const item = round.items.find(
+                            (it: any) =>
+                              it.type === 'tool' &&
+                              (it.toolCall?.id === source.toolCallId || it.id === source.toolItemId)
+                          );
+                          if (item) {
+                            const toolItem = item as any;
+                            flowChatStore.updateModelRoundItem(activeSessionId, turn.id, toolItem.id, {
+                              toolCall: {
+                                ...toolItem.toolCall,
+                                input: {
+                                  ...toolItem.toolCall.input,
+                                  mermaid_code: newData.mermaid_code,
+                                }
                               }
-                            }
+                            } as any);
+                            flowChatManager.saveDialogTurn(activeSessionId, turn.id).catch(() => {});
+                            return;
                           }
-                        });
-                      });
+                        }
+                      }
                     }
                   }}
                   onInteraction={onInteraction}

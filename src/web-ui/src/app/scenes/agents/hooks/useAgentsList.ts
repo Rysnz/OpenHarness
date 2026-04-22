@@ -9,6 +9,7 @@ import type { AgentWithCapabilities } from '../agentsStore';
 import { enrichCapabilities } from '../utils';
 import { isAgentInOverviewZone } from '../agentVisibility';
 import { useCurrentWorkspace } from '@/infrastructure/contexts/WorkspaceContext';
+import { globalEventBus } from '@/infrastructure/event-bus';
 
 export type FilterLevel = 'all' | 'builtin' | 'user' | 'project';
 export type FilterType = 'all' | 'mode' | 'subagent';
@@ -145,12 +146,7 @@ export function useAgentsList({
     await configAPI.setModeConfig(agentId, updated);
     setModeConfigs((prev) => ({ ...prev, [agentId]: updated }));
 
-    try {
-      const { globalEventBus } = await import('@/infrastructure/event-bus');
-      globalEventBus.emit('mode:config:updated');
-    } catch {
-      // ignore
-    }
+    globalEventBus.emit('mode:config:updated');
   }, [getModeConfig]);
 
   const handleSetTools = useCallback(async (agentId: string, toolNames: string[]) => {
@@ -174,12 +170,7 @@ export function useAgentsList({
       setModeSkills((prev) => ({ ...prev, [agentId]: updatedSkills }));
       notification.success(t('agentsOverview.toolsResetSuccess', '已重置为默认工具'));
 
-      try {
-        const { globalEventBus } = await import('@/infrastructure/event-bus');
-        globalEventBus.emit('mode:config:updated');
-      } catch {
-        // ignore
-      }
+      globalEventBus.emit('mode:config:updated');
     } catch {
       notification.error(t('agentsOverview.toolToggleFailed', '重置失败'));
     }
@@ -199,12 +190,7 @@ export function useAgentsList({
       });
       setModeSkills((prev) => ({ ...prev, [agentId]: updatedSkills }));
 
-      try {
-        const { globalEventBus } = await import('@/infrastructure/event-bus');
-        globalEventBus.emit('mode:config:updated');
-      } catch {
-        // ignore
-      }
+      globalEventBus.emit('mode:config:updated');
     } catch {
       notification.error(t('agentsOverview.skillToggleFailed', 'Skill 切换失败'));
     }

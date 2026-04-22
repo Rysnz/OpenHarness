@@ -1,6 +1,7 @@
 import { SnapshotEventBus, SNAPSHOT_EVENTS } from './SnapshotEventBus';
 import { SnapshotSystemService } from '../services/SnapshotSystemService';
 import { createLogger } from '@/shared/utils/logger';
+import { globalEventBus } from '@/infrastructure/event-bus';
 
 const log = createLogger('SnapshotStateManager');
 
@@ -86,8 +87,6 @@ export class SnapshotStateManager {
   }
 
   private async setupGlobalEventListeners(): Promise<void> {
-    const { globalEventBus } = await import('@/infrastructure/event-bus');
-    
     globalEventBus.on('snapshot:rollback-completed', async (data: { sessionId: string; turnIndex: number; restoredFiles: string[] }) => {
       if (data.sessionId) {
         await this.refreshSessionState(data.sessionId);

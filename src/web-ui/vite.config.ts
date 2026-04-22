@@ -93,12 +93,56 @@ export default defineConfig(({ mode, command }) => {
   build: {
     // Enable CSS code splitting
     cssCodeSplit: true,
+    // The desktop UI intentionally ships large, cacheable editor/diagram chunks
+    // (Monaco, Mermaid, Markdown, xterm). Keep warnings focused on accidental
+    // mega-bundles after those domains have been split out.
+    chunkSizeWarningLimit: 4096,
     // release version disable sourcemap, dev/debug version enable
     sourcemap: !isProduction,
     // Output to the project root directory dist/
     outDir: '../../dist',
     // Empty the output directory
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes('node_modules')) {
+            return undefined;
+          }
+
+          if (id.includes('monaco-editor') || id.includes('@monaco-editor')) {
+            return 'vendor-monaco';
+          }
+
+          if (id.includes('@xterm')) {
+            return 'vendor-terminal';
+          }
+
+          if (id.includes('mermaid') || id.includes('cytoscape')) {
+            return 'vendor-mermaid';
+          }
+
+          if (
+            id.includes('katex') ||
+            id.includes('@tiptap') ||
+            id.includes('prosemirror') ||
+            id.includes('parse5') ||
+            id.includes('dompurify') ||
+            id.includes('highlight.js') ||
+            id.includes('prismjs') ||
+            id.includes('linkifyjs')
+          ) {
+            return 'vendor-markdown';
+          }
+
+          if (id.includes('@tauri-apps')) {
+            return 'vendor-tauri';
+          }
+
+          return undefined;
+        },
+      },
+    },
   }
   };
 });

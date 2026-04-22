@@ -14,6 +14,8 @@ import { notificationService } from '@/shared/notification-system';
 import type { ContextItem, ImageContext } from '@/shared/types/context';
 import type { AIModelConfig, DefaultModelsConfig } from '@/infrastructure/config/types';
 import { createLogger } from '@/shared/utils/logger';
+import { configManager } from '@/infrastructure/config/services/ConfigManager';
+import { api } from '@/infrastructure/api/service-api/ApiClient';
 
 const log = createLogger('FlowChat');
 
@@ -97,7 +99,6 @@ export function useMessageSender(props: UseMessageSenderProps): UseMessageSender
       const flowChatManager = FlowChatManager.getInstance();
 
       if (!sessionId) {
-        const { configManager } = await import('@/infrastructure/config/services/ConfigManager');
         const [agentModels, allModels, defaultModels] = await Promise.all([
           configManager.getConfig<Record<string, string>>('ai.agent_models') || {},
           configManager.getConfig<AIModelConfig[]>('ai.models') || [],
@@ -119,7 +120,6 @@ export function useMessageSender(props: UseMessageSenderProps): UseMessageSender
 
       if (clipboardImages.length > 0) {
         try {
-          const { api } = await import('@/infrastructure/api/service-api/ApiClient');
           const uploadData = {
             request: {
               images: clipboardImages.map(ctx => ({

@@ -147,7 +147,7 @@ describe('L0 Smoke Tests', () => {
 
   describe('No critical errors', () => {
     it('should not have JavaScript errors', async () => {
-      const logs = await browser.getLogs('browser');
+      const logs = await browser.getLogs('browser') as Array<{ level?: string; message?: string }>;
       const errors = logs.filter(log => log.level === 'SEVERE');
       
       if (errors.length > 0) {

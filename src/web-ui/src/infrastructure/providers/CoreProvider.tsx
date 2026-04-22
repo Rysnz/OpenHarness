@@ -1,6 +1,6 @@
  
 import React, { useEffect, useState, ReactNode } from 'react';
-import { initializeCore, destroyCore } from '../index';
+import { initializeCore, destroyCore } from '../lifecycle';
 import { globalEventBus } from '../event-bus';
 import { createLogger } from '@/shared/utils/logger';
 import { useI18n } from '@/infrastructure/i18n';

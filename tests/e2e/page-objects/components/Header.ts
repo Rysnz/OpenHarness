@@ -23,7 +23,7 @@ export class Header extends BasePage {
       try {
         const element = await $(selector);
         if (await element.isExisting()) {
-          return element;
+          return element as unknown as WebdriverIO.Element;
         }
       } catch (error) {
         // Try the next selector.

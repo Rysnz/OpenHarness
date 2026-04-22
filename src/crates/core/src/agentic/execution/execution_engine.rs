@@ -26,7 +26,7 @@ use crate::util::types::Message as AIMessage;
 use crate::util::types::ToolDefinition;
 use log::{debug, error, info, trace, warn};
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
@@ -78,6 +78,201 @@ impl ExecutionEngine {
             session_manager,
             context_compressor,
             config,
+        }
+    }
+
+    fn workspace_with_agent_cwd(
+        workspace: Option<WorkspaceBinding>,
+        cwd: Option<&PathBuf>,
+    ) -> OpenHarnessResult<Option<WorkspaceBinding>> {
+        let Some(cwd) = cwd else {
+            return Ok(workspace);
+        };
+        let Some(mut workspace) = workspace else {
+            return Ok(None);
+        };
+
+        if cwd
+            .components()
+            .any(|component| matches!(component, Component::ParentDir | Component::Prefix(_)))
+        {
+            return Err(OpenHarnessError::Validation(format!(
+                "Agent cwd '{}' must stay inside the workspace",
+                cwd.display()
+            )));
+        }
+
+        let base = workspace.root_path.clone();
+        let requested = if cwd.is_absolute() {
+            cwd.clone()
+        } else {
+            base.join(cwd)
+        };
+
+        if workspace.is_remote() {
+            if cwd.is_absolute() && !requested.starts_with(&base) {
+                return Err(OpenHarnessError::Validation(format!(
+                    "Agent cwd '{}' is outside workspace '{}'",
+                    requested.display(),
+                    base.display()
+                )));
+            }
+            workspace.root_path = requested;
+            return Ok(Some(workspace));
+        }
+
+        let canonical_base = base.canonicalize().map_err(|error| {
+            OpenHarnessError::Validation(format!(
+                "Failed to resolve workspace root '{}': {}",
+                base.display(),
+                error
+            ))
+        })?;
+        let canonical_requested = requested.canonicalize().map_err(|error| {
+            OpenHarnessError::Validation(format!(
+                "Agent cwd '{}' is not accessible: {}",
+                requested.display(),
+                error
+            ))
+        })?;
+
+        if !canonical_requested.starts_with(&canonical_base) {
+            return Err(OpenHarnessError::Validation(format!(
+                "Agent cwd '{}' is outside workspace '{}'",
+                canonical_requested.display(),
+                canonical_base.display()
+            )));
+        }
+
+        if !canonical_requested.is_dir() {
+            return Err(OpenHarnessError::Validation(format!(
+                "Agent cwd '{}' is not a directory",
+                canonical_requested.display()
+            )));
+        }
+
+        workspace.root_path = canonical_requested;
+        Ok(Some(workspace))
+    }
+
+    fn skill_ref_matches_info(
+        skill: &crate::agentic::tools::implementations::skills::SkillInfo,
+        skill_ref: &str,
+    ) -> bool {
+        let skill_ref = skill_ref.trim();
+        if skill_ref.is_empty() {
+            return false;
+        }
+
+        skill.name.eq_ignore_ascii_case(skill_ref)
+            || skill.key.eq_ignore_ascii_case(skill_ref)
+            || skill.dir_name.eq_ignore_ascii_case(skill_ref)
+            || skill.source_slot.eq_ignore_ascii_case(skill_ref)
+    }
+
+    async fn render_agent_configured_skills_context(
+        workspace: Option<&WorkspaceBinding>,
+        workspace_services: Option<&crate::agentic::workspace::WorkspaceServices>,
+        agent_type: &str,
+        skill_refs: &[String],
+    ) -> Option<String> {
+        if skill_refs.is_empty() {
+            return None;
+        }
+
+        let registry = crate::agentic::tools::implementations::skills::get_skill_registry();
+        let mut rendered_skills = Vec::new();
+
+        if workspace
+            .map(|workspace| workspace.is_remote())
+            .unwrap_or(false)
+        {
+            if let (Some(workspace), Some(fs)) = (
+                workspace,
+                workspace_services.map(|services| services.fs.as_ref()),
+            ) {
+                let root = workspace.root_path_string();
+                let skills = registry
+                    .get_resolved_skills_for_remote_workspace(fs, &root, Some(agent_type))
+                    .await;
+
+                for skill_ref in skill_refs {
+                    let Some(skill_info) = skills
+                        .iter()
+                        .find(|skill| Self::skill_ref_matches_info(skill, skill_ref))
+                    else {
+                        warn!(
+                            "Configured skill '{}' not found for agent '{}'",
+                            skill_ref, agent_type
+                        );
+                        continue;
+                    };
+
+                    match registry
+                        .find_and_load_skill_for_remote_workspace(
+                            &skill_info.name,
+                            fs,
+                            &root,
+                            Some(agent_type),
+                        )
+                        .await
+                    {
+                        Ok(skill) => rendered_skills.push(format!(
+                            "<skill name=\"{}\" path=\"{}\">\n{}\n</skill>",
+                            skill.name, skill.path, skill.content
+                        )),
+                        Err(error) => warn!(
+                            "Failed to load configured skill '{}' for agent '{}': {}",
+                            skill_ref, agent_type, error
+                        ),
+                    }
+                }
+            }
+        } else {
+            let workspace_root = workspace.map(|workspace| workspace.root_path());
+            let skills = registry
+                .get_resolved_skills_for_workspace(workspace_root, Some(agent_type))
+                .await;
+
+            for skill_ref in skill_refs {
+                let Some(skill_info) = skills
+                    .iter()
+                    .find(|skill| Self::skill_ref_matches_info(skill, skill_ref))
+                else {
+                    warn!(
+                        "Configured skill '{}' not found for agent '{}'",
+                        skill_ref, agent_type
+                    );
+                    continue;
+                };
+
+                match registry
+                    .find_and_load_skill_for_workspace(
+                        &skill_info.name,
+                        workspace_root,
+                        Some(agent_type),
+                    )
+                    .await
+                {
+                    Ok(skill) => rendered_skills.push(format!(
+                        "<skill name=\"{}\" path=\"{}\">\n{}\n</skill>",
+                        skill.name, skill.path, skill.content
+                    )),
+                    Err(error) => warn!(
+                        "Failed to load configured skill '{}' for agent '{}': {}",
+                        skill_ref, agent_type, error
+                    ),
+                }
+            }
+        }
+
+        if rendered_skills.is_empty() {
+            None
+        } else {
+            Some(format!(
+                "\n\n<agent_configured_skills>\n{}\n</agent_configured_skills>",
+                rendered_skills.join("\n\n")
+            ))
         }
     }
 
@@ -905,6 +1100,7 @@ impl ExecutionEngine {
         // Things that remain constant in a dialog turn: 1.agent, 2.system prompt, 3.tools, 4.ai client
         // 1. Get current agent
         let agent_registry = get_agent_registry();
+        let agent_lookup_workspace = context.workspace.clone();
         if let Some(workspace) = context.workspace.as_ref() {
             agent_registry
                 .load_custom_subagents(workspace.root_path())
@@ -926,6 +1122,25 @@ impl ExecutionEngine {
             current_agent.name(),
             current_agent.id()
         );
+        let agent_definition = agent_registry.get_agent_definition(
+            &agent_type,
+            context
+                .workspace
+                .as_ref()
+                .map(|workspace| workspace.root_path()),
+        );
+        let context = if let Some(definition) = &agent_definition {
+            let mut context = context;
+            context.workspace =
+                Self::workspace_with_agent_cwd(context.workspace, definition.cwd.as_ref())?;
+            context
+        } else {
+            context
+        };
+        let agent_skills = agent_definition
+            .as_ref()
+            .map(|definition| definition.skills.clone())
+            .unwrap_or_default();
 
         let session = self
             .session_manager
@@ -945,7 +1160,7 @@ impl ExecutionEngine {
             .resolve_model_id_for_turn(
                 &session,
                 &agent_type,
-                context.workspace.as_ref(),
+                agent_lookup_workspace.as_ref(),
                 &original_user_input,
                 context.turn_index,
             )
@@ -1033,7 +1248,7 @@ impl ExecutionEngine {
             current_agent.name(),
             ai_client.config.model
         );
-        let system_prompt = {
+        let mut system_prompt = {
             let workspace_str = context
                 .workspace
                 .as_ref()
@@ -1118,6 +1333,16 @@ impl ExecutionEngine {
                 .get_system_prompt(prompt_context.as_ref())
                 .await?
         };
+        if let Some(skills_context) = Self::render_agent_configured_skills_context(
+            context.workspace.as_ref(),
+            context.workspace_services.as_ref(),
+            &agent_type,
+            &agent_skills,
+        )
+        .await
+        {
+            system_prompt.push_str(&skills_context);
+        }
         debug!("System prompt built, length: {} bytes", system_prompt.len());
         let system_prompt_message = Message::system(system_prompt.clone());
 
@@ -1130,7 +1355,6 @@ impl ExecutionEngine {
         let mut last_assistant_message = Message::assistant("".to_string());
         let mut consecutive_compression_failures: u32 = 0;
         const MAX_CONSECUTIVE_COMPRESSION_FAILURES: u32 = 3;
-
         // Save the last token usage statistics
         let mut last_usage: Option<crate::util::types::ai::GeminiUsage> = None;
 
@@ -1157,8 +1381,7 @@ impl ExecutionEngine {
         let mut allowed_tools = agent_registry
             .get_agent_tools(
                 &agent_type,
-                context
-                    .workspace
+                agent_lookup_workspace
                     .as_ref()
                     .map(|workspace| workspace.root_path()),
             )
@@ -1195,6 +1418,7 @@ impl ExecutionEngine {
                 context.workspace.as_ref(),
                 &agent_type,
                 primary_supports_image_understanding,
+                &agent_skills,
             )
             .await
         } else {
@@ -1224,6 +1448,52 @@ impl ExecutionEngine {
             primary_supports_image_understanding.to_string(),
         );
         execution_context_vars.insert("turn_index".to_string(), context.turn_index.to_string());
+        execution_context_vars.insert("session_id".to_string(), context.session_id.clone());
+        execution_context_vars.insert("dialog_turn_id".to_string(), context.dialog_turn_id.clone());
+        execution_context_vars.insert("agent_type".to_string(), agent_type.clone());
+
+        if let Some(definition) = &agent_definition {
+            execution_context_vars
+                .entry("permission_mode".to_string())
+                .or_insert_with(|| definition.permission_mode.as_string());
+
+            if definition.hooks.has_hooks() && !execution_context_vars.contains_key("hooks") {
+                if let Ok(serialized_hooks) = serde_json::to_string(&definition.hooks) {
+                    execution_context_vars.insert("hooks".to_string(), serialized_hooks);
+                }
+            }
+
+            if !definition.skills.is_empty() && !execution_context_vars.contains_key("agent_skills")
+            {
+                if let Ok(serialized_skills) = serde_json::to_string(&definition.skills) {
+                    execution_context_vars.insert("agent_skills".to_string(), serialized_skills);
+                }
+            }
+
+            if !definition.mcp_servers.is_empty()
+                && !execution_context_vars.contains_key("agent_mcp_servers")
+            {
+                if let Ok(serialized_mcp_servers) = serde_json::to_string(&definition.mcp_servers) {
+                    execution_context_vars
+                        .insert("agent_mcp_servers".to_string(), serialized_mcp_servers);
+                }
+            }
+        }
+
+        if let Some(hooks) = execution_context_vars.get("hooks").and_then(|raw| {
+            serde_json::from_str::<crate::agentic::agents::AgentHookConfig>(raw).ok()
+        }) {
+            let permission_engine = self.round_executor.permission_engine();
+            let audit_store = self.round_executor.permission_audit_store();
+            hooks
+                .execute_hooks(
+                    "before_agent_start",
+                    &execution_context_vars,
+                    permission_engine.as_deref(),
+                    audit_store.as_deref(),
+                )
+                .await;
+        }
 
         // If the primary model is text-only, do not send image payloads to the provider.
         // Instead, keep a text-only placeholder (including `image_id`).
@@ -1611,6 +1881,25 @@ impl ExecutionEngine {
             );
         }
 
+        if let Some(hooks) = execution_context_vars.get("hooks").and_then(|raw| {
+            serde_json::from_str::<crate::agentic::agents::AgentHookConfig>(raw).ok()
+        }) {
+            let mut finish_context = execution_context_vars.clone();
+            finish_context.insert("total_rounds".to_string(), (round_index + 1).to_string());
+            finish_context.insert("total_tools".to_string(), total_tools.to_string());
+            finish_context.insert("duration_ms".to_string(), duration_ms.to_string());
+            let permission_engine = self.round_executor.permission_engine();
+            let audit_store = self.round_executor.permission_audit_store();
+            hooks
+                .execute_hooks(
+                    "before_agent_finish",
+                    &finish_context,
+                    permission_engine.as_deref(),
+                    audit_store.as_deref(),
+                )
+                .await;
+        }
+
         Ok(ExecutionResult {
             final_message: last_assistant_message,
             total_rounds: round_index + 1,
@@ -1662,6 +1951,7 @@ impl ExecutionEngine {
         workspace: Option<&crate::agentic::WorkspaceBinding>,
         agent_type: &str,
         primary_supports_image_understanding: bool,
+        agent_skills: &[String],
     ) -> (Vec<String>, Option<Vec<ToolDefinition>>) {
         // Use get_all_registered_tools to get all tools including MCP tools
         let all_tools = get_all_registered_tools().await;
@@ -1673,6 +1963,9 @@ impl ExecutionEngine {
             "primary_model_supports_image_understanding".to_string(),
             serde_json::Value::Bool(primary_supports_image_understanding),
         );
+        if !agent_skills.is_empty() {
+            tool_opts_custom.insert("agent_skills".to_string(), serde_json::json!(agent_skills));
+        }
         let description_context = crate::agentic::tools::framework::ToolUseContext {
             tool_call_id: None,
             agent_type: Some(agent_type.to_string()),
@@ -1680,6 +1973,7 @@ impl ExecutionEngine {
             dialog_turn_id: None,
             workspace: workspace.cloned(),
             custom_data: tool_opts_custom,
+            stream_sink: None,
             computer_use_host: None,
             cancellation_token: None,
             workspace_services: None,
@@ -1748,6 +2042,7 @@ impl ExecutionEngine {
 #[cfg(test)]
 mod tests {
     use super::ExecutionEngine;
+    use crate::agentic::tools::implementations::skills::{SkillInfo, SkillLocation};
     use crate::service::config::types::AIConfig;
     use crate::service::config::types::AIModelConfig;
 
@@ -1766,6 +2061,28 @@ mod tests {
     fn auto_model_uses_fast_for_short_first_message() {
         assert!(ExecutionEngine::should_use_fast_auto_model(0, "你好"));
         assert!(ExecutionEngine::should_use_fast_auto_model(0, "1234567890"));
+    }
+
+    #[test]
+    fn configured_skill_refs_match_name_key_or_dir() {
+        let skill = SkillInfo {
+            key: "openharness:pdf".to_string(),
+            name: "pdf".to_string(),
+            description: "PDF work".to_string(),
+            path: "/skills/pdf".to_string(),
+            level: SkillLocation::User,
+            source_slot: "openharness".to_string(),
+            dir_name: "pdf".to_string(),
+            is_builtin: false,
+            group_key: None,
+        };
+
+        assert!(ExecutionEngine::skill_ref_matches_info(&skill, "pdf"));
+        assert!(ExecutionEngine::skill_ref_matches_info(
+            &skill,
+            "openharness:pdf"
+        ));
+        assert!(!ExecutionEngine::skill_ref_matches_info(&skill, "xlsx"));
     }
 
     #[test]
