@@ -1,2 +1,8 @@
-export { default as SceneViewport } from './SceneViewport';
-export { SCENE_TAB_REGISTRY, MAX_OPEN_SCENES, getSceneDef } from './registry';
+export { default as SceneViewport } from '@/workbench/scenes/WorkbenchSceneViewport';
+export {
+  MAX_OPEN_SCENES,
+  PANEL_VIEW_SCENE_DEF,
+  SCENE_TAB_REGISTRY,
+  getMiniAppSceneDef,
+  getSceneDef,
+} from '@/workbench/scenes/sceneCatalog';
