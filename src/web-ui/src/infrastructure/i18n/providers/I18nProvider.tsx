@@ -2,7 +2,7 @@
 
 import React, { useEffect } from 'react';
 import { I18nextProvider } from 'react-i18next';
-import { i18nService } from '../core/I18nService';
+import { i18nService } from '@/platform/localization/core/LocalizationRuntime';
 
 interface I18nProviderProps {
   children: React.ReactNode;

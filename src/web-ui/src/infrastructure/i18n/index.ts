@@ -3,7 +3,7 @@
  */
 
 // Core service
-export { I18nService, i18nService } from './core/I18nService';
+export { I18nService, i18nService } from '@/platform/localization/core/LocalizationRuntime';
 
 // Provider
 export { I18nProvider } from './providers';

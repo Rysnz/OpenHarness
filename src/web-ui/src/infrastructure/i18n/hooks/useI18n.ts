@@ -3,7 +3,7 @@
 import { useCallback, useMemo } from 'react';
 import { useTranslation, UseTranslationOptions } from 'react-i18next';
 import { useI18nStore } from '../store/i18nStore';
-import { i18nService } from '../core/I18nService';
+import { i18nService } from '@/platform/localization/core/LocalizationRuntime';
 import type { LocaleId, I18nNamespace, LocaleMetadata } from '../types';
 
  

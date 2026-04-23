@@ -15,7 +15,7 @@ import {
   SessionConfig,
 } from '../types/flow-chat';
 import { createLogger } from '@/shared/utils/logger';
-import { i18nService } from '@/infrastructure/i18n/core/I18nService';
+import { i18nService } from '@/platform/localization/core/LocalizationRuntime';
 import type { SessionKind } from '@/shared/types/session-history';
 import {
   deriveLastFinishedAtFromMetadata,
