@@ -20,7 +20,7 @@ import {
 } from '@/infrastructure/theme';
 import { themeService } from '@/infrastructure/theme/core/ThemeService';
 import { useLanguageSelector } from '@/infrastructure/i18n/hooks/useI18n';
-import type { LocaleId } from '@/infrastructure/i18n/types';
+import type { LocaleId } from '@/platform/localization/types';
 import {
   ConfigPageContent,
   ConfigPageHeader,

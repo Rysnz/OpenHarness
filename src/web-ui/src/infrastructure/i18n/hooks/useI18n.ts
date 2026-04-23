@@ -2,9 +2,9 @@
 
 import { useCallback, useMemo } from 'react';
 import { useTranslation, UseTranslationOptions } from 'react-i18next';
-import { useI18nStore } from '../store/i18nStore';
+import { useI18nStore } from '@/platform/localization/state/localizationStore';
 import { i18nService } from '@/platform/localization/core/LocalizationRuntime';
-import type { LocaleId, I18nNamespace, LocaleMetadata } from '../types';
+import type { LocaleId, I18nNamespace, LocaleMetadata } from '@/platform/localization/types';
 
  
 export interface UseI18nReturn {

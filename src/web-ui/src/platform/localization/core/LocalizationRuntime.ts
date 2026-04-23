@@ -11,15 +11,15 @@ import type {
   I18nEvent,
   I18nEventListener,
   I18nHooks,
-} from '@/infrastructure/i18n/types';
+} from '@/platform/localization/types';
 import {
   builtinLocales,
   DEFAULT_LOCALE,
   DEFAULT_FALLBACK_LOCALE,
   DEFAULT_NAMESPACE,
   isLocaleSupported,
-} from '@/infrastructure/i18n/presets';
-import { useI18nStore } from '@/infrastructure/i18n/store/i18nStore';
+} from '@/platform/localization/presets';
+import { useI18nStore } from '@/platform/localization/state/localizationStore';
 import { i18nAPI } from '@/infrastructure/api/service-api/I18nAPI';
 
 

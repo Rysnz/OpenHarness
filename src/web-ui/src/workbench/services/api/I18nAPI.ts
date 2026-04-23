@@ -1,7 +1,7 @@
 ﻿ 
 
 import { invoke } from '@tauri-apps/api/core';
-import type { LocaleId, LocaleMetadata, I18nConfig } from '@/infrastructure/i18n/types';
+import type { LocaleId, LocaleMetadata, I18nConfig } from '@/platform/localization/types';
 import { createLogger } from '@/shared/utils/logger';
 
 const log = createLogger('I18nAPI');
