@@ -14,13 +14,16 @@ pub mod file_watch;
 pub mod filesystem; // FileSystem management
 pub mod git; // Git service
 pub mod i18n; // I18n service
+pub mod language_server; // LSP and language tooling domain
 pub mod lsp; // LSP (Language Server Protocol) system
 pub mod mcp; // MCP (Model Context Protocol) system
 pub mod project_context; // Project context management
-pub mod remote_connect; // Remote Connect (phone → desktop)
-pub mod remote_ssh; // Remote SSH (desktop → server)
+pub mod remote; // Remote access domain (SSH, device relay, etc.)
+pub mod remote_connect; // Remote Connect (phone 閳?desktop)
+pub mod remote_ssh; // Remote SSH (desktop 閳?server)
 pub mod runtime; // Managed runtime and capability management
 pub mod session; // Session persistence
+pub mod source_control; // Source control domain
 pub mod snapshot; // Snapshot-based change tracking
 pub mod system; // System command detection and execution
 pub mod token_usage; // Token usage tracking

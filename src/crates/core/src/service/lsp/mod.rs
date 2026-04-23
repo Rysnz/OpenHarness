@@ -1,30 +1,43 @@
-//! LSP (Language Server Protocol) service module
+//! LSP compatibility facade.
 //!
-//! Provides full LSP support, including:
-//! - Plugin management (install/uninstall/load)
-//! - Server process lifecycle management
-//! - LSP protocol communication
-//! - Code completion, navigation, diagnostics, and more
+//! The concrete implementation now lives in [`crate::service::language_server`].
+//! This module remains as a stable compatibility layer for existing imports.
 
-pub mod config_watcher;
-pub mod debouncer;
-pub mod file_sync;
-pub mod global;
-pub mod manager;
-pub mod plugin_loader;
-pub mod process;
-pub mod project_detector;
-pub mod protocol;
-pub mod registry;
-pub mod types;
-pub mod workspace_manager;
+pub mod config_watcher {
+    pub use crate::service::language_server::config_watcher::*;
+}
+pub mod debouncer {
+    pub use crate::service::language_server::debouncer::*;
+}
+pub mod file_sync {
+    pub use crate::service::language_server::file_sync::*;
+}
+pub mod global {
+    pub use crate::service::language_server::global::*;
+}
+pub mod manager {
+    pub use crate::service::language_server::manager::*;
+}
+pub mod plugin_loader {
+    pub use crate::service::language_server::plugin_loader::*;
+}
+pub mod process {
+    pub use crate::service::language_server::process::*;
+}
+pub mod project_detector {
+    pub use crate::service::language_server::project_detector::*;
+}
+pub mod protocol {
+    pub use crate::service::language_server::protocol::*;
+}
+pub mod registry {
+    pub use crate::service::language_server::registry::*;
+}
+pub mod types {
+    pub use crate::service::language_server::types::*;
+}
+pub mod workspace_manager {
+    pub use crate::service::language_server::workspace_manager::*;
+}
 
-pub use global::{
-    close_workspace, get_all_workspace_paths, get_global_lsp_manager, get_workspace_manager,
-    initialize_global_lsp_manager, is_lsp_manager_initialized, open_workspace,
-    open_workspace_with_emitter,
-};
-pub use manager::LspManager;
-pub use project_detector::{ProjectDetector, ProjectInfo};
-pub use types::{CompletionItem, LspPlugin, PluginSource};
-pub use workspace_manager::{LspEvent, ServerState, ServerStatus, WorkspaceLspManager};
+pub use crate::service::language_server::*;
