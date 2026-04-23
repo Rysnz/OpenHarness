@@ -1,6 +1,2 @@
-export * from './types';
-export * from './services';
-export * from './hooks';
-export * from './components';
-export { GitStateManager, gitStateManager } from './state';
-export { initializeGit } from './initializeGit';
+export * from '@/workbench/source-control/git';
+export { initializeGit } from '@/workbench/source-control/git/initializeGit';

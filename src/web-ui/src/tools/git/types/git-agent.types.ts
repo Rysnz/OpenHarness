@@ -1,15 +1,1 @@
-/**
- * Git Agent types
- */
-
-import {
-  CommitMessage,
-  CommitMessageOptions,
-  PreviewCommitMessageResponse,
-} from '@/infrastructure/api/service-api/GitAgentAPI';
-
-export type {
-  CommitMessage,
-  CommitMessageOptions,
-  PreviewCommitMessageResponse,
-};
+export * from '@/workbench/source-control/git/types/git-agent.types';

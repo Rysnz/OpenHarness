@@ -1,3 +1,1 @@
-export { GitGraphView } from './GitGraphView';
-export { default } from './GitGraphView';
-
+export * from '@/workbench/source-control/git/components/GitGraphView';

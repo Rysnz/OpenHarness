@@ -1,4 +1,1 @@
-export { GitBranchHistoryView } from './GitBranchHistoryView';
-export type { GitBranchHistoryViewProps } from './GitBranchHistoryView';
-export { default } from './GitBranchHistoryView';
-
+export * from '@/workbench/source-control/git/components/GitBranchHistoryView';

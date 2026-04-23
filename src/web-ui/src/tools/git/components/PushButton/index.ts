@@ -1,3 +1,1 @@
-export { PushButton } from './PushButton';
-export type { PushButtonProps } from './PushButton';
-
+export * from '@/workbench/source-control/git/components/PushButton';

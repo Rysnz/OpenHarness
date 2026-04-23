@@ -1,1 +1,1 @@
-export { default as GitDiffView } from './GitDiffView';
+export * from '@/workbench/source-control/git/components/GitDiffView';

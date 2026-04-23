@@ -1,2 +1,1 @@
-export * from './types';
-export { GitStateManager, gitStateManager } from './GitStateManager';
+export * from '@/workbench/source-control/git/state';

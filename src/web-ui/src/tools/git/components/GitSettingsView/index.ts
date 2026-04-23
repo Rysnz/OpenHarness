@@ -1,1 +1,1 @@
-export { default as GitSettingsView } from './GitSettingsView';
+export * from '@/workbench/source-control/git/components/GitSettingsView';

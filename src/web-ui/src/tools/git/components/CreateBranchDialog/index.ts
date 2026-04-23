@@ -1,3 +1,1 @@
-export { CreateBranchDialog } from './CreateBranchDialog';
-export type { CreateBranchDialogProps } from './CreateBranchDialog';
-
+export * from '@/workbench/source-control/git/components/CreateBranchDialog';
