@@ -12,7 +12,14 @@ pub fn setup_panic_hook() {
     std::panic::set_hook(Box::new(move |panic_info| {
         let location = panic_info
             .location()
-            .map(|location| format!("{}:{}:{}", location.file(), location.line(), location.column()))
+            .map(|location| {
+                format!(
+                    "{}:{}:{}",
+                    location.file(),
+                    location.line(),
+                    location.column()
+                )
+            })
             .unwrap_or_else(|| "unknown location".to_string());
 
         let message = panic_info

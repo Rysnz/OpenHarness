@@ -8,15 +8,10 @@ pub mod macos_menubar;
 pub mod runtime;
 pub mod theme;
 
-use openharness_core::agentic::tools::computer_use_capability::set_computer_use_desktop_available;
-use openharness_core::agentic::tools::computer_use_host::ComputerUseHostRef;
 use openharness_core::infrastructure::ai::AIClientFactory;
-use openharness_core::infrastructure::{get_path_manager_arc, try_get_path_manager_arc};
+use openharness_core::infrastructure::get_path_manager_arc;
 use serde::Deserialize;
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
-};
+use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(target_os = "macos")]
 use tauri::Emitter;
 use tauri::Manager;
@@ -46,18 +41,6 @@ use api::storage_commands::*;
 use api::subagent_api::*;
 use api::system_api::*;
 use api::tool_api::*;
-
-/// Agentic Coordinator state
-#[derive(Clone)]
-pub struct CoordinatorState {
-    pub coordinator: Arc<openharness_core::agentic::coordination::ConversationCoordinator>,
-}
-
-/// Dialog scheduler state (primary entry point for user messages)
-#[derive(Clone)]
-pub struct SchedulerState {
-    pub scheduler: Arc<openharness_core::agentic::coordination::DialogScheduler>,
-}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -109,21 +92,22 @@ pub async fn run() {
         return;
     }
 
-    let (coordinator, scheduler, event_queue, event_router, ai_client_factory, token_usage_service) =
-        match init_agentic_system().await {
-            Ok(state) => state,
-            Err(e) => {
-                log::error!("Failed to initialize agentic system: {}", e);
-                return;
-            }
-        };
+    let agentic_runtime = match runtime::agentic::bootstrap_agentic_runtime().await {
+        Ok(runtime) => runtime,
+        Err(e) => {
+            log::error!("Failed to initialize agentic system: {}", e);
+            return;
+        }
+    };
 
-    if let Err(e) = init_function_agents(ai_client_factory.clone()).await {
+    if let Err(e) =
+        runtime::agentic::init_function_agents(agentic_runtime.ai_client_factory.clone()).await
+    {
         log::error!("Failed to initialize function agents: {}", e);
         return;
     }
 
-    let app_state = match AppState::new_async(token_usage_service).await {
+    let app_state = match AppState::new_async(agentic_runtime.token_usage_service.clone()).await {
         Ok(state) => state,
         Err(e) => {
             log::error!("Failed to initialize AppState: {}", e);
@@ -131,17 +115,19 @@ pub async fn run() {
         }
     };
 
-    let coordinator_state = CoordinatorState {
-        coordinator: coordinator.clone(),
+    let coordinator_state = runtime::agentic::CoordinatorState {
+        coordinator: agentic_runtime.coordinator.clone(),
     };
 
-    let scheduler_state = SchedulerState {
-        scheduler: scheduler.clone(),
+    let scheduler_state = runtime::agentic::SchedulerState {
+        scheduler: agentic_runtime.scheduler.clone(),
     };
 
     let terminal_state = api::terminal_api::TerminalState::new();
 
     let path_manager = get_path_manager_arc();
+    let event_queue = agentic_runtime.event_queue.clone();
+    let event_router = agentic_runtime.event_router.clone();
 
     runtime::services::setup_panic_hook();
 
@@ -160,8 +146,8 @@ pub async fn run() {
         .manage(coordinator_state)
         .manage(scheduler_state)
         .manage(path_manager)
-        .manage(coordinator)
-        .manage(scheduler)
+        .manage(agentic_runtime.coordinator.clone())
+        .manage(agentic_runtime.scheduler.clone())
         .manage(terminal_state)
         .setup(move |app| {
             #[cfg(target_os = "macos")]
@@ -756,152 +742,6 @@ pub async fn run() {
     if let Err(e) = run_result {
         log::error!("Error while running tauri application: {}", e);
     }
-}
-
-async fn init_agentic_system() -> anyhow::Result<(
-    Arc<openharness_core::agentic::coordination::ConversationCoordinator>,
-    Arc<openharness_core::agentic::coordination::DialogScheduler>,
-    Arc<openharness_core::agentic::events::EventQueue>,
-    Arc<openharness_core::agentic::events::EventRouter>,
-    Arc<AIClientFactory>,
-    Arc<openharness_core::service::token_usage::TokenUsageService>,
-)> {
-    use openharness_core::agentic::*;
-
-    let ai_client_factory = AIClientFactory::get_global().await?;
-
-    let event_queue = Arc::new(events::EventQueue::new(Default::default()));
-    let event_router = Arc::new(events::EventRouter::new());
-
-    let path_manager = try_get_path_manager_arc()?;
-    let persistence_manager = Arc::new(persistence::PersistenceManager::new(path_manager.clone())?);
-
-    let context_store = Arc::new(session::SessionContextStore::new());
-    let context_compressor = Arc::new(session::ContextCompressor::new(Default::default()));
-
-    let session_manager = Arc::new(session::SessionManager::new(
-        context_store,
-        persistence_manager,
-        Default::default(),
-    ));
-
-    let tool_registry = tools::registry::get_global_tool_registry();
-    let tool_state_manager = Arc::new(tools::pipeline::ToolStateManager::new(event_queue.clone()));
-
-    let computer_use_host: ComputerUseHostRef =
-        Arc::new(computer_use::DesktopComputerUseHost::new());
-    set_computer_use_desktop_available(true);
-
-    let tool_pipeline = Arc::new(tools::pipeline::ToolPipeline::new(
-        tool_registry,
-        tool_state_manager,
-        Some(computer_use_host),
-    ));
-
-    let stream_processor = Arc::new(execution::StreamProcessor::new(event_queue.clone()));
-    let round_executor = Arc::new(execution::RoundExecutor::new(
-        stream_processor,
-        event_queue.clone(),
-        tool_pipeline.clone(),
-    ));
-    let execution_engine = Arc::new(execution::ExecutionEngine::new(
-        round_executor,
-        event_queue.clone(),
-        session_manager.clone(),
-        context_compressor,
-        Default::default(),
-    ));
-
-    let coordinator = Arc::new(coordination::ConversationCoordinator::new(
-        session_manager.clone(),
-        execution_engine,
-        tool_pipeline,
-        event_queue.clone(),
-        event_router.clone(),
-    ));
-
-    match openharness_core::service::config::get_global_config_service().await {
-        Ok(config_service) => {
-            match config_service
-                .get_config::<Option<Vec<PermissionRule>>>(Some("agentic_permission_rules"))
-                .await
-            {
-                Ok(Some(rules)) if !rules.is_empty() => {
-                    if let Err(error) = coordinator.agent_permission_rule_replace_all(rules).await {
-                        log::warn!("Failed to restore persisted permission rules: {}", error);
-                    }
-                }
-                Ok(_) => {}
-                Err(error) => {
-                    log::debug!("No persisted agentic permission rules loaded: {}", error);
-                }
-            }
-        }
-        Err(error) => {
-            log::warn!(
-                "Config service unavailable while loading permission rules: {}",
-                error
-            );
-        }
-    }
-
-    coordination::ConversationCoordinator::set_global(coordinator.clone());
-
-    // Initialize token usage service and register subscriber
-    let token_usage_service = Arc::new(
-        openharness_core::service::token_usage::TokenUsageService::new(path_manager.clone())
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to initialize token usage service: {}", e))?,
-    );
-    let token_usage_subscriber = Arc::new(
-        openharness_core::service::token_usage::TokenUsageSubscriber::new(
-            token_usage_service.clone(),
-        ),
-    );
-    event_router.subscribe_internal("token_usage".to_string(), token_usage_subscriber);
-
-    log::info!("Token usage service initialized and subscriber registered");
-
-    // Create the DialogScheduler and wire up the outcome notification channel
-    let scheduler =
-        coordination::DialogScheduler::new(coordinator.clone(), session_manager.clone());
-    coordinator.set_scheduler_notifier(scheduler.outcome_sender());
-    coordinator.set_round_preempt_source(scheduler.preempt_monitor());
-    coordination::set_global_scheduler(scheduler.clone());
-
-    let cron_service =
-        openharness_core::service::cron::CronService::new(path_manager.clone(), scheduler.clone())
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to initialize cron service: {}", e))?;
-    openharness_core::service::cron::set_global_cron_service(cron_service.clone());
-    let cron_subscriber = Arc::new(openharness_core::service::cron::CronEventSubscriber::new(
-        cron_service.clone(),
-    ));
-    event_router.subscribe_internal("cron_jobs".to_string(), cron_subscriber);
-    cron_service.start();
-
-    log::info!("Cron service initialized and subscriber registered");
-    log::info!("Agentic system initialized");
-    Ok((
-        coordinator,
-        scheduler,
-        event_queue,
-        event_router,
-        ai_client_factory,
-        token_usage_service,
-    ))
-}
-
-async fn init_function_agents(ai_client_factory: Arc<AIClientFactory>) -> anyhow::Result<()> {
-    let _ = openharness_core::function_agents::git_func_agent::GitFunctionAgent::new(
-        ai_client_factory.clone(),
-    );
-
-    let _ = openharness_core::function_agents::startchat_func_agent::StartchatFunctionAgent::new(
-        ai_client_factory.clone(),
-    );
-
-    Ok(())
 }
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
