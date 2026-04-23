@@ -5,14 +5,13 @@ pub mod api;
 pub mod computer_use;
 pub mod logging;
 pub mod macos_menubar;
+pub mod runtime;
 pub mod theme;
 
 use openharness_core::agentic::tools::computer_use_capability::set_computer_use_desktop_available;
 use openharness_core::agentic::tools::computer_use_host::ComputerUseHostRef;
 use openharness_core::infrastructure::ai::AIClientFactory;
 use openharness_core::infrastructure::{get_path_manager_arc, try_get_path_manager_arc};
-use openharness_core::service::workspace::get_global_workspace_service;
-use openharness_transport::{TauriTransportAdapter, TransportAdapter};
 use serde::Deserialize;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -103,7 +102,7 @@ pub async fn run() {
         }
     }
 
-    let startup_log_level = resolve_runtime_log_level(log_config.level).await;
+    let startup_log_level = runtime::services::resolve_runtime_log_level(log_config.level).await;
 
     if let Err(e) = AIClientFactory::initialize_global().await {
         log::error!("Failed to initialize global AIClientFactory: {}", e);
@@ -144,7 +143,7 @@ pub async fn run() {
 
     let path_manager = get_path_manager_arc();
 
-    setup_panic_hook();
+    runtime::services::setup_panic_hook();
 
     let run_result = tauri::Builder::default()
         .plugin(logging::build_log_plugin(log_targets))
@@ -256,9 +255,11 @@ pub async fn run() {
                 });
             }
 
-            let transport = Arc::new(TauriTransportAdapter::new(app_handle.clone()));
-
-            start_event_loop_with_transport(event_queue, event_router, transport);
+            runtime::event_bridge::start_event_loop_with_transport(
+                event_queue,
+                event_router,
+                app_handle.clone(),
+            );
 
             // Eagerly initialize the remote connect service so previously
             // paired bots start listening immediately on app startup.
@@ -277,9 +278,9 @@ pub async fn run() {
                 });
             }
 
-            init_mcp_servers(app_handle.clone());
+            runtime::services::init_mcp_servers(app_handle.clone());
 
-            init_services(app_handle.clone(), startup_log_level);
+            runtime::services::init_services(app_handle.clone(), startup_log_level);
 
             logging::spawn_log_cleanup_task();
 
@@ -901,305 +902,6 @@ async fn init_function_agents(ai_client_factory: Arc<AIClientFactory>) -> anyhow
     );
 
     Ok(())
-}
-
-fn init_mcp_servers(app_handle: tauri::AppHandle) {
-    tokio::spawn(async move {
-        let _ = app_handle;
-    });
-}
-
-fn setup_panic_hook() {
-    std::panic::set_hook(Box::new(move |panic_info| {
-        let location = panic_info
-            .location()
-            .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
-            .unwrap_or_else(|| "unknown location".to_string());
-
-        let message = panic_info
-            .payload()
-            .downcast_ref::<&str>()
-            .copied()
-            .or_else(|| {
-                panic_info
-                    .payload()
-                    .downcast_ref::<String>()
-                    .map(String::as_str)
-            })
-            .unwrap_or("unknown panic message");
-
-        log::error!("Application panic at {}: {}", location, message);
-
-        // Known wry bug: WKWebView.URL() returns nil after navigating to an
-        // invalid address, causing url_from_webview to panic on unwrap().
-        // This is non-fatal — the webview is still alive — so we log and
-        // continue instead of killing the process.
-        // See: https://github.com/tauri-apps/wry/pull/1554
-        if location.contains("wry") && location.contains("wkwebview") {
-            log::warn!("Suppressed non-fatal wry/wkwebview panic, application continues");
-            return;
-        }
-
-        if message.contains("WSAStartup") || message.contains("10093") || message.contains("hyper")
-        {
-            log::error!("Network-related crash detected, possible solutions:");
-            log::error!("  1) Restart the application");
-            log::error!("  2) Check Windows network service status");
-            log::error!("  3) Run as administrator");
-        }
-
-        std::process::exit(1);
-    }));
-}
-
-fn start_event_loop_with_transport(
-    event_queue: Arc<openharness_core::agentic::events::EventQueue>,
-    event_router: Arc<openharness_core::agentic::events::EventRouter>,
-    transport: Arc<TauriTransportAdapter>,
-) {
-    tokio::spawn(async move {
-        loop {
-            event_queue.wait_for_events().await;
-            loop {
-                let batch = event_queue.dequeue_configured_batch().await;
-                if batch.is_empty() {
-                    break;
-                }
-
-                for envelope in batch {
-                    // Route to internal subscribers (e.g. RemoteSessionStateTracker)
-                    // sequentially so that text chunks are appended in order.
-                    if let Err(e) = event_router.route(envelope.clone()).await {
-                        log::warn!("Internal event routing failed: {:?}", e);
-                    }
-
-                    if let Err(e) = transport.emit_event("", envelope.event).await {
-                        log::error!("Failed to emit event: {:?}", e);
-                    }
-                }
-            }
-        }
-    });
-}
-
-fn init_services(app_handle: tauri::AppHandle, default_log_level: log::LevelFilter) {
-    use openharness_core::{infrastructure, service};
-
-    spawn_ingest_server_with_config_listener();
-    spawn_runtime_log_level_listener(default_log_level);
-
-    tokio::spawn(async move {
-        let transport = Arc::new(TauriTransportAdapter::new(app_handle.clone()));
-        let emitter = create_event_emitter(transport);
-        let workspace_identity_watch_service = {
-            let app_state: tauri::State<'_, api::app_state::AppState> = app_handle.state();
-            app_state.workspace_identity_watch_service.clone()
-        };
-
-        service::snapshot::initialize_snapshot_event_emitter(emitter.clone());
-
-        openharness_core::service::initialize_file_watch_service(emitter.clone());
-
-        if let Err(e) = workspace_identity_watch_service
-            .set_event_emitter(emitter.clone())
-            .await
-        {
-            log::error!(
-                "Failed to initialize workspace identity watch service: {}",
-                e
-            );
-        }
-
-        if let Err(e) = service::lsp::initialize_global_lsp_manager().await {
-            log::error!("Failed to initialize LSP manager: {}", e);
-        }
-
-        let event_system = infrastructure::events::get_global_event_system();
-        event_system.set_emitter(emitter).await;
-    });
-}
-
-async fn resolve_runtime_log_level(default_level: log::LevelFilter) -> log::LevelFilter {
-    use openharness_core::service::config::get_global_config_service;
-
-    if let Ok(config_service) = get_global_config_service().await {
-        if let Ok(config_level) = config_service
-            .get_config::<String>(Some("app.logging.level"))
-            .await
-        {
-            if let Some(level) = logging::parse_log_level(&config_level) {
-                return level;
-            }
-            log::warn!(
-                "Invalid app.logging.level '{}', falling back to default={}",
-                config_level,
-                logging::level_to_str(default_level)
-            );
-        }
-    }
-
-    default_level
-}
-
-fn spawn_runtime_log_level_listener(default_level: log::LevelFilter) {
-    use openharness_core::service::config::{subscribe_config_updates, ConfigUpdateEvent};
-
-    tokio::spawn(async move {
-        if let Some(mut receiver) = subscribe_config_updates() {
-            loop {
-                match receiver.recv().await {
-                    Ok(ConfigUpdateEvent::LogLevelUpdated { new_level }) => {
-                        if let Some(level) = logging::parse_log_level(&new_level) {
-                            logging::apply_runtime_log_level(level, "config_update_event");
-                        } else {
-                            log::warn!(
-                                "Received invalid log level from config update event: {}",
-                                new_level
-                            );
-                        }
-                    }
-                    Ok(ConfigUpdateEvent::ConfigReloaded) => {
-                        let level = resolve_runtime_log_level(default_level).await;
-                        logging::apply_runtime_log_level(level, "config_reloaded");
-                    }
-                    Ok(_) => {}
-                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                        log::warn!("Log-level listener channel closed, stopping listener");
-                        break;
-                    }
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                        log::warn!("Log-level listener lagged by {} messages", n);
-                    }
-                }
-            }
-        } else {
-            log::warn!("Config update subscription unavailable for log-level listener");
-        }
-    });
-}
-
-fn create_event_emitter(
-    transport: Arc<TauriTransportAdapter>,
-) -> Arc<dyn openharness_core::infrastructure::events::EventEmitter> {
-    use openharness_core::infrastructure::events::TransportEmitter;
-    Arc::new(TransportEmitter::new(transport))
-}
-
-fn spawn_ingest_server_with_config_listener() {
-    use openharness_core::infrastructure::debug_log::IngestServerManager;
-    use openharness_core::service::config::{
-        get_global_config_service, subscribe_config_updates, ConfigUpdateEvent,
-    };
-
-    tokio::spawn(async move {
-        let initial_config = if let Ok(config_service) = get_global_config_service().await {
-            if let Ok(config) = config_service
-                .get_config::<openharness_core::service::config::GlobalConfig>(None)
-                .await
-            {
-                let debug_config = &config.ai.debug_mode_config;
-                let workspace_path = get_global_workspace_service()
-                    .and_then(|service| service.try_get_current_workspace_path())
-                    .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
-
-                Some(openharness_core::infrastructure::debug_log::IngestServerConfig::from_debug_mode_config(
-                    debug_config.ingest_port,
-                    workspace_path.join(&debug_config.log_path),
-                ))
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
-        let configured_port = if let Ok(config_service) = get_global_config_service().await {
-            if let Ok(config) = config_service
-                .get_config::<openharness_core::service::config::GlobalConfig>(None)
-                .await
-            {
-                Some(config.ai.debug_mode_config.ingest_port)
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
-        let manager = IngestServerManager::global();
-        if let Err(e) = manager.start(initial_config).await {
-            log::error!("Failed to start Debug Log Ingest Server: {}", e);
-        }
-
-        let actual_port = manager.get_actual_port().await;
-        if let Some(cfg_port) = configured_port {
-            if actual_port != cfg_port {
-                if let Ok(config_service) = get_global_config_service().await {
-                    if let Err(e) = config_service
-                        .set_config("ai.debug_mode_config.ingest_port", actual_port)
-                        .await
-                    {
-                        log::error!("Failed to sync actual port to config: {}", e);
-                    } else {
-                        log::info!(
-                            "Ingest Server port synced: actual_port={}, config_port={}",
-                            actual_port,
-                            cfg_port
-                        );
-                    }
-                }
-            }
-        }
-
-        if let Some(mut receiver) = subscribe_config_updates() {
-            loop {
-                match receiver.recv().await {
-                    Ok(ConfigUpdateEvent::DebugModeConfigUpdated {
-                        new_port,
-                        new_log_path,
-                    }) => {
-                        let workspace_path = get_global_workspace_service()
-                            .and_then(|service| service.try_get_current_workspace_path())
-                            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
-                        let full_log_path = workspace_path.join(&new_log_path);
-
-                        if let Err(e) = manager.update_port(new_port, full_log_path).await {
-                            log::error!("Failed to update Ingest Server config: port={}, log_path={}, error={}", new_port, new_log_path, e);
-                        }
-                    }
-                    Ok(ConfigUpdateEvent::ConfigReloaded) => {
-                        if let Ok(config_service) = get_global_config_service().await {
-                            if let Ok(config) = config_service
-                                .get_config::<openharness_core::service::config::GlobalConfig>(None)
-                                .await
-                            {
-                                let debug_config = &config.ai.debug_mode_config;
-                                let workspace_path = get_global_workspace_service()
-                                    .and_then(|service| service.try_get_current_workspace_path())
-                                    .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
-                                let full_log_path = workspace_path.join(&debug_config.log_path);
-
-                                if let Err(e) = manager
-                                    .update_port(debug_config.ingest_port, full_log_path)
-                                    .await
-                                {
-                                    log::error!("Failed to update Ingest Server after config reload: port={}, error={}", debug_config.ingest_port, e);
-                                }
-                            }
-                        }
-                    }
-                    Ok(_) => {}
-                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                        log::warn!("Config update channel closed, stopping listener");
-                        break;
-                    }
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                        log::warn!("Config update listener lagged by {} messages", n);
-                    }
-                }
-            }
-        }
-    });
 }
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
