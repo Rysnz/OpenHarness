@@ -25,6 +25,12 @@ export const NON_USER_CUSTOMIZABLE_SHORTCUT_IDS = new Set<string>([
 
 const isMac = typeof navigator !== 'undefined' && navigator.platform.toUpperCase().includes('MAC');
 
+type ShortcutExtras = Omit<ShortcutConfig, 'key' | 'scope'>;
+
+function scoped(key: string, scope: ShortcutScope, extras: ShortcutExtras = {}): ShortcutConfig {
+  return { key, scope, ...extras };
+}
+
 /** Build a ShortcutConfig using Ctrl (Win/Linux) or Meta (Mac) as the primary modifier. */
 function mod(
   key: string,
@@ -35,8 +41,20 @@ function mod(
 
 /** Shortcut with no primary modifier (plain key, scope-aware). */
 function plain(key: string, scope: ShortcutScope, allowInInput = false): ShortcutConfig {
-  return { key, scope, allowInInput };
+  return scoped(key, scope, { allowInInput });
 }
+
+function shortcut(id: string, config: ShortcutConfig, descriptionKey: string): ShortcutDef {
+  return { id, config, descriptionKey };
+}
+
+const numberedShortcuts = (
+  prefix: string,
+  keys: string[],
+  configForKey: (key: string) => ShortcutConfig,
+  descriptionKey: string
+): ShortcutDef[] =>
+  keys.map((key, index) => shortcut(`${prefix}${index + 1}`, configForKey(key), descriptionKey));
 
 // ─── Global shortcuts (scope: 'app') ──────────────────────────────────────
 // These fire regardless of where focus is, including inside input elements
@@ -98,9 +116,12 @@ export const APP_SHORTCUTS: ShortcutDef[] = [
 // settings. Kept separate from APP_SHORTCUTS so the UI can merge them.
 
 export const SCENE_SHORTCUTS: ShortcutDef[] = [
-  { id: 'scene.focus1', config: { key: '1', alt: true, scope: 'app', allowInInput: true }, descriptionKey: 'keyboard.shortcuts.scene.focusMerged' },
-  { id: 'scene.focus2', config: { key: '2', alt: true, scope: 'app', allowInInput: true }, descriptionKey: 'keyboard.shortcuts.scene.focusMerged' },
-  { id: 'scene.focus3', config: { key: '3', alt: true, scope: 'app', allowInInput: true }, descriptionKey: 'keyboard.shortcuts.scene.focusMerged' },
+  ...numberedShortcuts(
+    'scene.focus',
+    ['1', '2', '3'],
+    (key) => scoped(key, 'app', { alt: true, allowInInput: true }),
+    'keyboard.shortcuts.scene.focusMerged'
+  ),
 ];
 
 // ─── Editor canvas shortcuts (scope: 'canvas') ────────────────────────────
@@ -152,46 +173,12 @@ export const CANVAS_SHORTCUTS: ShortcutDef[] = [
     config: mod('T', { shift: true, scope: 'canvas', allowInInput: true }),
     descriptionKey: 'keyboard.shortcuts.tab.reopenClosed',
   },
-  {
-    id: 'tab.switch1',
-    config: mod('1', { scope: 'canvas', allowInInput: true }),
-    descriptionKey: 'keyboard.shortcuts.tab.switchMerged',
-  },
-  {
-    id: 'tab.switch2',
-    config: mod('2', { scope: 'canvas', allowInInput: true }),
-    descriptionKey: 'keyboard.shortcuts.tab.switchMerged',
-  },
-  {
-    id: 'tab.switch3',
-    config: mod('3', { scope: 'canvas', allowInInput: true }),
-    descriptionKey: 'keyboard.shortcuts.tab.switchMerged',
-  },
-  {
-    id: 'tab.switch4',
-    config: mod('4', { scope: 'canvas', allowInInput: true }),
-    descriptionKey: 'keyboard.shortcuts.tab.switchMerged',
-  },
-  {
-    id: 'tab.switch5',
-    config: mod('5', { scope: 'canvas', allowInInput: true }),
-    descriptionKey: 'keyboard.shortcuts.tab.switchMerged',
-  },
-  {
-    id: 'tab.switch6',
-    config: mod('6', { scope: 'canvas', allowInInput: true }),
-    descriptionKey: 'keyboard.shortcuts.tab.switchMerged',
-  },
-  {
-    id: 'tab.switch7',
-    config: mod('7', { scope: 'canvas', allowInInput: true }),
-    descriptionKey: 'keyboard.shortcuts.tab.switchMerged',
-  },
-  {
-    id: 'tab.switch8',
-    config: mod('8', { scope: 'canvas', allowInInput: true }),
-    descriptionKey: 'keyboard.shortcuts.tab.switchMerged',
-  },
+  ...numberedShortcuts(
+    'tab.switch',
+    ['1', '2', '3', '4', '5', '6', '7', '8'],
+    (key) => mod(key, { scope: 'canvas', allowInInput: true }),
+    'keyboard.shortcuts.tab.switchMerged'
+  ),
   {
     id: 'tab.switchLast',
     config: mod('9', { scope: 'canvas', allowInInput: true }),
