@@ -2,6 +2,7 @@
 
 pub mod computer_use_capability;
 pub mod computer_use_host;
+mod computer_use_strategy;
 pub mod computer_use_optimizer;
 pub mod computer_use_verification;
 pub mod framework;

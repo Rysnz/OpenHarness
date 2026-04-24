@@ -1,3 +1,4 @@
+mod event_stream;
 pub mod events;
 pub mod file_lock_manager;
 pub mod isolation_manager;
@@ -7,7 +8,7 @@ pub mod snapshot_core;
 pub mod snapshot_system;
 pub mod types;
 
-pub use events::{
+pub use event_stream::{
     emit_snapshot_event, emit_snapshot_session_event, initialize_snapshot_event_emitter,
     SnapshotEvent, SnapshotEventEmitter,
 };

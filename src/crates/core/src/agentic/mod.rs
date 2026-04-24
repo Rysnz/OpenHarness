@@ -39,6 +39,7 @@ pub mod side_question;
 
 // Agents module
 pub mod agents;
+mod workspace_model;
 pub mod workspace;
 
 mod util;
@@ -71,4 +72,4 @@ pub use runtime::{
 pub use security::shell::{ShellDialect, ShellRiskAnalyzer};
 pub use session::*;
 pub use side_question::*;
-pub use workspace::{WorkspaceBackend, WorkspaceBinding};
+pub use workspace_model::{WorkspaceBackend, WorkspaceBinding};
