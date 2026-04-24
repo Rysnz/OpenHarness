@@ -20,7 +20,7 @@ use crate::shell::ShellType;
 use crate::{TerminalError, TerminalResult};
 
 use super::data_bufferer::DataBufferer;
-use super::process::{spawn_pty, FlowControl, PtyController, PtyEvent, PtyInfo, PtyWriter};
+use super::process_host::{spawn_pty, FlowControl, PtyController, PtyEvent, PtyInfo, PtyWriter};
 
 /// Events emitted by the PTY service
 #[derive(Debug, Clone)]
@@ -159,7 +159,7 @@ impl PtyService {
     async fn start_event_forwarding(
         &self,
         id: u32,
-        mut events: super::process::PtyEventStream,
+        mut events: super::process_host::PtyEventStream,
         flow_control: FlowControl,
     ) {
         let event_tx = self.event_tx.clone();

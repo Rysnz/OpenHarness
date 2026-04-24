@@ -17,11 +17,12 @@ pub mod api;
 pub mod config;
 pub mod events;
 pub mod pty;
+mod public_api;
 pub mod session;
 pub mod shell;
 
 // Re-export main types for convenience
-pub use api::{
+pub use public_api::{
     AcknowledgeRequest, CloseSessionRequest, CreateSessionRequest, ExecuteCommandRequest,
     ExecuteCommandResponse, GetHistoryRequest, GetHistoryResponse, ResizeRequest,
     SendCommandRequest, SessionResponse, ShellInfo, SignalRequest, TerminalApi, WriteRequest,

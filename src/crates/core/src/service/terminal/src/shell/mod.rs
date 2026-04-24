@@ -6,10 +6,11 @@
 mod detection;
 pub mod integration;
 mod profiles;
+mod runtime_integration;
 mod scripts_manager;
 
 pub use detection::ShellDetector;
-pub use integration::{
+pub use runtime_integration::{
     get_injection_command, get_integration_script_content, get_integration_script_path,
     CommandState, OscSequence, ShellIntegration, ShellIntegrationEvent, ShellIntegrationManager,
 };

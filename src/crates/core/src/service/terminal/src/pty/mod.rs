@@ -19,11 +19,11 @@
 //! and improving performance.
 
 mod data_bufferer;
-mod process;
+mod process_host;
 mod service;
 
 pub use data_bufferer::DataBufferer;
-pub use process::{
+pub use process_host::{
     spawn_pty, FlowControl, PtyCommand, PtyController, PtyEvent, PtyEventStream, PtyInfo,
     PtyWriter, SpawnResult,
 };
