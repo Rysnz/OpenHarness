@@ -1,5 +1,6 @@
 ﻿//! Agentic Events Definition
 use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
 use std::time::SystemTime;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -270,6 +271,13 @@ pub struct AgenticEventEnvelope {
     pub timestamp: SystemTime,
 }
 
+fn compare_event_envelopes(left: &AgenticEventEnvelope, right: &AgenticEventEnvelope) -> Ordering {
+    match left.priority.cmp(&right.priority) {
+        Ordering::Equal => left.timestamp.cmp(&right.timestamp),
+        other => other,
+    }
+}
+
 impl PartialEq for AgenticEventEnvelope {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
@@ -279,17 +287,14 @@ impl PartialEq for AgenticEventEnvelope {
 impl Eq for AgenticEventEnvelope {}
 
 impl PartialOrd for AgenticEventEnvelope {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl Ord for AgenticEventEnvelope {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        match self.priority.cmp(&other.priority) {
-            std::cmp::Ordering::Equal => self.timestamp.cmp(&other.timestamp),
-            other => other,
-        }
+    fn cmp(&self, other: &Self) -> Ordering {
+        compare_event_envelopes(self, other)
     }
 }
 
