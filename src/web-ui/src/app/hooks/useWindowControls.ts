@@ -5,6 +5,7 @@ import { notificationService } from '@/shared/notification-system';
 import { createLogger } from '@/shared/utils/logger';
 import { sendDebugProbe } from '@/shared/utils/debugProbe';
 import { useI18n } from '@/infrastructure/i18n';
+import { captureRichInputFocus, restoreRichInputFocus } from './windowFocusRecovery';
 
 const log = createLogger('useWindowControls');
 
@@ -193,13 +194,7 @@ export const useWindowControls = (options?: { isToolbarMode?: boolean }) => {
 
   // Window control handlers
   const handleMinimize = useCallback(async () => {
-    // Save active element to restore focus after window restore
-    const activeElement = document.activeElement as HTMLElement;
-    const wasInputFocused = activeElement && (
-      activeElement.classList.contains('rich-text-input') ||
-      activeElement.closest('.rich-text-input') !== null ||
-      activeElement.isContentEditable
-    );
+    const focusSnapshot = captureRichInputFocus();
     
     try {
       const appWindow = getCurrentWindow();
@@ -209,26 +204,7 @@ export const useWindowControls = (options?: { isToolbarMode?: boolean }) => {
       // Listen for restore
       const handleWindowRestore = async () => {
         setTimeout(() => {
-          // Ensure contentEditable is set correctly
-          const chatInputs = document.querySelectorAll('.rich-text-input[contenteditable]');
-          chatInputs.forEach((input) => {
-            const element = input as HTMLElement;
-            if (element.getAttribute('contenteditable') !== 'true') {
-              element.setAttribute('contenteditable', 'true');
-            }
-          });
-          
-          // Restore focus if input was focused
-          if (wasInputFocused && activeElement && activeElement.isConnected) {
-            try {
-              const rect = activeElement.getBoundingClientRect();
-              if (rect.width > 0 && rect.height > 0) {
-                activeElement.focus();
-              }
-            } catch (_error) {
-              // Ignore focus restore failures
-            }
-          }
+          restoreRichInputFocus(focusSnapshot);
         }, 100);
         
         // Run once
@@ -249,13 +225,7 @@ export const useWindowControls = (options?: { isToolbarMode?: boolean }) => {
       return;
     }
     
-    // Save active element to restore focus after window change
-    const activeElement = document.activeElement as HTMLElement;
-    const wasInputFocused = activeElement && (
-      activeElement.classList.contains('rich-text-input') ||
-      activeElement.closest('.rich-text-input') !== null ||
-      activeElement.isContentEditable
-    );
+    const focusSnapshot = captureRichInputFocus();
     
     try {
       isMaximizeInProgress.current = true;
@@ -293,28 +263,7 @@ export const useWindowControls = (options?: { isToolbarMode?: boolean }) => {
       // Delay DOM work to avoid blocking UI rendering
       requestAnimationFrame(() => {
         setTimeout(() => {
-          // Ensure contentEditable is set correctly
-          const chatInputs = document.querySelectorAll('.rich-text-input[contenteditable]');
-          chatInputs.forEach((input) => {
-            const element = input as HTMLElement;
-            // Ensure contentEditable is set correctly
-            if (element.getAttribute('contenteditable') !== 'true') {
-              element.setAttribute('contenteditable', 'true');
-            }
-          });
-          
-          // Restore focus if input was focused (best-effort)
-          if (wasInputFocused && activeElement && activeElement.isConnected) {
-            try {
-              // Restore only if element is still present and visible
-              const rect = activeElement.getBoundingClientRect();
-              if (rect.width > 0 && rect.height > 0) {
-                activeElement.focus();
-              }
-            } catch (_error) {
-              // Ignore focus restore failures
-            }
-          }
+          restoreRichInputFocus(focusSnapshot);
         }, 50); // Reduced delay from 100ms to 50ms
       });
     } catch (error) {
