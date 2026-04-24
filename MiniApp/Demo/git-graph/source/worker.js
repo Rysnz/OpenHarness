@@ -2,17 +2,17 @@
 // Methods are invoked via app.call('git.log', params) etc. from the UI.
 
 const simpleGit = require('simple-git');
-const EOL_REGEX = /\r\n|\r|\n/g;
-const GIT_LOG_SEP = 'XX7Nal-YARtTpjCikii9nJxER19D6diSyk-AWkPb';
+const LINE_SPLIT_PATTERN = /\r\n|\r|\n/g;
+const REFLOG_FIELD_SEPARATOR = 'XX7Nal-YARtTpjCikii9nJxER19D6diSyk-AWkPb';
 
-function getGit(cwd) {
+function openRepository(cwd) {
   if (!cwd || typeof cwd !== 'string') {
     throw new Error('git: cwd (repository path) is required');
   }
   return simpleGit({ baseDir: cwd });
 }
 
-function normalizeLogCommit(c) {
+function toCommitSummary(c) {
   const parents = Array.isArray(c.parents)
     ? c.parents
     : c.parent
@@ -30,16 +30,62 @@ function normalizeLogCommit(c) {
   };
 }
 
+function clampLimit(value, fallback, max) {
+  return Math.min(Math.max(1, Number(value) || fallback), max);
+}
+
+function appendCommitOrdering(args, order) {
+  if (order === 'topo') args.push('--topo-order');
+  else if (order === 'author-date') args.push('--author-date-order');
+  else args.push('--date-order');
+  return args;
+}
+
+function appendRevisionSelection(args, branches, stashes) {
+  if (Array.isArray(branches) && branches.length > 0) {
+    args.push(...branches);
+    args.push('--');
+    return args;
+  }
+  args.push('--branches', '--tags', 'HEAD');
+  stashes.forEach((stash) => {
+    if (stash.baseHash && !args.includes(stash.baseHash)) args.push(stash.baseHash);
+  });
+  return args;
+}
+
+function toStatusSnapshot(status) {
+  return {
+    current: status.current,
+    tracking: status.tracking,
+    not_added: status.not_added || [],
+    staged: status.staged || [],
+    modified: status.modified || [],
+    created: status.created || [],
+    deleted: status.deleted || [],
+    renamed: status.renamed || [],
+    files: status.files || [],
+  };
+}
+
+function toRemoteList(remotesMap) {
+  return Object.entries(remotesMap || {}).map(([name, remote]) => ({
+    name,
+    fetch: (remote && remote.fetch) || '',
+    push: (remote && remote.push) || '',
+  }));
+}
+
 /** Parse git show-ref -d --head output into head, heads, tags, remotes. */
 async function getRefsFromShowRef(cwd, showRemoteBranches, hideRemotes = []) {
-  const git = getGit(cwd);
+  const git = openRepository(cwd);
   const args = ['show-ref'];
   if (!showRemoteBranches) args.push('--heads', '--tags');
   args.push('-d', '--head');
   const stdout = await git.raw(args).catch(() => '');
   const refData = { head: null, heads: [], tags: [], remotes: [] };
   const hidePatterns = hideRemotes.map((r) => 'refs/remotes/' + r + '/');
-  const lines = stdout.trim().split(EOL_REGEX).filter(Boolean);
+  const lines = stdout.trim().split(LINE_SPLIT_PATTERN).filter(Boolean);
   for (const line of lines) {
     const parts = line.split(' ');
     if (parts.length < 2) continue;
@@ -67,13 +113,13 @@ async function getRefsFromShowRef(cwd, showRemoteBranches, hideRemotes = []) {
 
 /** Parse git reflog refs/stash --format=... into stashes with baseHash, untrackedFilesHash, selector. */
 async function getStashesFromReflog(cwd) {
-  const git = getGit(cwd);
-  const format = ['%H', '%P', '%gD', '%an', '%ae', '%at', '%s'].join(GIT_LOG_SEP);
+  const git = openRepository(cwd);
+  const format = ['%H', '%P', '%gD', '%an', '%ae', '%at', '%s'].join(REFLOG_FIELD_SEPARATOR);
   const stdout = await git.raw(['reflog', '--format=' + format, 'refs/stash', '--']).catch(() => '');
   const stashes = [];
-  const lines = stdout.trim().split(EOL_REGEX).filter(Boolean);
+  const lines = stdout.trim().split(LINE_SPLIT_PATTERN).filter(Boolean);
   for (const line of lines) {
-    const parts = line.split(GIT_LOG_SEP);
+    const parts = line.split(REFLOG_FIELD_SEPARATOR);
     if (parts.length < 7 || !parts[1]) continue;
     const parentHashes = parts[1].trim().split(/\s+/);
     stashes.push({
@@ -92,7 +138,7 @@ async function getStashesFromReflog(cwd) {
 
 /** Build uncommitted node from status + diff --name-status + diff --numstat (HEAD to working tree). */
 async function getUncommittedNode(cwd, headHash) {
-  const git = getGit(cwd);
+  const git = openRepository(cwd);
   const [statusOut, nameStatusOut, numStatOut] = await Promise.all([
     git.raw(['status', '-s', '--porcelain', '-z', '--untracked-files=all']).catch(() => ''),
     git.raw(['diff', '--name-status', '--find-renames', '-z', 'HEAD']).catch(() => ''),
@@ -144,15 +190,13 @@ async function getUncommittedNode(cwd, headHash) {
   };
 }
 
-module.exports = {
+const gitGraphWorkerApi = {
   // ─── Log & show ───────────────────────────────────────────────────────────
   async 'git.log'({ cwd, maxCount = 100, order = 'date', firstParent = false, branches = [] }) {
-    const git = getGit(cwd);
-    const n = Math.min(Math.max(1, Number(maxCount) || 100), 1000);
+    const git = openRepository(cwd);
+    const n = clampLimit(maxCount, 100, 1000);
     const args = ['-n', String(n)];
-    if (order === 'topo') args.push('--topo-order');
-    else if (order === 'author-date') args.push('--author-date-order');
-    else args.push('--date-order');
+    appendCommitOrdering(args, order);
     if (firstParent) args.push('--first-parent');
     if (Array.isArray(branches) && branches.length > 0) {
       args.push(...branches);
@@ -160,8 +204,8 @@ module.exports = {
     }
     const log = await git.log(args);
     return {
-      all: (log.all || []).map(normalizeLogCommit),
-      latest: log.latest ? normalizeLogCommit(log.latest) : null,
+      all: (log.all || []).map(toCommitSummary),
+      latest: log.latest ? toCommitSummary(log.latest) : null,
     };
   },
 
@@ -180,8 +224,8 @@ module.exports = {
     showUncommittedChanges = true,
     hideRemotes = [],
   }) {
-    const git = getGit(cwd);
-    const n = Math.min(Math.max(1, Number(maxCount) || 300), 1000);
+    const git = openRepository(cwd);
+    const n = clampLimit(maxCount, 300, 1000);
     let refData = { head: null, heads: [], tags: [], remotes: [] };
     let stashes = [];
     try {
@@ -193,21 +237,11 @@ module.exports = {
       } catch (_) {}
     }
     const logArgs = ['-n', String(n + 1)];
-    if (order === 'topo') logArgs.push('--topo-order');
-    else if (order === 'author-date') logArgs.push('--author-date-order');
-    else logArgs.push('--date-order');
+    appendCommitOrdering(logArgs, order);
     if (firstParent) logArgs.push('--first-parent');
-    if (Array.isArray(branches) && branches.length > 0) {
-      logArgs.push(...branches);
-      logArgs.push('--');
-    } else {
-      logArgs.push('--branches', '--tags', 'HEAD');
-      stashes.forEach((s) => {
-        if (s.baseHash && !logArgs.includes(s.baseHash)) logArgs.push(s.baseHash);
-      });
-    }
+    appendRevisionSelection(logArgs, branches, stashes);
     const log = await git.log(logArgs);
-    let rawCommits = (log.all || []).map(normalizeLogCommit);
+    let rawCommits = (log.all || []).map(toCommitSummary);
     const moreCommitsAvailable = rawCommits.length > n;
     if (moreCommitsAvailable) rawCommits = rawCommits.slice(0, n);
     const commitLookup = {};
@@ -276,27 +310,11 @@ module.exports = {
     }
     let status = null;
     try {
-      status = await git.status();
-      status = {
-        current: status.current,
-        tracking: status.tracking,
-        not_added: status.not_added || [],
-        staged: status.staged || [],
-        modified: status.modified || [],
-        created: status.created || [],
-        deleted: status.deleted || [],
-        renamed: status.renamed || [],
-        files: status.files || [],
-      };
+      status = toStatusSnapshot(await git.status());
     } catch (_) {}
     let remotes = [];
     try {
-      const remotesMap = await git.getRemotes(true);
-      remotes = Object.entries(remotesMap || {}).map(([name, r]) => ({
-        name,
-        fetch: (r && r.fetch) || '',
-        push: (r && r.push) || '',
-      }));
+      remotes = toRemoteList(await git.getRemotes(true));
     } catch (_) {}
     return {
       head: refData.head,
@@ -311,14 +329,14 @@ module.exports = {
   },
 
   async 'git.searchCommits'({ cwd, query, maxCount = 100 }) {
-    const git = getGit(cwd);
-    const n = Math.min(Math.max(1, Number(maxCount) || 100), 500);
+    const git = openRepository(cwd);
+    const n = clampLimit(maxCount, 100, 500);
     const log = await git.log(['-n', String(n), '--grep', String(query), '--all']);
-    return { all: (log.all || []).map(normalizeLogCommit) };
+    return { all: (log.all || []).map(toCommitSummary) };
   },
 
   async 'git.branches'({ cwd }) {
-    const git = getGit(cwd);
+    const git = openRepository(cwd);
     const branch = await git.branch();
     return {
       current: branch.current,
@@ -328,24 +346,13 @@ module.exports = {
   },
 
   async 'git.status'({ cwd }) {
-    const git = getGit(cwd);
-    const status = await git.status();
-    return {
-      current: status.current,
-      tracking: status.tracking,
-      not_added: status.not_added || [],
-      staged: status.staged || [],
-      modified: status.modified || [],
-      created: status.created || [],
-      deleted: status.deleted || [],
-      renamed: status.renamed || [],
-      files: status.files || [],
-    };
+    const git = openRepository(cwd);
+    return toStatusSnapshot(await git.status());
   },
 
   async 'git.show'({ cwd, hash }) {
     if (!hash) throw new Error('git.show: hash is required');
-    const git = getGit(cwd);
+    const git = openRepository(cwd);
     const log = await git.log([hash, '-n', '1']);
     const commit = log.latest;
     if (!commit) return { commit: null, files: [] };
@@ -378,7 +385,7 @@ module.exports = {
 
   // ─── Checkout & branch ────────────────────────────────────────────────────
   async 'git.checkout'({ cwd, ref, createBranch = null }) {
-    const git = getGit(cwd);
+    const git = openRepository(cwd);
     if (createBranch) {
       await git.checkoutLocalBranch(createBranch, ref);
       return { branch: createBranch };
@@ -388,7 +395,7 @@ module.exports = {
   },
 
   async 'git.createBranch'({ cwd, name, startPoint, checkout = false }) {
-    const git = getGit(cwd);
+    const git = openRepository(cwd);
     if (checkout) {
       await git.checkoutLocalBranch(name, startPoint);
     } else {
@@ -398,20 +405,20 @@ module.exports = {
   },
 
   async 'git.deleteBranch'({ cwd, name, force = false }) {
-    const git = getGit(cwd);
+    const git = openRepository(cwd);
     await git.deleteLocalBranch(name, force);
     return { deleted: name };
   },
 
   async 'git.renameBranch'({ cwd, oldName, newName }) {
-    const git = getGit(cwd);
+    const git = openRepository(cwd);
     await git.raw(['branch', '-m', oldName, newName]);
     return { newName };
   },
 
   // ─── Merge & rebase ─────────────────────────────────────────────────────────
   async 'git.merge'({ cwd, ref, noFF = false, squash = false, noCommit = false }) {
-    const git = getGit(cwd);
+    const git = openRepository(cwd);
     const args = [ref];
     if (noFF) args.unshift('--no-ff');
     if (squash) args.unshift('--squash');
@@ -421,7 +428,7 @@ module.exports = {
   },
 
   async 'git.rebase'({ cwd, onto, branch = null }) {
-    const git = getGit(cwd);
+    const git = openRepository(cwd);
     if (branch) {
       await git.rebase([branch]);
     } else {
@@ -432,7 +439,7 @@ module.exports = {
 
   // ─── Push & pull & fetch ───────────────────────────────────────────────────
   async 'git.push'({ cwd, remote, branch, setUpstream = false, force = false, forceWithLease = false }) {
-    const git = getGit(cwd);
+    const git = openRepository(cwd);
     const args = [remote];
     if (branch) args.push(branch);
     if (setUpstream) args.push('--set-upstream');
@@ -443,7 +450,7 @@ module.exports = {
   },
 
   async 'git.pull'({ cwd, remote, branch, noFF = false, squash = false }) {
-    const git = getGit(cwd);
+    const git = openRepository(cwd);
     const args = [remote];
     if (branch) args.push(branch);
     if (noFF) args.push('--no-ff');
@@ -453,7 +460,7 @@ module.exports = {
   },
 
   async 'git.fetch'({ cwd, remote, prune = false, pruneTags = false }) {
-    const git = getGit(cwd);
+    const git = openRepository(cwd);
     const args = remote ? [remote] : [];
     if (prune) args.push('--prune');
     if (pruneTags) args.push('--prune-tags');
@@ -462,7 +469,7 @@ module.exports = {
   },
 
   async 'git.fetchIntoLocalBranch'({ cwd, remote, remoteBranch, localBranch, force = false }) {
-    const git = getGit(cwd);
+    const git = openRepository(cwd);
     const ref = `${remote}/${remoteBranch}:refs/heads/${localBranch}`;
     const args = [remote, ref];
     if (force) args.push('--force');
@@ -472,7 +479,7 @@ module.exports = {
 
   // ─── Commit operations ─────────────────────────────────────────────────────
   async 'git.cherryPick'({ cwd, hash, noCommit = false, recordOrigin = false }) {
-    const git = getGit(cwd);
+    const git = openRepository(cwd);
     const args = ['cherry-pick'];
     if (noCommit) args.push('--no-commit');
     if (recordOrigin) args.push('-x');
@@ -482,7 +489,7 @@ module.exports = {
   },
 
   async 'git.revert'({ cwd, hash, parentIndex = null }) {
-    const git = getGit(cwd);
+    const git = openRepository(cwd);
     const args = ['revert', '--no-edit'];
     if (parentIndex != null) args.push('-m', String(parentIndex));
     args.push(hash);
@@ -491,7 +498,7 @@ module.exports = {
   },
 
   async 'git.reset'({ cwd, hash, mode = 'mixed' }) {
-    const git = getGit(cwd);
+    const git = openRepository(cwd);
     const modes = { soft: 'soft', mixed: 'mixed', hard: 'hard' };
     const m = modes[mode] || 'mixed';
     await git.reset([m, hash]);
@@ -499,20 +506,20 @@ module.exports = {
   },
 
   async 'git.dropCommit'({ cwd, hash }) {
-    const git = getGit(cwd);
+    const git = openRepository(cwd);
     await git.raw(['rebase', '--onto', hash + '^', hash]);
     return { hash };
   },
 
   // ─── Tags ──────────────────────────────────────────────────────────────────
   async 'git.tags'({ cwd }) {
-    const git = getGit(cwd);
+    const git = openRepository(cwd);
     const tags = await git.tags();
     return { all: tags.all || [] };
   },
 
   async 'git.addTag'({ cwd, name, ref, annotated = false, message = null }) {
-    const git = getGit(cwd);
+    const git = openRepository(cwd);
     if (annotated && message != null) {
       if (ref) {
         await git.raw(['tag', '-a', name, ref, '-m', message]);
@@ -530,19 +537,19 @@ module.exports = {
   },
 
   async 'git.deleteTag'({ cwd, name }) {
-    const git = getGit(cwd);
+    const git = openRepository(cwd);
     await git.raw(['tag', '-d', name]);
     return { deleted: name };
   },
 
   async 'git.pushTag'({ cwd, remote, name }) {
-    const git = getGit(cwd);
+    const git = openRepository(cwd);
     await git.push(remote, `refs/tags/${name}`);
     return { name };
   },
 
   async 'git.tagDetails'({ cwd, name }) {
-    const git = getGit(cwd);
+    const git = openRepository(cwd);
     try {
       const show = await git.raw(['show', '--no-patch', name]);
       return { output: show };
@@ -553,7 +560,7 @@ module.exports = {
 
   // ─── Stash ─────────────────────────────────────────────────────────────────
   async 'git.stashList'({ cwd }) {
-    const git = getGit(cwd);
+    const git = openRepository(cwd);
     const list = await git.stashList();
     const items = (list.all || []).map((s) => ({
       hash: s.hash,
@@ -568,7 +575,7 @@ module.exports = {
   },
 
   async 'git.stashPush'({ cwd, message = null, includeUntracked = false }) {
-    const git = getGit(cwd);
+    const git = openRepository(cwd);
     const args = ['push'];
     if (message) args.push('-m', message);
     if (includeUntracked) args.push('--include-untracked');
@@ -577,7 +584,7 @@ module.exports = {
   },
 
   async 'git.stashApply'({ cwd, selector, restoreIndex = false }) {
-    const git = getGit(cwd);
+    const git = openRepository(cwd);
     const args = ['apply'];
     if (restoreIndex) args.push('--index');
     args.push(selector);
@@ -586,7 +593,7 @@ module.exports = {
   },
 
   async 'git.stashPop'({ cwd, selector, restoreIndex = false }) {
-    const git = getGit(cwd);
+    const git = openRepository(cwd);
     const args = ['pop'];
     if (restoreIndex) args.push('--index');
     args.push(selector);
@@ -595,31 +602,25 @@ module.exports = {
   },
 
   async 'git.stashDrop'({ cwd, selector }) {
-    const git = getGit(cwd);
+    const git = openRepository(cwd);
     await git.stash(['drop', selector]);
     return { dropped: selector };
   },
 
   async 'git.stashBranch'({ cwd, branchName, selector }) {
-    const git = getGit(cwd);
+    const git = openRepository(cwd);
     await git.stash(['branch', branchName, selector]);
     return { branch: branchName };
   },
 
   // ─── Remotes ────────────────────────────────────────────────────────────────
   async 'git.remotes'({ cwd }) {
-    const git = getGit(cwd);
-    const remotes = await git.getRemotes(true);
-    const list = Object.entries(remotes || {}).map(([name, r]) => ({
-      name,
-      fetch: (r && r.fetch) || '',
-      push: (r && r.push) || '',
-    }));
-    return { remotes: list };
+    const git = openRepository(cwd);
+    return { remotes: toRemoteList(await git.getRemotes(true)) };
   },
 
   async 'git.addRemote'({ cwd, name, url, pushUrl = null }) {
-    const git = getGit(cwd);
+    const git = openRepository(cwd);
     await git.addRemote(name, url);
     if (pushUrl) {
       await git.raw(['remote', 'set-url', '--push', name, pushUrl]);
@@ -628,13 +629,13 @@ module.exports = {
   },
 
   async 'git.removeRemote'({ cwd, name }) {
-    const git = getGit(cwd);
+    const git = openRepository(cwd);
     await git.removeRemote(name);
     return { removed: name };
   },
 
   async 'git.setRemoteUrl'({ cwd, name, url, push = false }) {
-    const git = getGit(cwd);
+    const git = openRepository(cwd);
     if (push) {
       await git.raw(['remote', 'set-url', '--push', name, url]);
     } else {
@@ -645,14 +646,14 @@ module.exports = {
 
   // ─── Diff & compare ────────────────────────────────────────────────────────
   async 'git.fileDiff'({ cwd, from, to, file }) {
-    const git = getGit(cwd);
+    const git = openRepository(cwd);
     const args = ['--unified=3', from, to, '--', file];
     const out = await git.diff(args);
     return { diff: out };
   },
 
   async 'git.compareCommits'({ cwd, hash1, hash2 }) {
-    const git = getGit(cwd);
+    const git = openRepository(cwd);
     const out = await git.raw(['diff', '--name-status', hash1, hash2]);
     const lines = (out || '').trim().split('\n').filter(Boolean);
     const files = lines.map((line) => {
@@ -669,14 +670,14 @@ module.exports = {
 
   // ─── Uncommitted / clean ───────────────────────────────────────────────────
   async 'git.resetUncommitted'({ cwd, mode = 'mixed' }) {
-    const git = getGit(cwd);
+    const git = openRepository(cwd);
     const modes = { soft: 'soft', mixed: 'mixed', hard: 'hard' };
     await git.reset([modes[mode] || 'mixed', 'HEAD']);
     return { reset: true };
   },
 
   async 'git.cleanUntracked'({ cwd, force = false, directories = false }) {
-    const git = getGit(cwd);
+    const git = openRepository(cwd);
     const args = ['clean'];
     if (force) args.push('-f');
     if (directories) args.push('-fd');
@@ -684,3 +685,5 @@ module.exports = {
     return { cleaned: true };
   },
 };
+
+module.exports = gitGraphWorkerApi;

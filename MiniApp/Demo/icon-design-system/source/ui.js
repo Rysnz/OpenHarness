@@ -2,15 +2,29 @@
 import { h, render, Fragment } from 'preact';
 import { useState, useEffect, useRef, useCallback } from 'preact/hooks';
 
-const app = window.app;
+const miniAppBridge = window.app;
+const PANEL_IDS = {
+  chat: 'chat',
+  generate: 'generate',
+  library: 'library',
+  tokens: 'tokens',
+};
+const DEFAULT_ICON_TOKENS = {
+  strokeWidth: 1.5,
+  cornerRadius: 2,
+  gridSize: 24,
+  opticalPadding: 1,
+  sizeVariants: [16, 20, 24, 32, 48],
+  styleVariants: ['outlined', 'filled'],
+};
 
 // ── Inline SVG icons (no emoji) ─────────────────────────────────────────────
 
-function path(d) {
+function svgPath(d) {
   return h('path', { d });
 }
 
-function ic(size, children, extra = {}) {
+function iconShell(size, children, extra = {}) {
   return h('svg', {
     xmlns: 'http://www.w3.org/2000/svg',
     width: size,
@@ -26,31 +40,31 @@ function ic(size, children, extra = {}) {
   }, children);
 }
 
-const Ico = {
-  chat: (s = 18) => ic(s, path('M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z')),
-  bolt: (s = 18) => ic(s, path('M13 10V3L4 14h7v7l9-11h-7z')),
-  library: (s = 18) => ic(s, path('M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z')),
-  tokens: (s = 18) => ic(s, [
-    path('M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z'),
+const IconGlyphs = {
+  chat: (s = 18) => iconShell(s, svgPath('M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z')),
+  bolt: (s = 18) => iconShell(s, svgPath('M13 10V3L4 14h7v7l9-11h-7z')),
+  library: (s = 18) => iconShell(s, svgPath('M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z')),
+  tokens: (s = 18) => iconShell(s, [
+    svgPath('M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z'),
   ]),
-  user: (s = 16) => ic(s, path('M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z')),
-  assistant: (s = 16) => ic(s, path('M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z')),
-  copy: (s = 14) => ic(s, path('M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2M8 16a2 2 0 002 2h8a2 2 0 002-2v-8a2 2 0 00-2-2h-2M8 16V8a2 2 0 012-2h8')),
-  check: (s = 14) => ic(s, path('M4.5 12.75l6 6 9-13.5')),
-  refresh: (s = 16) => ic(s, path('M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15')),
-  download: (s = 16) => ic(s, path('M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4')),
-  loader: (s = 48) => ic(s, [
-    path('M12 2v4'),
-    path('M12 18v4'),
-    path('M4.93 4.93l2.83 2.83'),
-    path('M16.24 16.24l2.83 2.83'),
-    path('M2 12h4'),
-    path('M18 12h4'),
-    path('M4.93 19.07l2.83-2.83'),
-    path('M16.24 7.76l2.83-2.83'),
+  user: (s = 16) => iconShell(s, svgPath('M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z')),
+  assistant: (s = 16) => iconShell(s, svgPath('M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z')),
+  copy: (s = 14) => iconShell(s, svgPath('M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2M8 16a2 2 0 002 2h8a2 2 0 002-2v-8a2 2 0 00-2-2h-2M8 16V8a2 2 0 012-2h8')),
+  check: (s = 14) => iconShell(s, svgPath('M4.5 12.75l6 6 9-13.5')),
+  refresh: (s = 16) => iconShell(s, svgPath('M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15')),
+  download: (s = 16) => iconShell(s, svgPath('M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4')),
+  loader: (s = 48) => iconShell(s, [
+    svgPath('M12 2v4'),
+    svgPath('M12 18v4'),
+    svgPath('M4.93 4.93l2.83 2.83'),
+    svgPath('M16.24 16.24l2.83 2.83'),
+    svgPath('M2 12h4'),
+    svgPath('M18 12h4'),
+    svgPath('M4.93 19.07l2.83-2.83'),
+    svgPath('M16.24 7.76l2.83-2.83'),
   ], { class: 'icon-spin' }),
-  empty: (s = 48) => ic(s, path('M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4')),
-  close: (s = 10) => ic(s, path('M6 18L18 6M6 6l12 12')),
+  empty: (s = 48) => iconShell(s, svgPath('M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4')),
+  close: (s = 10) => iconShell(s, svgPath('M6 18L18 6M6 6l12 12')),
 };
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
@@ -110,7 +124,7 @@ function TokensPanel({ tokens, onSave, showToast }) {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await app.call('saveTokens', { tokens: local });
+      await miniAppBridge.call('saveTokens', { tokens: local });
       onSave(local);
       showToast('Design tokens saved', 'success');
     } catch (e) {
@@ -183,7 +197,7 @@ function ChatPanel({ tokens, showToast }) {
 
     try {
       let accumulated = '';
-      const handle = await app.ai.chat(
+      const handle = await miniAppBridge.ai.chat(
         history.map(m => ({ role: m.role, content: m.content })),
         {
           systemPrompt: ICON_DESIGN_SYSTEM_PROMPT + contextHint,
@@ -228,7 +242,7 @@ function ChatPanel({ tokens, showToast }) {
     h('div', { class: 'messages' },
       messages.map((m, i) => h(ChatMessage, { key: i, message: m, showToast })),
       streamText && h('div', { class: 'message assistant' },
-        h('div', { class: 'message-avatar' }, Ico.assistant()),
+        h('div', { class: 'message-avatar' }, IconGlyphs.assistant()),
         h('div', { class: 'message-bubble' },
           streamText,
           h('div', { class: 'typing-indicator' },
@@ -263,7 +277,7 @@ function ChatMessage({ message, showToast }) {
   const copySvg = async () => {
     if (!svgMatch) return;
     try {
-      await app.clipboard.writeText(svgMatch[0]);
+      await miniAppBridge.clipboard.writeText(svgMatch[0]);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
@@ -273,7 +287,7 @@ function ChatMessage({ message, showToast }) {
   };
 
   return h('div', { class: `message ${message.role}` },
-    h('div', { class: 'message-avatar' }, isUser ? Ico.user() : Ico.assistant()),
+    h('div', { class: 'message-avatar' }, isUser ? IconGlyphs.user() : IconGlyphs.assistant()),
     h('div', { class: 'message-bubble' },
       svgMatch
         ? h(Fragment, null,
@@ -284,8 +298,8 @@ function ChatMessage({ message, showToast }) {
             h('div', { class: 'svg-actions' },
               h('button', { class: 'btn btn-secondary btn-sm', onClick: copySvg },
                 copied
-                  ? h(Fragment, null, Ico.check(14), ' Copied!')
-                  : h(Fragment, null, Ico.copy(14), ' Copy SVG')
+                  ? h(Fragment, null, IconGlyphs.check(14), ' Copied!')
+                  : h(Fragment, null, IconGlyphs.copy(14), ' Copy SVG')
               )
             )
           )
@@ -309,7 +323,7 @@ function GeneratePanel({ tokens, onIconAdded, showToast }) {
 
     try {
       const tokenCtx = `Stroke width: ${tokens.strokeWidth}px, corner radius: ${tokens.cornerRadius}, grid: ${tokens.gridSize}x${tokens.gridSize}`;
-      const result = await app.ai.complete(
+      const result = await miniAppBridge.ai.complete(
         `Generate a ${tokens.gridSize}x${tokens.gridSize} SVG icon for: ${prompt}\n\nDesign constraints: ${tokenCtx}`,
         { systemPrompt: ICON_DESIGN_SYSTEM_PROMPT, model: 'fast', maxTokens: 2048 }
       );
@@ -326,7 +340,7 @@ function GeneratePanel({ tokens, onIconAdded, showToast }) {
   const saveToLibrary = async () => {
     if (!generated) return;
     try {
-      await app.call('saveIcon', {
+      await miniAppBridge.call('saveIcon', {
         name: name.trim() || prompt.trim().slice(0, 32),
         tags: [],
         category: 'general',
@@ -398,7 +412,7 @@ function LibraryPanel({ refreshKey, showToast }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const list = await app.call('listIcons', {});
+      const list = await miniAppBridge.call('listIcons', {});
       setIcons(list || []);
     } catch (e) {
       showToast('Failed to load library: ' + e.message, 'error');
@@ -413,7 +427,7 @@ function LibraryPanel({ refreshKey, showToast }) {
     setSelected(id);
     if (!iconData[id]) {
       try {
-        const data = await app.call('getIcon', { id });
+        const data = await miniAppBridge.call('getIcon', { id });
         setIconData(prev => ({ ...prev, [id]: data }));
       } catch { /* ignore */ }
     }
@@ -422,7 +436,7 @@ function LibraryPanel({ refreshKey, showToast }) {
   const deleteIcon = async (e, id) => {
     e.stopPropagation();
     try {
-      await app.call('deleteIcon', { id });
+      await miniAppBridge.call('deleteIcon', { id });
       if (selected === id) setSelected(null);
       load();
       showToast('Icon deleted', 'info');
@@ -433,7 +447,7 @@ function LibraryPanel({ refreshKey, showToast }) {
 
   const copyToClipboard = async (text) => {
     try {
-      await app.clipboard.writeText(text);
+      await miniAppBridge.clipboard.writeText(text);
       showToast('Copied!', 'success');
     } catch {
       showToast('Copy failed', 'error');
@@ -442,9 +456,9 @@ function LibraryPanel({ refreshKey, showToast }) {
 
   const exportAll = async () => {
     try {
-      const dir = await app.dialog.open({ directory: true, title: 'Export icons to folder' });
+      const dir = await miniAppBridge.dialog.open({ directory: true, title: 'Export icons to folder' });
       if (!dir) return;
-      const result = await app.call('exportIcons', { targetDir: dir, format: 'svg' });
+      const result = await miniAppBridge.call('exportIcons', { targetDir: dir, format: 'svg' });
       showToast(`Exported ${result.exported} icons`, 'success');
     } catch (e) {
       showToast('Export failed: ' + e.message, 'error');
@@ -461,9 +475,9 @@ function LibraryPanel({ refreshKey, showToast }) {
       h('div', { class: 'panel-header' },
         h('div', { class: 'panel-title' }, `Library (${icons.length})`),
         h('div', { class: 'btn-row' },
-          h('button', { class: 'btn btn-secondary btn-sm btn-icon', onClick: load, 'aria-label': 'Refresh library' }, Ico.refresh(16)),
+          h('button', { class: 'btn btn-secondary btn-sm btn-icon', onClick: load, 'aria-label': 'Refresh library' }, IconGlyphs.refresh(16)),
           h('button', { class: 'btn btn-secondary btn-sm', onClick: exportAll },
-            Ico.download(16), ' Export')
+            IconGlyphs.download(16), ' Export')
         )
       ),
       h('div', { class: 'search-row' },
@@ -476,10 +490,10 @@ function LibraryPanel({ refreshKey, showToast }) {
         })
       ),
       loading
-        ? h('div', { class: 'empty-state' }, h('div', { class: 'big-icon' }, Ico.loader(48)), 'Loading…')
+        ? h('div', { class: 'empty-state' }, h('div', { class: 'big-icon' }, IconGlyphs.loader(48)), 'Loading…')
         : filtered.length === 0
           ? h('div', { class: 'empty-state' },
-              h('div', { class: 'big-icon' }, Ico.empty(48)),
+              h('div', { class: 'big-icon' }, IconGlyphs.empty(48)),
               h('p', null, search ? 'No icons match your search' : 'No icons yet'),
               !search && h('p', { class: 'hint-text' }, 'Use the Generate tab to create your first icon')
             )
@@ -489,7 +503,7 @@ function LibraryPanel({ refreshKey, showToast }) {
                 class: `icon-card ${selected === icon.id ? 'selected' : ''}`,
                 onClick: () => selectIcon(icon.id),
               },
-                h('button', { class: 'delete-btn', onClick: e => deleteIcon(e, icon.id), 'aria-label': 'Delete icon' }, Ico.close(10)),
+                h('button', { class: 'delete-btn', onClick: e => deleteIcon(e, icon.id), 'aria-label': 'Delete icon' }, IconGlyphs.close(10)),
                 h('div', {
                   class: 'preview',
                   dangerouslySetInnerHTML: {
@@ -522,7 +536,7 @@ function LibraryPanel({ refreshKey, showToast }) {
           h('button', {
             class: 'btn btn-secondary btn-sm btn-full',
             onClick: () => copyToClipboard(selectedData.svgSource)
-          }, Ico.copy(14), ' Copy SVG')
+          }, IconGlyphs.copy(14), ' Copy SVG')
         )
       )
     )
@@ -532,26 +546,19 @@ function LibraryPanel({ refreshKey, showToast }) {
 // ── App Root ──────────────────────────────────────────────────────────────────
 
 function App() {
-  const [tab, setTab] = useState('chat');
-  const [tokens, setTokens] = useState({
-    strokeWidth: 1.5,
-    cornerRadius: 2,
-    gridSize: 24,
-    opticalPadding: 1,
-    sizeVariants: [16, 20, 24, 32, 48],
-    styleVariants: ['outlined', 'filled'],
-  });
+  const [tab, setTab] = useState(PANEL_IDS.chat);
+  const [tokens, setTokens] = useState(DEFAULT_ICON_TOKENS);
   const [libraryKey, setLibraryKey] = useState(0);
   const { toasts, show: showToast } = useToasts();
 
   useEffect(() => {
-    app.call('getTokens', {}).then(t => {
+    miniAppBridge.call('getTokens', {}).then(t => {
       if (t && t.strokeWidth) setTokens(t);
     }).catch(() => {});
   }, []);
 
   useEffect(() => {
-    app.on('worker:progress', (data) => {
+    miniAppBridge.on('worker:progress', (data) => {
       if (data && data.total > 0) {
         showToast(`Exporting ${data.name}… (${data.done}/${data.total})`, 'info');
       }
@@ -567,23 +574,23 @@ function App() {
     h('div', { id: 'app' },
       h('div', { class: 'sidebar' },
         h('div', { class: 'nav-section' }, 'Icon Design'),
-        nav('chat', Ico.chat(), 'Style Chat'),
-        nav('generate', Ico.bolt(), 'Generate'),
-        nav('library', Ico.library(), 'Library'),
+        nav(PANEL_IDS.chat, IconGlyphs.chat(), 'Style Chat'),
+        nav(PANEL_IDS.generate, IconGlyphs.bolt(), 'Generate'),
+        nav(PANEL_IDS.library, IconGlyphs.library(), 'Library'),
         h('div', { class: 'nav-section nav-section--bottom' }, 'Settings'),
-        nav('tokens', Ico.tokens(), 'Tokens'),
+        nav(PANEL_IDS.tokens, IconGlyphs.tokens(), 'Tokens'),
       ),
       h('div', { class: 'main' },
-        h('div', { class: `panel chat-panel-wrap ${tab === 'chat' ? 'panel--visible' : 'panel--hidden'}` },
+        h('div', { class: `panel chat-panel-wrap ${tab === PANEL_IDS.chat ? 'panel--visible' : 'panel--hidden'}` },
           h(ChatPanel, { tokens, showToast })
         ),
-        tab === 'generate' && h('div', { class: 'panel' },
+        tab === PANEL_IDS.generate && h('div', { class: 'panel' },
           h(GeneratePanel, { tokens, onIconAdded: () => setLibraryKey(k => k + 1), showToast })
         ),
-        tab === 'library' && h('div', { class: 'library-wrapper' },
+        tab === PANEL_IDS.library && h('div', { class: 'library-wrapper' },
           h(LibraryPanel, { refreshKey: libraryKey, showToast })
         ),
-        tab === 'tokens' && h('div', { class: 'panel' },
+        tab === PANEL_IDS.tokens && h('div', { class: 'panel' },
           h(TokensPanel, { tokens, onSave: setTokens, showToast })
         ),
       )
