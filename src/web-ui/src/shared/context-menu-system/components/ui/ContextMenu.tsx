@@ -11,6 +11,48 @@ const log = createLogger('ContextMenu');
 const SUBMENU_OPEN_DELAY = 150;   
 const SUBMENU_CLOSE_DELAY = 300;  
 const SAFE_TRIANGLE_TOLERANCE = 50; 
+const SUBMENU_HOVER_PADDING = 10;
+const VIEWPORT_PADDING = 8;
+
+type TimerRef = { current: number | null };
+
+const getMenuItemId = (item: ContextMenuItem, index: number) => item.id || `item-${index}`;
+
+const hasSubmenuItems = (item: ContextMenuItem) => Boolean(item.submenu && item.submenu.length > 0);
+
+const clearTimerRef = (timerRef: TimerRef) => {
+  if (timerRef.current) {
+    clearTimeout(timerRef.current);
+    timerRef.current = null;
+  }
+};
+
+const isPointInsideRect = (
+  x: number,
+  y: number,
+  rect: DOMRect,
+  paddingLeft = 0
+) => (
+  x >= rect.left - paddingLeft &&
+  x <= rect.right &&
+  y >= rect.top &&
+  y <= rect.bottom
+);
+
+const constrainMenuPosition = (
+  position: { x: number; y: number },
+  rect: DOMRect,
+  viewport: { width: number; height: number }
+) => ({
+  x: Math.max(
+    VIEWPORT_PADDING,
+    Math.min(position.x, viewport.width - rect.width - VIEWPORT_PADDING)
+  ),
+  y: Math.max(
+    VIEWPORT_PADDING,
+    Math.min(position.y, viewport.height - rect.height - VIEWPORT_PADDING)
+  ),
+});
 
  
 function isPointInTriangle(
@@ -55,14 +97,8 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 
   
   const clearAllTimers = useCallback(() => {
-    if (submenuOpenTimerRef.current) {
-      clearTimeout(submenuOpenTimerRef.current);
-      submenuOpenTimerRef.current = null;
-    }
-    if (submenuCloseTimerRef.current) {
-      clearTimeout(submenuCloseTimerRef.current);
-      submenuCloseTimerRef.current = null;
-    }
+    clearTimerRef(submenuOpenTimerRef);
+    clearTimerRef(submenuCloseTimerRef);
   }, []);
 
   
@@ -78,10 +114,10 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
     const target = event.currentTarget as HTMLElement;
     menuItemRectRef.current = target.getBoundingClientRect();
 
-    const itemId = item.id || `item-${index}`;
+    const itemId = getMenuItemId(item, index);
 
     
-    if (item.submenu && item.submenu.length > 0) {
+    if (hasSubmenuItems(item)) {
       
       if (activeSubmenuId === itemId) {
         return;
@@ -110,19 +146,16 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
     index: number,
     event: React.MouseEvent
   ) => {
-    const itemId = item.id || `item-${index}`;
+    const itemId = getMenuItemId(item, index);
     
     
     if (activeSubmenuId !== itemId) {
-      if (submenuOpenTimerRef.current) {
-        clearTimeout(submenuOpenTimerRef.current);
-        submenuOpenTimerRef.current = null;
-      }
+      clearTimerRef(submenuOpenTimerRef);
       return;
     }
 
     
-    if (item.submenu && item.submenu.length > 0 && menuItemRectRef.current) {
+    if (hasSubmenuItems(item) && menuItemRectRef.current) {
       const mouseX = event.clientX;
       const mouseY = event.clientY;
       
@@ -144,10 +177,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 
   
   const handleSubmenuMouseEnter = useCallback(() => {
-    if (submenuCloseTimerRef.current) {
-      clearTimeout(submenuCloseTimerRef.current);
-      submenuCloseTimerRef.current = null;
-    }
+    clearTimerRef(submenuCloseTimerRef);
   }, []);
 
   
@@ -179,21 +209,12 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
         );
 
         
-        const isInMenuItem = (
-          mouseX >= itemRect.left && mouseX <= itemRect.right &&
-          mouseY >= itemRect.top && mouseY <= itemRect.bottom
-        );
-        const isInSubmenu = (
-          mouseX >= submenuRect.left - 10 && mouseX <= submenuRect.right &&
-          mouseY >= submenuRect.top && mouseY <= submenuRect.bottom
-        );
+        const isInMenuItem = isPointInsideRect(mouseX, mouseY, itemRect);
+        const isInSubmenu = isPointInsideRect(mouseX, mouseY, submenuRect, SUBMENU_HOVER_PADDING);
 
         
         if (isInSafeZone || isInMenuItem || isInSubmenu) {
-          if (submenuCloseTimerRef.current) {
-            clearTimeout(submenuCloseTimerRef.current);
-            submenuCloseTimerRef.current = null;
-          }
+          clearTimerRef(submenuCloseTimerRef);
         }
       }
 
@@ -217,7 +238,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
     }
 
     
-    if (item.submenu && item.submenu.length > 0) {
+    if (hasSubmenuItems(item)) {
       return;
     }
 
@@ -346,27 +367,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
       height: window.innerHeight
     };
 
-    let { x, y } = position;
-
-    
-    if (x + rect.width > viewport.width) {
-      x = viewport.width - rect.width - 8;
-    }
-
-    
-    if (x < 8) {
-      x = 8;
-    }
-
-    
-    if (y + rect.height > viewport.height) {
-      y = viewport.height - rect.height - 8;
-    }
-
-    
-    if (y < 8) {
-      y = 8;
-    }
+    const { x, y } = constrainMenuPosition(position, rect, viewport);
 
     menu.style.left = `${x}px`;
     menu.style.top = `${y}px`;
@@ -386,8 +387,8 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
       return <div key={`separator-${index}`} className="context-menu-separator" />;
     }
 
-    const itemId = item.id || `item-${index}`;
-    const hasSubmenu = item.submenu && item.submenu.length > 0;
+    const itemId = getMenuItemId(item, index);
+    const hasSubmenu = hasSubmenuItems(item);
     const isSubmenuActive = hasSubmenu && activeSubmenuId === itemId;
 
     return (
