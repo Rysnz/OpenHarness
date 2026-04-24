@@ -9,6 +9,38 @@
 // Component Variables
 $_diff-toolbar-height: 36px;
 $_diff-error-max-width: 400px;
+$_diff-insert-color: #3fb950;
+$_diff-delete-color: #f85149;
+$_diff-modified-color: #88b6ff;
+
+@mixin diff-editor-row($gap: null, $justify: null) {
+  display: flex;
+  align-items: center;
+
+  @if $gap != null {
+    gap: $gap;
+  }
+
+  @if $justify != null {
+    justify-content: $justify;
+  }
+}
+
+@mixin diff-editor-badge($color) {
+  color: $color;
+  background: rgba($color, 0.15);
+  border: 1px solid rgba($color, 0.3);
+}
+
+@mixin diff-editor-surface-bg {
+  background-color: var(--color-bg-primary) !important;
+}
+
+@mixin diff-editor-char-highlight($color) {
+  background-color: rgba($color, 0.38) !important;
+  border-radius: 2px;
+  border: none !important;
+}
 
 // Main Container
 .diff-editor-container {
@@ -23,9 +55,7 @@ $_diff-error-max-width: 400px;
 
 // Toolbar
 .diff-editor-toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+  @include diff-editor-row(null, space-between);
   padding: 0 $size-gap-3;
   background: var(--color-bg-primary);
   border-bottom: 1px solid $border-base;
@@ -35,18 +65,14 @@ $_diff-error-max-width: 400px;
   transition: all $motion-base $easing-standard;
 
   &__info {
-    display: flex;
-    align-items: center;
-    gap: $size-gap-4;
+    @include diff-editor-row($size-gap-4);
     color: var(--color-text-secondary);
     font-size: var(--font-size-sm);
     font-family: $font-family-mono;
   }
 
   &__stats {
-    display: flex;
-    align-items: center;
-    gap: $size-gap-2;
+    @include diff-editor-row($size-gap-2);
   }
 
   &__stat {
@@ -56,15 +82,11 @@ $_diff-error-max-width: 400px;
     font-size: var(--font-size-xs);
     
     &--add {
-      color: #3fb950;
-      background: rgba(63, 185, 80, 0.15);
-      border: 1px solid rgba(63, 185, 80, 0.3);
+      @include diff-editor-badge($_diff-insert-color);
     }
     
     &--del {
-      color: #f85149;
-      background: rgba(248, 81, 73, 0.15);
-      border: 1px solid rgba(248, 81, 73, 0.3);
+      @include diff-editor-badge($_diff-delete-color);
     }
   }
 
@@ -86,9 +108,7 @@ $_diff-error-max-width: 400px;
   }
 
   &__btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    @include diff-editor-row(null, center);
     min-width: 32px;
     height: 32px;
     padding: 0 $size-gap-3;
@@ -216,20 +236,20 @@ $_diff-error-max-width: 400px;
 .diff-editor-container {
   :global {
     .monaco-diff-editor {
-      background-color: var(--color-bg-primary) !important;
+      @include diff-editor-surface-bg;
     }
 
     .monaco-diff-editor .editor.original,
     .monaco-diff-editor .editor.modified {
-      background-color: var(--color-bg-primary) !important;
+      @include diff-editor-surface-bg;
     }
 
     .monaco-diff-editor .monaco-editor {
-      background-color: var(--color-bg-primary) !important;
+      @include diff-editor-surface-bg;
     }
 
     .monaco-diff-editor .monaco-editor-background {
-      background-color: var(--color-bg-primary) !important;
+      @include diff-editor-surface-bg;
     }
 
     .monaco-diff-editor .monaco-editor .view-overlays {
@@ -239,17 +259,17 @@ $_diff-error-max-width: 400px;
     .monaco-diff-editor .monaco-editor .margin,
     .monaco-diff-editor .editor.original .margin,
     .monaco-diff-editor .editor.modified .margin {
-      background-color: var(--color-bg-primary) !important;
+      @include diff-editor-surface-bg;
     }
 
     .monaco-diff-editor .monaco-editor .margin-view-overlays,
     .monaco-diff-editor .editor.original .margin-view-overlays,
     .monaco-diff-editor .editor.modified .margin-view-overlays {
-      background-color: var(--color-bg-primary) !important;
+      @include diff-editor-surface-bg;
     }
 
     .monaco-diff-editor .monaco-editor .gutter-background {
-      background-color: var(--color-bg-primary) !important;
+      @include diff-editor-surface-bg;
     }
 
     // Gutter Styles
@@ -375,19 +395,15 @@ $_diff-error-max-width: 400px;
     }
 
     .monaco-diff-editor .char-insert {
-      background-color: rgba(63, 185, 80, 0.38) !important;
-      border-radius: 2px;
-      border: none !important;
+      @include diff-editor-char-highlight($_diff-insert-color);
     }
 
     .monaco-diff-editor .char-delete {
-      background-color: rgba(248, 81, 73, 0.38) !important;
-      border-radius: 2px;
-      border: none !important;
+      @include diff-editor-char-highlight($_diff-delete-color);
     }
     
     .monaco-diff-editor .char-modified {
-      background-color: rgba(136, 182, 255, 0.32) !important;
+      background-color: rgba($_diff-modified-color, 0.32) !important;
       border-radius: 2px;
       border: none !important;
     }
@@ -563,12 +579,12 @@ $_diff-error-max-width: 400px;
 :global {
   .diff-editor-container .monaco-diff-editor .monaco-editor-background,
   .diff-editor-container .monaco-diff-editor .monaco-editor .monaco-editor-background {
-    background-color: var(--color-bg-primary) !important;
+    @include diff-editor-surface-bg;
   }
 
   .diff-editor-container .monaco-diff-editor .editor.original .monaco-editor,
   .diff-editor-container .monaco-diff-editor .editor.modified .monaco-editor {
-    background-color: var(--color-bg-primary) !important;
+    @include diff-editor-surface-bg;
   }
 
   .monaco-diff-editor .gutter {
@@ -591,25 +607,23 @@ $_diff-error-max-width: 400px;
   
   .diff-editor-container .monaco-diff-editor .char-insert,
   .monaco-diff-editor .char-insert {
-    background-color: rgba(63, 185, 80, 0.38) !important;
+    @include diff-editor-char-highlight($_diff-insert-color);
     border-radius: 2px !important;
-    border: none !important;
   }
   
   .diff-editor-container .monaco-diff-editor .char-delete,
   .monaco-diff-editor .char-delete {
-    background-color: rgba(248, 81, 73, 0.38) !important;
+    @include diff-editor-char-highlight($_diff-delete-color);
     border-radius: 2px !important;
-    border: none !important;
   }
   
   .monaco-diff-editor .view-overlays .cdr.insert,
   .monaco-diff-editor .cdr.insert {
-    background-color: rgba(63, 185, 80, 0.18) !important;
+    background-color: rgba($_diff-insert-color, 0.18) !important;
   }
   
   .monaco-diff-editor .view-overlays .cdr.delete,
   .monaco-diff-editor .cdr.delete {
-    background-color: rgba(248, 81, 73, 0.18) !important;
+    background-color: rgba($_diff-delete-color, 0.18) !important;
   }
 }
