@@ -16,7 +16,7 @@ import Prism from 'prismjs';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { diffLines, Change } from 'diff';
 import { getPrismLanguage } from '@/infrastructure/language-detection';
-import { useTheme } from '@/infrastructure/theme';
+import { useTheme } from '@/platform/theming';
 import { createLogger } from '@/shared/utils/logger';
 import { buildCodePreviewPrismStyle, CODE_PREVIEW_FONT_FAMILY } from './codePreviewPrismTheme';
 import './InlineDiffPreview.scss';

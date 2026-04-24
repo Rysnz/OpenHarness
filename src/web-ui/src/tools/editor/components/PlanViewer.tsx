@@ -8,7 +8,7 @@ import type { EditorInstance } from '../meditor';
 import { createLogger } from '@/shared/utils/logger';
 import { OpenHarnessLoading, Button, Tooltip } from '@/component-library';
 import { useI18n } from '@/infrastructure/i18n';
-import { useTheme } from '@/infrastructure/theme/hooks/useTheme';
+import { useTheme } from '@/platform/theming/hooks/useTheme';
 import { workspaceAPI } from '@/infrastructure/api/service-api/WorkspaceAPI';
 import { flowChatManager } from '@/flow_chat/services/FlowChatManager';
 import { fileSystemService } from '@/tools/file-system/services/FileSystemService';

@@ -15,7 +15,7 @@ import { sendDebugProbe } from '@/shared/utils/debugProbe';
 import { globalEventBus } from '@/infrastructure/event-bus';
 import { OpenHarnessLoading, Button } from '@/component-library';
 import { useI18n } from '@/infrastructure/i18n';
-import { useTheme } from '@/infrastructure/theme/hooks/useTheme';
+import { useTheme } from '@/platform/theming/hooks/useTheme';
 import CodeEditor from './CodeEditor';
 import {
   diskVersionFromMetadata,

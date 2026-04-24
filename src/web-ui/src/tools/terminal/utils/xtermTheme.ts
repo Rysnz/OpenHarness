@@ -1,5 +1,5 @@
 import type { ITheme } from '@xterm/xterm';
-import type { ThemeConfig, ThemeType } from '@/infrastructure/theme/types';
+import type { ThemeConfig, ThemeType } from '@/platform/theming/types';
 
 export const DEFAULT_XTERM_MINIMUM_CONTRAST_RATIO = 6;
 

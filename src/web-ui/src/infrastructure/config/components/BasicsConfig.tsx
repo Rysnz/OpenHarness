@@ -17,8 +17,8 @@ import {
   ThemeMetadata,
   ThemeConfig as ThemeConfigType,
   SYSTEM_THEME_ID,
-} from '@/infrastructure/theme';
-import { themeService } from '@/infrastructure/theme/core/ThemeService';
+} from '@/platform/theming';
+import { themeService } from '@/platform/theming/core/ThemeService';
 import { useLanguageSelector } from '@/infrastructure/i18n/hooks/useI18n';
 import type { LocaleId } from '@/platform/localization/types';
 import {

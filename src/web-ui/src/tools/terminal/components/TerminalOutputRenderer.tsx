@@ -35,7 +35,7 @@ import React, { useEffect, useRef, useCallback, memo, useId } from 'react';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { registerTerminalActions, unregisterTerminalActions } from '../services/TerminalActionManager';
-import { themeService } from '@/infrastructure/theme/core/ThemeService';
+import { themeService } from '@/platform/theming/core/ThemeService';
 import {
   buildXtermTheme,
   getXtermFontWeights,

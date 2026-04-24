@@ -1,6 +1,6 @@
 import { configAPI } from '@/infrastructure/api/service-api/ConfigAPI';
 import { createLogger } from '@/shared/utils/logger';
-import { themeService } from '@/infrastructure/theme/core/ThemeService';
+import { themeService } from '@/platform/theming/core/ThemeService';
 import {
   FontPreference,
   FontPreferenceEvent,

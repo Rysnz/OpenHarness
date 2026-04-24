@@ -18,7 +18,7 @@ import { MermaidBlock } from './MermaidBlock';
 import { ReproductionStepsBlock } from './ReproductionStepsBlock';
 import { globalAPI, systemAPI, workspaceAPI } from '../../../infrastructure/api';
 import { getPrismLanguageFromAlias } from '@/infrastructure/language-detection';
-import { useTheme } from '@/infrastructure/theme';
+import { useTheme } from '@/platform/theming';
 import { createLogger } from '@/shared/utils/logger';
 import path from 'path-browserify';
 import 'katex/dist/katex.min.css';

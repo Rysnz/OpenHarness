@@ -9,7 +9,7 @@ import { miniAppAPI } from '@/infrastructure/api/service-api/MiniAppAPI';
 import { open as dialogOpen, save as dialogSave, message as dialogMessage } from '@tauri-apps/plugin-dialog';
 import type { MiniApp } from '@/infrastructure/api/service-api/MiniAppAPI';
 import { useCurrentWorkspace } from '@/infrastructure/contexts/WorkspaceContext';
-import { useTheme } from '@/infrastructure/theme/hooks/useTheme';
+import { useTheme } from '@/platform/theming/hooks/useTheme';
 import { buildMiniAppThemeVars } from '../utils/buildMiniAppThemeVars';
 import { api } from '@/infrastructure/api/service-api/ApiClient';
 

@@ -17,7 +17,7 @@ import { useNotification } from '@/shared/notification-system';
 import { createLogger } from '@/shared/utils/logger';
 import { useI18n } from '@/infrastructure/i18n';
 import { AlertCircle } from 'lucide-react';
-import { themeService } from '@/infrastructure/theme';
+import { themeService } from '@/platform/theming';
 import './DiffEditor.scss';
 
 const log = createLogger('DiffEditor');

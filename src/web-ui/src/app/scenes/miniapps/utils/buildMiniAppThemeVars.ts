@@ -2,7 +2,7 @@
  * Build MiniApp theme payload from main app ThemeConfig.
  * Maps to --openharness-* CSS variables for iframe theme sync.
  */
-import type { ThemeConfig, ThemeType } from '@/infrastructure/theme/types';
+import type { ThemeConfig, ThemeType } from '@/platform/theming/types';
 
 export interface MiniAppThemePayload {
   type: ThemeType;

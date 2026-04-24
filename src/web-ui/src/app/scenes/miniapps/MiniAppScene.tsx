@@ -7,7 +7,7 @@ import { RefreshCw, Loader2, AlertTriangle } from 'lucide-react';
 import { miniAppAPI } from '@/infrastructure/api/service-api/MiniAppAPI';
 import { api } from '@/infrastructure/api/service-api/ApiClient';
 import type { MiniApp } from '@/infrastructure/api/service-api/MiniAppAPI';
-import { useTheme } from '@/infrastructure/theme/hooks/useTheme';
+import { useTheme } from '@/platform/theming/hooks/useTheme';
 import { useCurrentWorkspace } from '@/infrastructure/contexts/WorkspaceContext';
 import { createLogger } from '@/shared/utils/logger';
 import { IconButton, Button } from '@/component-library';

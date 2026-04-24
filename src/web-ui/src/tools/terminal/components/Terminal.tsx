@@ -16,7 +16,7 @@ import {
   DEFAULT_XTERM_MINIMUM_CONTRAST_RATIO,
 } from '../utils';
 import { systemAPI } from '@/infrastructure/api/service-api/SystemAPI';
-import { themeService } from '@/infrastructure/theme/core/ThemeService';
+import { themeService } from '@/platform/theming/core/ThemeService';
 import { createLogger } from '@/shared/utils/logger';
 import { sendDebugProbe } from '@/shared/utils/debugProbe';
 import '@xterm/xterm/css/xterm.css';

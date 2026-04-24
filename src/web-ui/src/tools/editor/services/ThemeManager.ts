@@ -6,8 +6,8 @@
 import * as monaco from 'monaco-editor';
 import { OpenHarnessDarkTheme, OpenHarnessDarkThemeMetadata } from '../themes/openharness-dark.theme';
 import { createLogger } from '@/shared/utils/logger';
-import { themeService } from '@/infrastructure/theme/core/ThemeService';
-import { monacoThemeSync } from '@/infrastructure/theme/integrations/MonacoThemeSync';
+import { themeService } from '@/platform/theming/core/ThemeService';
+import { monacoThemeSync } from '@/platform/theming/integrations/MonacoThemeSync';
 
 const log = createLogger('ThemeManager');
 

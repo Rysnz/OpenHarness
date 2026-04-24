@@ -14,7 +14,7 @@
 import React, { useMemo, memo, useRef, useEffect, useState, useCallback, useDeferredValue } from 'react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { getPrismLanguage } from '@/infrastructure/language-detection';
-import { useTheme } from '@/infrastructure/theme';
+import { useTheme } from '@/platform/theming';
 import { buildCodePreviewPrismStyle, CODE_PREVIEW_FONT_FAMILY } from './codePreviewPrismTheme';
 import './CodePreview.scss';
 

@@ -6,9 +6,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Editor from '@monaco-editor/react';
 import type * as Monaco from 'monaco-editor';
 import { monacoInitManager } from '@/tools/editor/services/MonacoInitManager';
-import { useTheme } from '@/infrastructure/theme/hooks/useTheme';
-import { themeService } from '@/infrastructure/theme/core/ThemeService';
-import { monacoThemeSync } from '@/infrastructure/theme/integrations/MonacoThemeSync';
+import { useTheme } from '@/platform/theming/hooks/useTheme';
+import { themeService } from '@/platform/theming/core/ThemeService';
+import { monacoThemeSync } from '@/platform/theming/integrations/MonacoThemeSync';
 
 export interface MermaidSyntaxHighlighterProps {
   value: string;

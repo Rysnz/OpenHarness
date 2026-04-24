@@ -9,8 +9,8 @@ import { FullPageLayout, LargeCardLayout, GridLayout, DemoLayout, ColumnLayout }
 import { Select } from '@components/Select';
 import type { SelectOption } from '@components/Select';
 import { useI18n } from '@/infrastructure/i18n';
-import { useTheme } from '@/infrastructure/theme';
-import type { ThemeId } from '@/infrastructure/theme';
+import { useTheme } from '@/platform/theming';
+import type { ThemeId } from '@/platform/theming';
 import './preview.css';
 
 export const PreviewApp: React.FC = () => {

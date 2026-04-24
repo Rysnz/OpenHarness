@@ -22,7 +22,7 @@ import { useWorkspaceContext } from '@/infrastructure/contexts/WorkspaceContext'
 import { WorkspaceKind } from '@/shared/types';
 import { useMyAgentStore } from '@/app/scenes/my-agent/myAgentStore';
 import { useAgentIdentityDocument } from '@/app/scenes/my-agent/useAgentIdentityDocument';
-import { useTheme } from '@/infrastructure/theme/hooks/useTheme';
+import { useTheme } from '@/platform/theming/hooks/useTheme';
 import { MEditor } from '@/tools/editor/meditor';
 import SessionsSection from '@/app/components/NavPanel/sections/sessions/SessionsSection';
 import PartnerQuickInput from './PartnerQuickInput';
