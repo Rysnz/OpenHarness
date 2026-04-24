@@ -34,6 +34,37 @@ import { useGallerySceneAutoRefresh } from '@/app/hooks/useGallerySceneAutoRefre
 import './MiniAppGalleryView.scss';
 
 const log = createLogger('MiniAppGalleryView');
+const ALL_CATEGORY = 'all';
+
+const miniAppSceneTabId = (appId: string): SceneTabId => `miniapp:${appId}`;
+
+const findRunningApps = (apps: MiniAppMeta[], runningIds: string[]) =>
+  runningIds
+    .map((id) => apps.find((app) => app.id === id))
+    .filter((app): app is MiniAppMeta => Boolean(app));
+
+const collectCategories = (apps: MiniAppMeta[]) => [
+  ALL_CATEGORY,
+  ...Array.from(new Set(apps.map((app) => app.category).filter(Boolean))),
+];
+
+const matchesGalleryQuery = (app: MiniAppMeta, search: string, categoryFilter: string) => {
+  const keyword = search.trim().toLowerCase();
+  const matchSearch =
+    !keyword ||
+    app.name.toLowerCase().includes(keyword) ||
+    app.description.toLowerCase().includes(keyword) ||
+    app.tags.some((tag) => tag.toLowerCase().includes(keyword));
+  const matchCategory = categoryFilter === ALL_CATEGORY || app.category === categoryFilter;
+
+  return matchSearch && matchCategory;
+};
+
+const withoutMiniApp = (apps: MiniAppMeta[], appId: string) =>
+  apps.filter((app) => app.id !== appId);
+
+const joinClasses = (parts: Array<string | false>) =>
+  parts.filter(Boolean).join(' ');
 
 const MiniAppGalleryView: React.FC = () => {
   const apps = useMiniAppStore((state) => state.apps);
@@ -48,7 +79,7 @@ const MiniAppGalleryView: React.FC = () => {
   const { t } = useI18n('scenes/miniapp');
 
   const [search, setSearch] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [categoryFilter, setCategoryFilter] = useState(ALL_CATEGORY);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [selectedApp, setSelectedApp] = useState<MiniAppMeta | null>(null);
 
@@ -56,35 +87,21 @@ const MiniAppGalleryView: React.FC = () => {
   const runningIdSet = useMemo(() => new Set(runningWorkerIds), [runningWorkerIds]);
 
   const runningApps = useMemo(
-    () =>
-      runningWorkerIds
-        .map((id) => apps.find((app) => app.id === id))
-        .filter((app): app is MiniAppMeta => Boolean(app)),
+    () => findRunningApps(apps, runningWorkerIds),
     [runningWorkerIds, apps]
   );
 
-  const categories = useMemo(() => {
-    const values = Array.from(new Set(apps.map((app) => app.category).filter(Boolean)));
-    return ['all', ...values];
-  }, [apps]);
+  const categories = useMemo(() => collectCategories(apps), [apps]);
 
-  const filtered = useMemo(() => {
-    return apps.filter((app) => {
-      const keyword = search.toLowerCase();
-      const matchSearch =
-        !search ||
-        app.name.toLowerCase().includes(keyword) ||
-        app.description.toLowerCase().includes(keyword) ||
-        app.tags.some((tag) => tag.toLowerCase().includes(keyword));
-      const matchCategory = categoryFilter === 'all' || app.category === categoryFilter;
-      return matchSearch && matchCategory;
-    });
-  }, [apps, search, categoryFilter]);
+  const filtered = useMemo(
+    () => apps.filter((app) => matchesGalleryQuery(app, search, categoryFilter)),
+    [apps, search, categoryFilter]
+  );
 
   const handleOpenApp = useCallback(
     (appId: string) => {
       setSelectedApp(null);
-      const tabId: SceneTabId = `miniapp:${appId}`;
+      const tabId = miniAppSceneTabId(appId);
       if (openTabIds.has(tabId)) {
         activateScene(tabId);
       } else {
@@ -96,7 +113,7 @@ const MiniAppGalleryView: React.FC = () => {
 
   const handleStopRunning = useCallback(
     async (appId: string) => {
-      const tabId: SceneTabId = `miniapp:${appId}`;
+      const tabId = miniAppSceneTabId(appId);
       try {
         await miniAppAPI.workerStop(appId);
       } catch (error) {
@@ -124,9 +141,9 @@ const MiniAppGalleryView: React.FC = () => {
       if (selectedApp?.id === appId) {
         setSelectedApp(null);
       }
-      setApps(apps.filter((app) => app.id !== appId));
+      setApps(withoutMiniApp(apps, appId));
       markWorkerStopped(appId);
-      const tabId: SceneTabId = `miniapp:${appId}`;
+      const tabId = miniAppSceneTabId(appId);
       if (openTabIds.has(tabId)) {
         closeScene(tabId);
       }
@@ -272,15 +289,13 @@ const MiniAppGalleryView: React.FC = () => {
                     <button
                       key={category}
                       type="button"
-                      className={[
+                      className={joinClasses([
                         'gallery-cat-chip',
                         categoryFilter === category && 'gallery-cat-chip--active',
-                      ]
-                        .filter(Boolean)
-                        .join(' ')}
+                      ])}
                       onClick={() => setCategoryFilter(category)}
                     >
-                      {category === 'all' ? t('all') : category}
+                      {category === ALL_CATEGORY ? t('all') : category}
                     </button>
                   ))}
                 </div>
