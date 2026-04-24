@@ -1,4 +1,4 @@
-/* styles/tokens.css */
+/* tokens.css */
 /* Git Graph MiniApp — theme tokens (host --openharness-* when running in OpenHarness) */
 :root {
   --bg:          var(--openharness-bg, #0d1117);
@@ -44,7 +44,7 @@ body {
 
 #app { display: flex; flex-direction: column; height: 100vh; }
 
-/* styles/layout.css */
+/* layout.css */
 /* ── Toolbar ─────────────────────── */
 .toolbar {
   display: flex;
@@ -353,7 +353,7 @@ body {
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 
-/* styles/graph.css */
+/* graph.css */
 /* ── Graph SVG in rows ───────────── */
 .commit-row__graph svg .graph-line {
   fill: none;
@@ -378,7 +378,7 @@ body {
   r: 5;
 }
 
-/* styles/detail-panel.css */
+/* detail-panel.css */
 /* ── Detail panel ────────────────── */
 .detail-panel {
   min-width: 420px;
@@ -613,7 +613,7 @@ body {
 .stat-add { color: var(--green); }
 .stat-del { color: var(--red); }
 
-/* styles/overlay.css */
+/* overlay.css */
 /* ── Loading ─────────────────────── */
 .loading-overlay {
   position: fixed;

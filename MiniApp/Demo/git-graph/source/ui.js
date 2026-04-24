@@ -1,4 +1,4 @@
-/* ui/state.js */
+/* state.js */
 /**
  * Git Graph MiniApp — shared state, constants, DOM helpers.
  */
@@ -113,7 +113,7 @@
 })();
 
 
-/* ui/theme.js */
+/* theme.js */
 /**
  * Git Graph MiniApp — theme adapter: read --branch-* and node stroke from CSS for graph colors.
  */
@@ -146,7 +146,7 @@
   };
 })();
 
-/* ui/graph/layout.js */
+/* graph/layout.js */
 /**
  * Git Graph MiniApp — global topology graph layout (Vertex/Branch/determinePath).
  * Outputs per-row drawInfo compatible with renderRowSvg: { lane, lanesBefore, parentLanes }.
@@ -432,7 +432,7 @@
   };
 })();
 
-/* ui/graph/renderRowSvg.js */
+/* graph/renderRowSvg.js */
 /**
  * Git Graph MiniApp — build SVG for one commit row (theme-aware colors).
  */
@@ -539,7 +539,7 @@
   };
 })();
 
-/* ui/services/gitClient.js */
+/* services/gitClient.js */
 /**
  * Git Graph MiniApp — worker call wrapper.
  */
@@ -553,7 +553,7 @@
   };
 })();
 
-/* ui/components/contextMenu.js */
+/* components/contextMenu.js */
 /**
  * Git Graph MiniApp — context menu.
  */
@@ -602,7 +602,7 @@
   });
 })();
 
-/* ui/components/modal.js */
+/* components/modal.js */
 /**
  * Git Graph MiniApp — modal dialog.
  */
@@ -641,7 +641,7 @@
   };
 })();
 
-/* ui/components/findWidget.js */
+/* components/findWidget.js */
 /**
  * Git Graph MiniApp — find widget and branch filter dropdown.
  */
@@ -748,7 +748,7 @@
   };
 })();
 
-/* ui/panels/remotePanel.js */
+/* panels/remotePanel.js */
 /**
  * Git Graph MiniApp — remote panel.
  */
@@ -843,7 +843,7 @@
   };
 })();
 
-/* ui/panels/detailPanel.js */
+/* panels/detailPanel.js */
 /**
  * Git Graph MiniApp — detail panel (commit / compare).
  */
@@ -1104,7 +1104,7 @@
   };
 })();
 
-/* ui/main.js */
+/* main.js */
 /**
  * Git Graph MiniApp — commit list, context menus, git actions, loadRepo.
  */
@@ -1785,7 +1785,7 @@
   };
 })();
 
-/* ui/bootstrap.js */
+/* bootstrap.js */
 /**
  * Git Graph MiniApp — bootstrap: bind events, init resizer, restore last repo, theme subscription.
  */
