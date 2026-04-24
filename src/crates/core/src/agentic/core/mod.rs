@@ -3,6 +3,7 @@
 //! Contains all core data structures and state definitions
 
 pub mod dialog_turn;
+mod message_model;
 pub mod message;
 pub mod messages_helper;
 pub mod model_round;
@@ -10,7 +11,7 @@ pub mod prompt_markup;
 pub mod session;
 pub mod state;
 pub use dialog_turn::{DialogTurn, DialogTurnState, TurnStats};
-pub use message::{
+pub use message_model::{
     CompressedMessage, CompressedMessageRole, CompressedTodoItem, CompressedTodoSnapshot,
     CompressedToolCall, CompressionEntry, CompressionPayload, Message, MessageContent, MessageRole,
     MessageSemanticKind, ToolCall, ToolResult,
