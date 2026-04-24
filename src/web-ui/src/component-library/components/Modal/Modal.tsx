@@ -7,6 +7,44 @@ import { createPortal } from 'react-dom';
 import { useI18n } from '@/infrastructure/i18n';
 import './Modal.scss';
 
+type ModalPoint = { x: number; y: number };
+type ModalSize = { width: number; height: number };
+type ResizeDirection = 'n' | 's' | 'w' | 'e' | 'nw' | 'ne' | 'sw' | 'se';
+
+const MIN_RESIZE_SIZE: ModalSize = { width: 300, height: 200 };
+const RESIZE_HANDLES: ResizeDirection[] = ['n', 's', 'w', 'e', 'nw', 'ne', 'sw', 'se'];
+
+const joinClasses = (parts: Array<string | false | null | undefined>) =>
+  parts.filter(Boolean).join(' ');
+
+const clamp = (value: number, min: number, max: number) =>
+  Math.max(min, Math.min(value, max));
+
+const centeredModalPosition = (width: number, height: number): ModalPoint => ({
+  x: Math.max(0, (window.innerWidth - width) / 2),
+  y: Math.max(0, (window.innerHeight - height) / 2),
+});
+
+const floatingModalStyle = (
+  position: ModalPoint | null,
+  dimensions: ModalSize | null,
+  floating: boolean,
+  resizable: boolean
+): React.CSSProperties => {
+  if (!floating || !position) {
+    return {};
+  }
+
+  return {
+    position: 'fixed',
+    top: position.y,
+    left: position.x,
+    transform: 'none',
+    margin: 0,
+    ...(dimensions && resizable ? { width: dimensions.width, height: dimensions.height } : {}),
+  };
+};
+
 export interface ModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -44,12 +82,12 @@ export const Modal: React.FC<ModalProps> = ({
   placement = 'center',
 }) => {
   const { t } = useI18n('components');
-  const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
+  const [position, setPosition] = useState<ModalPoint | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
-  const [dimensions, setDimensions] = useState<{ width: number; height: number } | null>(null);
+  const [dimensions, setDimensions] = useState<ModalSize | null>(null);
   const [isResizing, setIsResizing] = useState(false);
-  const [resizeDirection, setResizeDirection] = useState<string>('');
+  const [resizeDirection, setResizeDirection] = useState<ResizeDirection | null>(null);
   const [resizeStart, setResizeStart] = useState({ x: 0, y: 0, width: 0, height: 0 });
   const modalRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
@@ -104,8 +142,8 @@ export const Modal: React.FC<ModalProps> = ({
     const maxY = window.innerHeight - (modalRef.current?.offsetHeight || 0);
     
     setPosition({
-      x: Math.max(0, Math.min(newX, maxX)),
-      y: Math.max(0, Math.min(newY, maxY))
+      x: clamp(newX, 0, maxX),
+      y: clamp(newY, 0, maxY)
     });
   }, [isDragging, draggable, dragOffset]);
 
@@ -131,13 +169,7 @@ export const Modal: React.FC<ModalProps> = ({
     if (isOpen && (draggable || resizable) && modalRef.current) {
       const modalWidth = modalRef.current.offsetWidth;
       const modalHeight = modalRef.current.offsetHeight;
-      const centerX = (window.innerWidth - modalWidth) / 2;
-      const centerY = (window.innerHeight - modalHeight) / 2;
-      
-      setPosition({ 
-        x: Math.max(0, centerX), 
-        y: Math.max(0, centerY) 
-      });
+      setPosition(centeredModalPosition(modalWidth, modalHeight));
       
       if (resizable) {
         setDimensions({
@@ -151,7 +183,7 @@ export const Modal: React.FC<ModalProps> = ({
     }
   }, [isOpen, draggable, resizable]);
 
-  const handleResizeStart = useCallback((e: React.MouseEvent, direction: string) => {
+  const handleResizeStart = useCallback((e: React.MouseEvent, direction: ResizeDirection) => {
     if (!resizable || !modalRef.current) return;
     
     e.preventDefault();
@@ -170,7 +202,7 @@ export const Modal: React.FC<ModalProps> = ({
   }, [resizable]);
 
   const handleResizeMove = useCallback((e: MouseEvent) => {
-    if (!isResizing || !resizable || !modalRef.current || !position) return;
+    if (!isResizing || !resizable || !modalRef.current || !position || !resizeDirection) return;
     
     const deltaX = e.clientX - resizeStart.x;
     const deltaY = e.clientY - resizeStart.y;
@@ -180,23 +212,20 @@ export const Modal: React.FC<ModalProps> = ({
     let newX = position.x;
     let newY = position.y;
     
-    const minWidth = 300;
-    const minHeight = 200;
-    
     if (resizeDirection.includes('e')) {
-      newWidth = Math.max(minWidth, resizeStart.width + deltaX);
+      newWidth = Math.max(MIN_RESIZE_SIZE.width, resizeStart.width + deltaX);
     }
     if (resizeDirection.includes('w')) {
-      const proposedWidth = Math.max(minWidth, resizeStart.width - deltaX);
+      const proposedWidth = Math.max(MIN_RESIZE_SIZE.width, resizeStart.width - deltaX);
       const widthDiff = resizeStart.width - proposedWidth;
       newWidth = proposedWidth;
       newX = position.x + widthDiff;
     }
     if (resizeDirection.includes('s')) {
-      newHeight = Math.max(minHeight, resizeStart.height + deltaY);
+      newHeight = Math.max(MIN_RESIZE_SIZE.height, resizeStart.height + deltaY);
     }
     if (resizeDirection.includes('n')) {
-      const proposedHeight = Math.max(minHeight, resizeStart.height - deltaY);
+      const proposedHeight = Math.max(MIN_RESIZE_SIZE.height, resizeStart.height - deltaY);
       const heightDiff = resizeStart.height - proposedHeight;
       newHeight = proposedHeight;
       newY = position.y + heightDiff;
@@ -223,7 +252,7 @@ export const Modal: React.FC<ModalProps> = ({
 
   const handleResizeEnd = useCallback(() => {
     setIsResizing(false);
-    setResizeDirection('');
+    setResizeDirection(null);
   }, []);
 
   useEffect(() => {
@@ -242,29 +271,20 @@ export const Modal: React.FC<ModalProps> = ({
 
   if (!isOpen) return null;
 
-  const appliedStyle = (draggable || resizable) && position ? {
-    position: 'fixed' as const,
-    top: position.y,
-    left: position.x,
-    transform: 'none',
-    margin: 0,
-    ...(dimensions && resizable ? { width: dimensions.width, height: dimensions.height } : {})
-  } : {};
+  const appliedStyle = floatingModalStyle(position, dimensions, draggable || resizable, resizable);
 
   return createPortal(
     <div
-      className={[
+      className={joinClasses([
         'modal-overlay',
         placement !== 'center' ? `modal-overlay--${placement}` : '',
         overlayClassName ?? '',
-      ]
-        .filter(Boolean)
-        .join(' ')}
+      ])}
       onClick={closeOnOverlayClick ? onClose : undefined}
     >
       <div
         ref={modalRef}
-        className={[
+        className={joinClasses([
           'modal',
           `modal--${size}`,
           draggable ? 'modal--draggable' : '',
@@ -273,32 +293,26 @@ export const Modal: React.FC<ModalProps> = ({
           isResizing ? 'modal--resizing' : '',
           contentInset ? 'modal--content-inset' : '',
           showCloseButton ? 'modal--with-close' : '',
-        ]
-          .filter(Boolean)
-          .join(' ')}
+        ])}
         onClick={(e) => e.stopPropagation()}
         onMouseDown={handleMouseDown}
         style={appliedStyle}
       >
         {(title || showCloseButton) && (
           <div
-            className={[
+            className={joinClasses([
               'modal__header-shell',
               !title && showCloseButton && !draggable ? 'modal__header-shell--close-only' : '',
-            ]
-              .filter(Boolean)
-              .join(' ')}
+            ])}
           >
             {(title || (draggable && showCloseButton)) && (
               <div
                 ref={headerRef}
-                className={[
+                className={joinClasses([
                   'modal__header',
                   draggable ? 'modal__header--draggable' : '',
                   !title && showCloseButton ? 'modal__header--empty' : '',
-                ]
-                  .filter(Boolean)
-                  .join(' ')}
+                ])}
               >
                 {title && (
                   <div className="modal__title-group">
@@ -325,27 +339,24 @@ export const Modal: React.FC<ModalProps> = ({
         )}
         
         <div
-          className={[
+          className={joinClasses([
             'modal__content',
             contentInset ? 'modal__content--inset' : '',
             contentClassName ?? '',
-          ]
-            .filter(Boolean)
-            .join(' ')}
+          ])}
         >
           {children}
         </div>
         
         {resizable && (
           <>
-            <div className="modal__resize-handle modal__resize-handle--n" onMouseDown={(e) => handleResizeStart(e, 'n')} />
-            <div className="modal__resize-handle modal__resize-handle--s" onMouseDown={(e) => handleResizeStart(e, 's')} />
-            <div className="modal__resize-handle modal__resize-handle--w" onMouseDown={(e) => handleResizeStart(e, 'w')} />
-            <div className="modal__resize-handle modal__resize-handle--e" onMouseDown={(e) => handleResizeStart(e, 'e')} />
-            <div className="modal__resize-handle modal__resize-handle--nw" onMouseDown={(e) => handleResizeStart(e, 'nw')} />
-            <div className="modal__resize-handle modal__resize-handle--ne" onMouseDown={(e) => handleResizeStart(e, 'ne')} />
-            <div className="modal__resize-handle modal__resize-handle--sw" onMouseDown={(e) => handleResizeStart(e, 'sw')} />
-            <div className="modal__resize-handle modal__resize-handle--se" onMouseDown={(e) => handleResizeStart(e, 'se')} />
+            {RESIZE_HANDLES.map((direction) => (
+              <div
+                key={direction}
+                className={`modal__resize-handle modal__resize-handle--${direction}`}
+                onMouseDown={(e) => handleResizeStart(e, direction)}
+              />
+            ))}
           </>
         )}
       </div>
