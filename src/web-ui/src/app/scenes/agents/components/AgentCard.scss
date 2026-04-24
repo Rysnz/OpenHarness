@@ -1,12 +1,54 @@
 @use '../../../../component-library/styles/tokens' as *;
 
+$agent-card-radius: 15px;
+
+@mixin agent-row($gap: null, $justify: null) {
+  display: flex;
+  align-items: center;
+
+  @if $gap != null {
+    gap: $gap;
+  }
+
+  @if $justify != null {
+    justify-content: $justify;
+  }
+}
+
+@mixin agent-column($gap: null) {
+  display: flex;
+  flex-direction: column;
+
+  @if $gap != null {
+    gap: $gap;
+  }
+}
+
+@mixin agent-ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@mixin agent-gradient-layer($opacity, $bottom: 0) {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: $bottom;
+  background: var(--agent-card-gradient);
+  opacity: $opacity;
+  transition: opacity 0.35s ease;
+  pointer-events: none;
+}
+
 .agent-card {
   width: 360px;
   height: 200px;
-  border-radius: 15px;
+  border-radius: $agent-card-radius;
   background: var(--element-bg-soft);
-  display: flex;
-  flex-direction: column;
+  @include agent-column;
   position: relative;
   overflow: hidden;
   cursor: pointer;
@@ -18,16 +60,7 @@
 
   // Top gradient overlay - shows on hover, covers entire card except footer
   &::before {
-    content: "";
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 40px;
-    background: var(--agent-card-gradient);
-    opacity: 0;
-    transition: opacity 0.35s ease;
-    pointer-events: none;
+    @include agent-gradient-layer(0, 40px);
     z-index: 0;
   }
 
@@ -51,9 +84,7 @@
 
   // ── Header with icon ──
   &__header {
-    display: flex;
-    align-items: center;
-    gap: $size-gap-3;
+    @include agent-row($size-gap-3);
     padding: $size-gap-3;
     padding-bottom: 0;
     position: relative;
@@ -62,8 +93,7 @@
 
   &__icon-area {
     flex-shrink: 0;
-    display: flex;
-    align-items: center;
+    @include agent-row(null, center);
     justify-content: center;
     width: 40px;
     height: 40px;
@@ -79,17 +109,12 @@
   &__header-info {
     flex: 1;
     min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
+    @include agent-column(4px);
     overflow: hidden;
   }
 
   &__title-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: $size-gap-2;
+    @include agent-row($size-gap-2, space-between);
   }
 
   &__name {
@@ -97,9 +122,7 @@
     font-weight: 900;
     color: var(--color-text-primary);
     line-height: $line-height-base;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    @include agent-ellipsis;
   }
 
   &__badges {
@@ -113,9 +136,7 @@
   &__body {
     flex: 1;
     padding: $size-gap-2 $size-gap-3;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
+    @include agent-column(4px);
     overflow: hidden;
     position: relative;
     z-index: 1;
@@ -135,9 +156,7 @@
   }
 
   &__meta {
-    display: flex;
-    align-items: center;
-    gap: $size-gap-1;
+    @include agent-row($size-gap-1);
     flex-wrap: wrap;
     margin-top: auto;
     padding-top: $size-gap-2;
@@ -147,15 +166,11 @@
   }
 
   &__meta-item {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
+    @include agent-row(4px);
   }
 
   &__cap-chips {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
+    @include agent-row(4px);
     flex-wrap: wrap;
   }
 
@@ -173,26 +188,16 @@
 
   // ── Footer with actions ──
   &__footer {
-    display: flex;
-    align-items: center;
+    @include agent-row;
     width: 100%;
-    border-radius: 0 0 15px 15px;
+    border-radius: 0 0 $agent-card-radius $agent-card-radius;
     overflow: hidden;
     position: relative;
     z-index: 1;
 
     // Bottom gradient blur background matching card color
     &::after {
-      content: "";
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: var(--agent-card-gradient);
-      opacity: 0.5;
-      transition: opacity 0.35s ease;
-      pointer-events: none;
+      @include agent-gradient-layer(0.5);
     }
   }
 
@@ -201,9 +206,7 @@
   }
 
   &__footer-actions {
-    display: flex;
-    align-items: center;
-    gap: $size-gap-2;
+    @include agent-row($size-gap-2);
     flex: 1;
     padding: $size-gap-2 $size-gap-3;
     position: relative;
