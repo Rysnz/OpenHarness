@@ -1,5 +1,6 @@
 //! OpenAI provider module
 
 pub mod message_converter;
+mod response_mapper;
 
-pub use message_converter::OpenAIMessageConverter;
+pub use response_mapper::OpenAIMessageConverter;
