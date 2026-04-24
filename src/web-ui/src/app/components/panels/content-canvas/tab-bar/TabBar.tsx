@@ -15,6 +15,24 @@ import './TabBar.scss';
 
 const log = createLogger('TabBar');
 
+const TAB_WIDTH_METRICS = {
+  padding: 16,
+  gap: 4,
+  closeButton: 16,
+  min: 80,
+  max: 180,
+  latinChar: 7,
+  wideChar: 12,
+};
+
+const TAB_ACTION_METRICS = {
+  closeAllButton: 28,
+  overflowWithMissionControl: 50,
+  overflowOnly: 28,
+  trailingGap: 4,
+  actionsGap: 8,
+};
+
 export interface TabBarProps {
   /** Tab list */
   tabs: CanvasTab[];
@@ -57,29 +75,67 @@ export interface TabBarProps {
  * - CJK chars: ~12px/char
  */
 const estimateTabWidth = (title: string): number => {
-  const PADDING = 16; // 8px * 2
-  const GAP = 4;
-  const CLOSE_BTN = 16;
-  const MIN_WIDTH = 80;
-  const MAX_WIDTH = 180;
-  
   // Estimate title width: CJK ~12px, others ~7px
   let titleWidth = 0;
   for (const char of title) {
     // Simple check: CJK unicode range
     if (char.charCodeAt(0) > 255) {
-      titleWidth += 12;
+      titleWidth += TAB_WIDTH_METRICS.wideChar;
     } else {
-      titleWidth += 7;
+      titleWidth += TAB_WIDTH_METRICS.latinChar;
     }
   }
   
-  const estimated = PADDING + titleWidth + GAP + CLOSE_BTN;
-  return Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, estimated));
+  const estimated =
+    TAB_WIDTH_METRICS.padding +
+    titleWidth +
+    TAB_WIDTH_METRICS.gap +
+    TAB_WIDTH_METRICS.closeButton;
+  return Math.max(TAB_WIDTH_METRICS.min, Math.min(TAB_WIDTH_METRICS.max, estimated));
 };
 
 const tabTitleForWidthEstimate = (tab: CanvasTab, deletedLabel: string): string =>
   tab.fileDeletedFromDisk ? `${tab.title} - ${deletedLabel}` : tab.title;
+
+const countTabsThatFit = (tabWidths: number[], availableWidth: number): number => {
+  let totalWidth = 0;
+  let count = 0;
+
+  for (const tabWidth of tabWidths) {
+    if (totalWidth + tabWidth > availableWidth) {
+      break;
+    }
+
+    totalWidth += tabWidth;
+    count++;
+  }
+
+  return count;
+};
+
+const calculateTabCapacity = (
+  tabWidths: number[],
+  containerWidth: number,
+  options: { hasCloseAll: boolean; hasMissionControl: boolean }
+): number => {
+  if (tabWidths.length === 0) {
+    return 0;
+  }
+
+  const baseActionsWidth =
+    (options.hasCloseAll ? TAB_ACTION_METRICS.closeAllButton : 0) +
+    TAB_ACTION_METRICS.trailingGap;
+  const overflowButtonWidth = options.hasMissionControl
+    ? TAB_ACTION_METRICS.overflowWithMissionControl
+    : TAB_ACTION_METRICS.overflowOnly;
+  const totalTabsWidth = tabWidths.reduce((sum, width) => sum + width, 0);
+  const availableWithoutOverflow = containerWidth - baseActionsWidth - TAB_ACTION_METRICS.actionsGap;
+  const canFitAll = !options.hasMissionControl && totalTabsWidth <= availableWithoutOverflow;
+  const actionsWidth = canFitAll ? baseActionsWidth : baseActionsWidth + overflowButtonWidth;
+  const availableWidth = containerWidth - actionsWidth - TAB_ACTION_METRICS.actionsGap;
+
+  return Math.max(1, Math.min(countTabsThatFit(tabWidths, availableWidth), tabWidths.length));
+};
 
 export const TabBar: React.FC<TabBarProps> = ({
   tabs,
@@ -154,45 +210,11 @@ export const TabBar: React.FC<TabBarProps> = ({
       });
     }
     
-    // Total width of all tabs
     const allTabWidths = visibleTabs.map(tab => getTabWidth(tab));
-    const totalTabsWidth = allTabWidths.reduce((sum, w) => sum + w, 0);
-    
-    // Base actions width (excluding overflow button)
-    // Close-all button: 28px + gap
-    const baseActionsWidth = (onCloseAllTabs ? 28 : 0) + 4;
-    // Overflow button width (~50px with badge, 28px with only mission control)
-    const overflowBtnWidth = onOpenMissionControl ? 50 : 28;
-    // Gap before actions area
-    const actionsGap = 8;
-    
-    // Phase 1: check if all tabs fit without overflow
-    // Overflow can be hidden only when mission control entry is not needed
-    const availableWithoutOverflow = containerWidth - baseActionsWidth - actionsGap;
-    const canFitAll = !onOpenMissionControl && totalTabsWidth <= availableWithoutOverflow;
-    
-    // Compute actual available width
-    const actionsWidth = canFitAll ? baseActionsWidth : (baseActionsWidth + overflowBtnWidth);
-    const availableWidth = containerWidth - actionsWidth - actionsGap;
-    
-    // Phase 2: iterate tabs to determine how many fit
-    let totalWidth = 0;
-    let count = 0;
-    
-    for (let i = 0; i < visibleTabs.length; i++) {
-      const tabWidth = allTabWidths[i];
-      
-      if (totalWidth + tabWidth <= availableWidth) {
-        totalWidth += tabWidth;
-        count++;
-      } else {
-        break;
-      }
-    }
-
-    // Always show at least one tab
-    const finalCount = Math.max(1, Math.min(count, visibleTabs.length));
-    setVisibleTabsCount(finalCount);
+    setVisibleTabsCount(calculateTabCapacity(allTabWidths, containerWidth, {
+      hasCloseAll: Boolean(onCloseAllTabs),
+      hasMissionControl: Boolean(onOpenMissionControl),
+    }));
     setLayoutReady(true);
   }, [visibleTabs, getTabWidth, getTabCacheKey, onCloseAllTabs, onOpenMissionControl]);
 
