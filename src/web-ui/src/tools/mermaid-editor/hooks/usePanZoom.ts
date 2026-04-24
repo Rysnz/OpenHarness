@@ -11,6 +11,68 @@
 
 import { useState, useCallback, useRef, useMemo, useEffect } from 'react';
 
+type Point = { x: number; y: number };
+type Size = { width: number; height: number };
+
+const DEFAULT_TRANSFORM: PanZoomState = {
+  scale: 1,
+  translateX: 0,
+  translateY: 0,
+};
+const FIT_PADDING = 0.9;
+const MAX_FIT_SCALE = 1.5;
+const DRAG_RESET_DELAY_MS = 50;
+
+const clampScale = (scale: number, minScale: number, maxScale: number) =>
+  Math.max(minScale, Math.min(maxScale, scale));
+
+const distanceBetween = (a: Point, b: Point) => {
+  const deltaX = a.x - b.x;
+  const deltaY = a.y - b.y;
+  return Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+};
+
+const fitTransformToContainer = (
+  content: Size,
+  container: Size,
+  minScale: number,
+  maxScale: number
+): PanZoomState => {
+  const scaleX = (container.width * FIT_PADDING) / content.width;
+  const scaleY = (container.height * FIT_PADDING) / content.height;
+  const scale = clampScale(Math.min(scaleX, scaleY, MAX_FIT_SCALE), minScale, maxScale);
+  const scaledWidth = content.width * scale;
+  const scaledHeight = content.height * scale;
+
+  return {
+    scale,
+    translateX: (container.width - scaledWidth) / 2,
+    translateY: (container.height - scaledHeight) / 2,
+  };
+};
+
+const zoomAroundPoint = (
+  prev: PanZoomState,
+  nextScale: number,
+  origin: Point,
+  cursor: Point
+): PanZoomState => {
+  const scaleRatio = nextScale / prev.scale;
+
+  return {
+    scale: nextScale,
+    translateX: origin.x + (prev.translateX - origin.x) * scaleRatio + (cursor.x - origin.x) * (1 - scaleRatio),
+    translateY: origin.y + (prev.translateY - origin.y) * scaleRatio + (cursor.y - origin.y) * (1 - scaleRatio),
+  };
+};
+
+const isInteractivePanTarget = (target: Element) => Boolean(target.closest(
+  'g[id*="flowchart-"], .node, g[class*="node"], ' +
+  '.edgeLabel, path[id*="L_"], g.edgePath, ' +
+  'g[id*="subGraph"], .subgraph, g[class*="cluster"], .cluster, ' +
+  '.interactive-node'
+));
+
 export interface PanZoomState {
   scale: number;
   translateX: number;
@@ -84,11 +146,7 @@ export function usePanZoom(options: PanZoomOptions = {}): UsePanZoomReturn {
     onZoomChange,
   } = options;
 
-  const [transform, setTransform] = useState<PanZoomState>({
-    scale: 1,
-    translateX: 0,
-    translateY: 0,
-  });
+  const [transform, setTransform] = useState<PanZoomState>(DEFAULT_TRANSFORM);
 
   const [isDragging, setIsDragging] = useState(false);
   const [hasDragged, setHasDragged] = useState(false);
@@ -102,20 +160,20 @@ export function usePanZoom(options: PanZoomOptions = {}): UsePanZoomReturn {
   
   const zoomIn = useCallback(() => {
     setTransform(prev => {
-      const newScale = Math.min(maxScale, prev.scale * scaleFactor);
+      const newScale = clampScale(prev.scale * scaleFactor, minScale, maxScale);
       return { ...prev, scale: newScale };
     });
-  }, [maxScale, scaleFactor]);
+  }, [minScale, maxScale, scaleFactor]);
 
   const zoomOut = useCallback(() => {
     setTransform(prev => {
-      const newScale = Math.max(minScale, prev.scale / scaleFactor);
+      const newScale = clampScale(prev.scale / scaleFactor, minScale, maxScale);
       return { ...prev, scale: newScale };
     });
-  }, [minScale, scaleFactor]);
+  }, [minScale, maxScale, scaleFactor]);
 
   const resetView = useCallback(() => {
-    setTransform({ scale: 1, translateX: 0, translateY: 0 });
+    setTransform(DEFAULT_TRANSFORM);
   }, []);
 
   /**
@@ -128,31 +186,12 @@ export function usePanZoom(options: PanZoomOptions = {}): UsePanZoomReturn {
     if (!container || contentWidth <= 0 || contentHeight <= 0) return;
     
     const rect = container.getBoundingClientRect();
-    const containerWidth = rect.width;
-    const containerHeight = rect.height;
-    
-    // Compute fit scale with padding (90%).
-    const padding = 0.9;
-    const scaleX = (containerWidth * padding) / contentWidth;
-    const scaleY = (containerHeight * padding) / contentHeight;
-    
-    // Use the smaller scale to keep content fully visible.
-    // Clamp to 1.5x to avoid over-scaling small diagrams.
-    const newScale = Math.min(scaleX, scaleY, 1.5);
-    // Do not go below the minimum scale.
-    const clampedScale = Math.max(minScale, Math.min(maxScale, newScale));
-    
-    // Compute centered position.
-    const scaledWidth = contentWidth * clampedScale;
-    const scaledHeight = contentHeight * clampedScale;
-    const translateX = (containerWidth - scaledWidth) / 2;
-    const translateY = (containerHeight - scaledHeight) / 2;
-    
-    setTransform({
-      scale: clampedScale,
-      translateX,
-      translateY,
-    });
+    setTransform(fitTransformToContainer(
+      { width: contentWidth, height: contentHeight },
+      { width: rect.width, height: rect.height },
+      minScale,
+      maxScale
+    ));
   }, [minScale, maxScale]);
 
   const getZoomLevel = useCallback(() => {
@@ -160,7 +199,7 @@ export function usePanZoom(options: PanZoomOptions = {}): UsePanZoomReturn {
   }, [transform.scale]);
 
   const setScale = useCallback((scale: number) => {
-    const clampedScale = Math.max(minScale, Math.min(maxScale, scale));
+    const clampedScale = clampScale(scale, minScale, maxScale);
     setTransform(prev => ({ ...prev, scale: clampedScale }));
   }, [minScale, maxScale]);
 
@@ -175,15 +214,7 @@ export function usePanZoom(options: PanZoomOptions = {}): UsePanZoomReturn {
     if (!enableDrag) return;
     
     // Skip drag when interacting with nodes or edges.
-    const target = e.target as Element;
-    const isInteractiveElement = target.closest(
-      'g[id*="flowchart-"], .node, g[class*="node"], ' +
-      '.edgeLabel, path[id*="L_"], g.edgePath, ' +
-      'g[id*="subGraph"], .subgraph, g[class*="cluster"], .cluster, ' +
-      '.interactive-node'
-    );
-    
-    if (isInteractiveElement) {
+    if (isInteractivePanTarget(e.target as Element)) {
       // Reset drag state to allow click handling.
       hasDraggedRef.current = false;
       setHasDragged(false);
@@ -212,9 +243,10 @@ export function usePanZoom(options: PanZoomOptions = {}): UsePanZoomReturn {
     e.stopPropagation();
     
     // Compute drag distance.
-    const deltaX = e.clientX - dragStartPosRef.current.x;
-    const deltaY = e.clientY - dragStartPosRef.current.y;
-    const dragDistance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+    const dragDistance = distanceBetween(
+      { x: e.clientX, y: e.clientY },
+      dragStartPosRef.current
+    );
     
     // Treat as drag only after threshold.
     if (dragDistance > dragThreshold) {
@@ -237,7 +269,7 @@ export function usePanZoom(options: PanZoomOptions = {}): UsePanZoomReturn {
       setTimeout(() => {
         hasDraggedRef.current = false;
         setHasDragged(false);
-      }, 50);
+      }, DRAG_RESET_DELAY_MS);
     }
   }, []);
 
@@ -253,9 +285,10 @@ export function usePanZoom(options: PanZoomOptions = {}): UsePanZoomReturn {
     const handleGlobalMouseMove = (e: MouseEvent) => {
       e.preventDefault();
       
-      const deltaX = e.clientX - dragStartPosRef.current.x;
-      const deltaY = e.clientY - dragStartPosRef.current.y;
-      const dragDistance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+      const dragDistance = distanceBetween(
+        { x: e.clientX, y: e.clientY },
+        dragStartPosRef.current
+      );
       
       if (dragDistance > dragThreshold) {
         hasDraggedRef.current = true;
@@ -276,7 +309,7 @@ export function usePanZoom(options: PanZoomOptions = {}): UsePanZoomReturn {
         setTimeout(() => {
           hasDraggedRef.current = false;
           setHasDragged(false);
-        }, 50);
+        }, DRAG_RESET_DELAY_MS);
       }
     };
 
@@ -307,18 +340,13 @@ export function usePanZoom(options: PanZoomOptions = {}): UsePanZoomReturn {
       const zoomFactor = e.deltaY > 0 ? 1 / scaleFactor : scaleFactor;
       
       setTransform(prev => {
-        const newScale = Math.max(minScale, Math.min(maxScale, prev.scale * zoomFactor));
-        const scaleRatio = newScale / prev.scale;
-        
-        // Zoom around the cursor position.
-        const newTranslateX = centerX + (prev.translateX - centerX) * scaleRatio + (mouseX - centerX) * (1 - scaleRatio);
-        const newTranslateY = centerY + (prev.translateY - centerY) * scaleRatio + (mouseY - centerY) * (1 - scaleRatio);
-        
-        return {
-          scale: newScale,
-          translateX: newTranslateX,
-          translateY: newTranslateY,
-        };
+        const newScale = clampScale(prev.scale * zoomFactor, minScale, maxScale);
+        return zoomAroundPoint(
+          prev,
+          newScale,
+          { x: centerX, y: centerY },
+          { x: mouseX, y: mouseY }
+        );
       });
     };
 
