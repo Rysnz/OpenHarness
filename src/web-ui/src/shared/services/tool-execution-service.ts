@@ -7,14 +7,10 @@ import { listen } from '@tauri-apps/api/event';
 import { 
   ToolExecutionInfo, 
   ToolResult, 
-  ToolDisplayMessage,
-  BashToolResult,
-  FileToolResult,
-  SearchToolResult,
-  WebToolResult,
-  AdvancedToolResult
+  ToolDisplayMessage
 } from '../types/tool-display';
 import { createLogger } from '@/shared/utils/logger';
+import { normalizeToolResult } from './tool-execution-normalizers';
 
 const log = createLogger('ToolExecutionService');
 
@@ -201,7 +197,7 @@ export class ToolExecutionService {
     }
 
     // Parse and normalize tool result based on tool type
-    const normalizedResult = this.normalizeToolResult(eventData.result, eventData.tool_name);
+    const normalizedResult = normalizeToolResult(eventData.result, eventData.tool_name);
 
     const toolResult: ToolResult = {
       toolUseId: toolUseId,
@@ -252,110 +248,6 @@ export class ToolExecutionService {
 
     this.activeExecutions.delete(eventData.tool_use_id);
     this.emitEvent('tool_error', displayMessage);
-  }
-
-  private normalizeToolResult(result: any, toolName: string): any {
-    if (!result || typeof result !== 'object') {
-      return result;
-    }
-
-    // Extract content if it's in the expected format
-    const content = result.content || result;
-    const normalizedName = toolName.toLowerCase().replace(/[_-]/g, '');
-
-    switch (normalizedName) {
-      case 'bash':
-        return this.normalizeBashResult(content);
-      case 'fileread':
-      case 'filewrite':
-      case 'fileedit':
-        return this.normalizeFileResult(content, toolName);
-      case 'grep':
-      case 'glob':
-      case 'ls':
-        return this.normalizeSearchResult(content, toolName);
-      case 'websearch':
-      case 'webfetch':
-        return this.normalizeWebResult(content, toolName);
-      case 'task':
-      case 'think':
-      case 'todowrite':
-        return this.normalizeAdvancedResult(content, toolName);
-      default:
-        return content;
-    }
-  }
-
-  private normalizeBashResult(content: any): BashToolResult {
-    if (typeof content === 'string') {
-      return {
-        stdout: content,
-        stdoutLines: content.split('\n').length,
-        stderr: '',
-        stderrLines: 0,
-        interrupted: false
-      };
-    }
-
-    return {
-      stdout: content.stdout || content.output || '',
-      stdoutLines: content.stdoutLines || (content.stdout || content.output || '').split('\n').length,
-      stderr: content.stderr || '',
-      stderrLines: content.stderrLines || (content.stderr || '').split('\n').length,
-      interrupted: content.interrupted || false,
-      exitCode: content.exitCode
-    };
-  }
-
-  private normalizeFileResult(content: any, toolName: string): FileToolResult {
-    const operation = toolName.toLowerCase().includes('read') ? 'read' :
-                     toolName.toLowerCase().includes('write') ? 'write' :
-                     toolName.toLowerCase().includes('edit') ? 'edit' : 'multi-edit';
-
-    return {
-      content: content.content || content.data || content,
-      filePath: content.filePath || content.path || content.file || 'unknown',
-      operation,
-      changes: content.changes,
-      success: content.success !== false
-    };
-  }
-
-  private normalizeSearchResult(content: any, _toolName: string): SearchToolResult {
-    return {
-      pattern: content.pattern || content.query || '',
-      results: content.results || content.matches || [],
-      totalMatches: content.totalMatches || content.total || (content.results?.length || 0),
-      filesSearched: content.filesSearched || content.files
-    };
-  }
-
-  private normalizeWebResult(content: any, _toolName: string): WebToolResult {
-    return {
-      url: content.url,
-      query: content.query,
-      content: content.content || content.text || '',
-      title: content.title,
-      results: content.results || content.searchResults
-    };
-  }
-
-
-  private normalizeAdvancedResult(content: any, toolName: string): AdvancedToolResult {
-    const type = toolName.toLowerCase().includes('task') ? 'task' :
-                toolName.toLowerCase().includes('think') ? 'think' :
-                toolName.toLowerCase().includes('todo') ? 'todo' :
-                toolName.toLowerCase().includes('expert') ? 'expert' :
-                toolName.toLowerCase().includes('architect') ? 'architect' : 'task';
-
-    return {
-      type,
-      content: content.content || content.text || content.result || content,
-      agentType: content.agentType || content.agent_type,
-      todos: content.todos,
-      thinking: content.thinking,
-      suggestions: content.suggestions
-    };
   }
 
   private emitEvent(eventType: string, message: ToolDisplayMessage) {
