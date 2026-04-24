@@ -5,9 +5,30 @@
  */
 
 // Diagram container.
+$mermaid-font-stack: 'Inter', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+$mermaid-mono-stack: 'JetBrains Mono', 'Fira Code', monospace;
+
+@mixin mermaid-transition($property: all) {
+  transition: $property var(--mermaid-transition-duration, 0.3s) var(--mermaid-transition-easing, ease);
+}
+
+@mixin mermaid-hover-stroke($width: 2px, $with-glow: false) {
+  stroke: var(--mermaid-highlight-stroke);
+  stroke-width: $width;
+
+  @if $with-glow {
+    filter: var(--mermaid-highlight-glow);
+  }
+}
+
+@mixin mermaid-rounded-rect($radius-var, $fallback) {
+  rx: var(#{$radius-var}, #{$fallback});
+  ry: var(#{$radius-var}, #{$fallback});
+}
+
 .mermaid-diagram-container {
   svg {
-    font-family: 'Inter', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-family: $mermaid-font-stack;
     
     &[style*="max-width"] {
       max-width: 100% !important;
@@ -27,7 +48,7 @@
     stroke: var(--mermaid-node-stroke);
     stroke-width: var(--mermaid-node-stroke-width, 1.5px);
     stroke-dasharray: var(--mermaid-node-dash-array, 4 2);
-    transition: all var(--mermaid-transition-duration, 0.3s) var(--mermaid-transition-easing, ease);
+    @include mermaid-transition;
   }
 
   // Node hover: dashed to solid.
@@ -35,16 +56,14 @@
   .node:hover polygon,
   .node:hover circle,
   .node:hover ellipse {
-    stroke: var(--mermaid-highlight-stroke);
-    stroke-width: 2px;
+    @include mermaid-hover-stroke(2px, true);
     stroke-dasharray: none;
-    filter: var(--mermaid-highlight-glow);
   }
 
   // Node text: override Mermaid inline styles with higher priority.
   .node .label,
   .nodeLabel {
-    font-family: 'Inter', 'Segoe UI', -apple-system, sans-serif;
+    font-family: $mermaid-font-stack;
     font-size: 13px;
     font-weight: 500;
     letter-spacing: 0.2px;
@@ -93,8 +112,7 @@
   }
 
   .node rect {
-    rx: var(--mermaid-node-radius, 6px);
-    ry: var(--mermaid-node-radius, 6px);
+    @include mermaid-rounded-rect('--mermaid-node-radius', 6px);
   }
 
   // Edges.
@@ -103,13 +121,11 @@
     stroke-width: var(--mermaid-edge-stroke-width, 1.5px);
     stroke-linecap: round;
     stroke-linejoin: round;
-    transition: all var(--mermaid-transition-duration, 0.3s) var(--mermaid-transition-easing, ease);
+    @include mermaid-transition;
   }
 
   .edgePath:hover path.path {
-    stroke: var(--mermaid-highlight-stroke);
-    stroke-width: 2.5px;
-    filter: var(--mermaid-highlight-glow);
+    @include mermaid-hover-stroke(2.5px, true);
   }
 
   // Arrowheads.
@@ -132,11 +148,11 @@
       stroke-dasharray: 3 2;
       rx: 4px;
       ry: 4px;
-      transition: all var(--mermaid-transition-duration, 0.3s) ease;
+      @include mermaid-transition;
     }
 
     &:hover rect {
-      stroke: var(--mermaid-highlight-stroke);
+      @include mermaid-hover-stroke(1px);
       stroke-dasharray: none;
     }
 
@@ -151,15 +167,13 @@
     stroke: var(--mermaid-cluster-stroke);
     stroke-width: var(--mermaid-cluster-stroke-width, 1px);
     stroke-dasharray: var(--mermaid-cluster-dash-array, 5 3);
-    rx: var(--mermaid-cluster-radius, 8px);
-    ry: var(--mermaid-cluster-radius, 8px);
-    transition: all var(--mermaid-transition-duration, 0.3s) ease;
+    @include mermaid-rounded-rect('--mermaid-cluster-radius', 8px);
+    @include mermaid-transition;
   }
 
   .cluster:hover rect {
-    stroke: var(--mermaid-highlight-stroke);
+    @include mermaid-hover-stroke(1.5px);
     stroke-dasharray: none;
-    stroke-width: 1.5px;
   }
 
   .cluster .label {
@@ -449,7 +463,7 @@
   .commit-id,
   .commit-msg {
     fill: var(--mermaid-commit-text);
-    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-family: $mermaid-mono-stack;
     font-size: 11px;
   }
 
@@ -518,14 +532,14 @@
 
   .label div {
     color: var(--mermaid-node-text);
-    font-family: 'Inter', 'Segoe UI', -apple-system, sans-serif;
+    font-family: $mermaid-font-stack;
     font-size: 13px;
     line-height: 1.4;
   }
 
   .label code,
   .label pre {
-    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-family: $mermaid-mono-stack;
     font-size: 11px;
     background: var(--element-bg-base, rgba(255, 255, 255, 0.05));
     padding: 2px 6px;
