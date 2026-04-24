@@ -5,8 +5,8 @@ import { createLogger } from '@/shared/utils/logger';
 import { flowChatStore } from '../store/FlowChatStore';
 import { stateMachineManager } from '../state-machine';
 import { flowChatManager } from './FlowChatManager';
-import type { DialogTurn, ModelRound, FlowTextItem } from '../types/flow-chat';
 import { buildSessionMetadata } from '../utils/sessionMetadata';
+import { buildStreamingBtwChildTurn } from './BtwChildTurnFactory';
 
 const log = createLogger('BtwThreadService');
 
@@ -235,44 +235,12 @@ export async function startBtwThread(params: {
 
   // Seed an in-memory dialog turn so the child session is not empty when opened.
   // Persistence is handled on completion as a backup for reloads.
-  const childTurnId = `btw-turn-${requestId}`;
-  const childRoundId = `btw-round-${requestId}`;
-  const childTextId = `btw-text-${requestId}`;
-  const childNow = Date.now();
-
-  const textItem: FlowTextItem = {
-    id: childTextId,
-    type: 'text',
-    content: '',
-    isStreaming: true,
-    isMarkdown: true,
-    timestamp: childNow,
-    status: 'streaming',
-  };
-
-  const round: ModelRound = {
-    id: childRoundId,
-    index: 0,
-    items: [textItem],
-    isStreaming: true,
-    isComplete: false,
-    status: 'streaming',
-    startTime: childNow,
-  };
-
-  const childTurn: DialogTurn = {
-    id: childTurnId,
-    sessionId: childSessionId,
-    userMessage: {
-      id: `btw-user-${requestId}`,
-      content: question,
-      timestamp: childNow,
-    },
-    modelRounds: [round],
-    status: 'processing' as const,
-    startTime: childNow,
-    backendTurnIndex: 0,
-  };
+  const {
+    childTurnId,
+    childRoundId,
+    childTextId,
+    childTurn,
+  } = buildStreamingBtwChildTurn({ childSessionId, requestId, question });
 
   flowChatStore.addDialogTurn(childSessionId, childTurn);
 
