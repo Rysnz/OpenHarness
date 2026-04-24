@@ -17,13 +17,14 @@ pub mod ngrok;
 pub mod pairing;
 pub mod qr_generator;
 pub mod relay_client;
+mod relay_transport;
 pub mod remote_server;
 
 pub use device::DeviceIdentity;
 pub use encryption::{decrypt_from_base64, encrypt_to_base64, KeyPair};
 pub use pairing::{PairingProtocol, PairingState};
 pub use qr_generator::QrGenerator;
-pub use relay_client::RelayClient;
+pub use relay_transport::RelayClient;
 pub use remote_server::RemoteServer;
 
 use anyhow::Result;
