@@ -11,6 +11,19 @@ import '../AgentsView.scss';
 import './CreateAgentPage.scss';
 
 const NAME_REGEX = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
+const SUBAGENT_LEVELS: SubagentLevel[] = ['user', 'project'];
+
+const selectedToolsPayload = (tools: Set<string>): string[] | undefined =>
+  tools.size > 0 ? Array.from(tools) : undefined;
+
+const projectWorkspacePath = (level: SubagentLevel, workspacePath?: string | null): string | undefined =>
+  level === 'project' ? workspacePath || undefined : undefined;
+
+const normalizeAgentForm = (values: { name: string; description: string; prompt: string }) => ({
+  name: values.name.trim(),
+  description: values.description.trim(),
+  prompt: values.prompt.trim(),
+});
 
 const CreateAgentPage: React.FC = () => {
   const { t } = useTranslation('scenes/agents');
@@ -99,12 +112,14 @@ const CreateAgentPage: React.FC = () => {
   };
 
   const handleSubmit = async () => {
+    const form = normalizeAgentForm({ name, description, prompt });
+
     if (!isEdit) {
-      const err = validateName(name);
+      const err = validateName(form.name);
       if (err) { setNameError(err); return; }
     }
-    if (!description.trim()) { notification.error(t('agentsOverview.form.descRequired', '描述不能为空')); return; }
-    if (!prompt.trim()) { notification.error(t('agentsOverview.form.promptRequired', '系统提示词不能为空')); return; }
+    if (!form.description) { notification.error(t('agentsOverview.form.descRequired', '描述不能为空')); return; }
+    if (!form.prompt) { notification.error(t('agentsOverview.form.promptRequired', '系统提示词不能为空')); return; }
     if (level === 'project' && !workspacePath) {
       notification.error(t('agentsOverview.form.noWorkspace', '需要先打开项目'));
       return;
@@ -118,24 +133,24 @@ const CreateAgentPage: React.FC = () => {
       if (isEdit && editingAgentId) {
         await SubagentAPI.updateSubagent({
           subagentId: editingAgentId,
-          description: description.trim(),
-          prompt: prompt.trim(),
+          description: form.description,
+          prompt: form.prompt,
           readonly,
-          tools: selectedTools.size > 0 ? Array.from(selectedTools) : undefined,
-          workspacePath: level === 'project' ? workspacePath : undefined,
+          tools: selectedToolsPayload(selectedTools),
+          workspacePath: projectWorkspacePath(level, workspacePath),
         });
-        notification.success(t('agentsOverview.form.updateSuccess', { name: name.trim() }));
+        notification.success(t('agentsOverview.form.updateSuccess', { name: form.name }));
       } else {
         await SubagentAPI.createSubagent({
           level,
-          name: name.trim(),
-          description: description.trim(),
-          prompt: prompt.trim(),
+          name: form.name,
+          description: form.description,
+          prompt: form.prompt,
           readonly,
-          tools: selectedTools.size > 0 ? Array.from(selectedTools) : undefined,
-          workspacePath: level === 'project' ? workspacePath : undefined,
+          tools: selectedToolsPayload(selectedTools),
+          workspacePath: projectWorkspacePath(level, workspacePath),
         });
-        notification.success(t('agentsOverview.form.createSuccess', { name: name.trim() }));
+        notification.success(t('agentsOverview.form.createSuccess', { name: form.name }));
       }
       openHome();
     } catch (err) {
@@ -238,7 +253,7 @@ const CreateAgentPage: React.FC = () => {
 
             <div className="th-create-panel__field th-create-panel__field--row">
               <div className="th-create-panel__level-group">
-                {(['user', 'project'] as SubagentLevel[]).map((lv) => {
+                {SUBAGENT_LEVELS.map((lv) => {
                   const disabled = (lv === 'project' && !hasWorkspace) || isEdit;
                   return (
                     <button
