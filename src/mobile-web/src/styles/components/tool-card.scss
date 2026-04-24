@@ -1,4 +1,55 @@
 // Tool cards — aligned with desktop BaseToolCard
+@mixin oh-mobile-center-row($gap: null) {
+  display: flex;
+  align-items: center;
+
+  @if $gap != null {
+    gap: $gap;
+  }
+}
+
+@mixin oh-mobile-card-shell($radius, $background, $blurred: false) {
+  border-radius: $radius;
+  border: 1px solid var(--border-base);
+  background: $background;
+  overflow: hidden;
+
+  @if $blurred {
+    backdrop-filter: var(--blur-base);
+  }
+}
+
+@mixin oh-mobile-thin-scrollbar {
+  &::-webkit-scrollbar {
+    width: 3px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: var(--color-text-muted);
+    border-radius: 2px;
+    opacity: 0.4;
+  }
+}
+
+@mixin oh-mobile-status-border {
+  &--running,
+  &--pending {
+    border-color: var(--color-warning-border);
+  }
+
+  &--done {
+    border-color: var(--color-success-border);
+  }
+
+  &--error {
+    border-color: var(--color-error-border);
+  }
+}
+
 .chat-tool-list {
   display: flex;
   flex-direction: column;
@@ -15,9 +66,7 @@
 }
 
 .chat-tool-list__header {
-  display: flex;
-  align-items: center;
-  gap: var(--size-gap-2);
+  @include oh-mobile-center-row(var(--size-gap-2));
   padding: var(--size-gap-2) var(--size-gap-3);
   min-height: 32px;
   cursor: pointer;
@@ -96,50 +145,17 @@
     black 100%
   );
 
-  // Thin scrollbar
-  &::-webkit-scrollbar {
-    width: 3px;
-  }
-
-  &::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  &::-webkit-scrollbar-thumb {
-    background: var(--color-text-muted);
-    border-radius: 2px;
-    opacity: 0.4;
-  }
+  @include oh-mobile-thin-scrollbar;
 }
 
 .chat-tool-card {
-  border-radius: var(--size-radius-base);
-  border: 1px solid var(--border-base);
-  background: var(--color-bg-flowchat);
-  overflow: hidden;
+  @include oh-mobile-card-shell(var(--size-radius-base), var(--color-bg-flowchat), false);
   transition: all var(--motion-fast) var(--easing-standard);
-}
-
-.chat-tool-card--running {
-  border-color: var(--color-warning-border);
-}
-
-.chat-tool-card--done {
-  border-color: var(--color-success-border);
-}
-
-.chat-tool-card--error {
-  border-color: var(--color-error-border);
-}
-
-.chat-tool-card--pending {
-  border-color: var(--color-warning-border);
+  @include oh-mobile-status-border;
 }
 
 .chat-tool-card__row {
-  display: flex;
-  align-items: center;
-  gap: var(--size-gap-2);
+  @include oh-mobile-center-row(var(--size-gap-2));
   padding: var(--size-gap-2) var(--size-gap-3);
   cursor: pointer;
   min-height: 36px;
@@ -261,42 +277,23 @@
 // ─── Task card (subagent container) ────────────────────────────────────────
 
 .chat-task-card {
-  border-radius: var(--size-radius-lg);
-  border: 1px solid var(--border-base);
-  background: color-mix(in srgb, var(--color-bg-secondary) 60%, transparent);
-  backdrop-filter: var(--blur-base);
-  overflow: hidden;
+  @include oh-mobile-card-shell(
+    var(--size-radius-lg),
+    color-mix(in srgb, var(--color-bg-secondary) 60%, transparent),
+    true
+  );
   width: 100%;
-
-  &--running {
-    border-color: var(--color-warning-border);
-  }
-
-  &--done {
-    border-color: var(--color-success-border);
-  }
-
-  &--error {
-    border-color: var(--color-error-border);
-  }
-
-  &--pending {
-    border-color: var(--color-warning-border);
-  }
+  @include oh-mobile-status-border;
 }
 
 .chat-task-card__header {
-  display: flex;
-  align-items: center;
-  gap: var(--size-gap-2);
+  @include oh-mobile-center-row(var(--size-gap-2));
   padding: var(--size-gap-2) var(--size-gap-3);
   min-height: 36px;
 }
 
 .chat-task-card__summary {
-  display: flex;
-  align-items: center;
-  gap: var(--size-gap-2);
+  @include oh-mobile-center-row(var(--size-gap-2));
   padding: 4px var(--size-gap-3);
   border-top: 1px solid var(--border-subtle);
   min-height: 24px;
@@ -356,19 +353,7 @@
   mask-image: linear-gradient(to bottom, transparent 0px, black 8px, black 100%);
   -webkit-mask-image: linear-gradient(to bottom, transparent 0px, black 8px, black 100%);
 
-  &::-webkit-scrollbar {
-    width: 3px;
-  }
-
-  &::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  &::-webkit-scrollbar-thumb {
-    background: var(--color-text-muted);
-    border-radius: 2px;
-    opacity: 0.4;
-  }
+  @include oh-mobile-thin-scrollbar;
 }
 
 .chat-task-card__step {
@@ -430,11 +415,11 @@
 // ─── AskUserQuestion card ───────────────────────────────────────────────────
 
 .chat-ask-card {
-  border: 1px solid var(--border-base);
-  border-radius: var(--size-radius-lg);
-  background: color-mix(in srgb, var(--color-bg-secondary) 80%, transparent);
-  backdrop-filter: var(--blur-base);
-  overflow: hidden;
+  @include oh-mobile-card-shell(
+    var(--size-radius-lg),
+    color-mix(in srgb, var(--color-bg-secondary) 80%, transparent),
+    true
+  );
   width: 100%;
 }
 
@@ -633,17 +618,12 @@
 // ─── TodoWrite card ────────────────────────────────────────────────────────
 
 .chat-todo-card {
-  border-radius: var(--size-radius-base);
-  border: 1px solid var(--border-base);
-  background: var(--color-bg-flowchat);
-  overflow: hidden;
+  @include oh-mobile-card-shell(var(--size-radius-base), var(--color-bg-flowchat), false);
   width: 100%;
 }
 
 .chat-todo-card__header {
-  display: flex;
-  align-items: center;
-  gap: var(--size-gap-2);
+  @include oh-mobile-center-row(var(--size-gap-2));
   padding: var(--size-gap-2) var(--size-gap-3);
   cursor: pointer;
   min-height: 36px;
