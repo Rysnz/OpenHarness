@@ -80,6 +80,11 @@ const SESSION_DIR = process.env.BRAINSTORM_DIR || '/tmp/brainstorm';
 const CONTENT_DIR = path.join(SESSION_DIR, 'content');
 const STATE_DIR = path.join(SESSION_DIR, 'state');
 let ownerPid = process.env.BRAINSTORM_OWNER_PID ? Number(process.env.BRAINSTORM_OWNER_PID) : null;
+const STATE_FILES = {
+  events: 'events',
+  serverInfo: 'server-info',
+  serverStopped: 'server-stopped',
+};
 
 const MIME_TYPES = {
   '.html': 'text/html', '.css': 'text/css', '.js': 'application/javascript',
@@ -113,9 +118,36 @@ function wrapInFrame(content) {
   return frameTemplate.replace('<!-- CONTENT -->', content);
 }
 
+function ensureDir(dir) {
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+}
+
+function isHtmlFile(fileName) {
+  return typeof fileName === 'string' && fileName.endsWith('.html');
+}
+
+function stateFile(name) {
+  return path.join(STATE_DIR, name);
+}
+
+function contentFile(fileName) {
+  return path.join(CONTENT_DIR, path.basename(fileName));
+}
+
+function writeJsonLine(filePath, value) {
+  fs.writeFileSync(filePath, JSON.stringify(value) + '\n');
+}
+
+function appendJsonLine(filePath, value) {
+  fs.appendFileSync(filePath, JSON.stringify(value) + '\n');
+}
+
+function listScreenFiles() {
+  return fs.readdirSync(CONTENT_DIR).filter(isHtmlFile);
+}
+
 function getNewestScreen() {
-  const files = fs.readdirSync(CONTENT_DIR)
-    .filter(f => f.endsWith('.html'))
+  const files = listScreenFiles()
     .map(f => {
       const fp = path.join(CONTENT_DIR, f);
       return { path: fp, mtime: fs.statSync(fp).mtime.getTime() };
@@ -144,7 +176,7 @@ function handleRequest(req, res) {
     res.end(html);
   } else if (req.method === 'GET' && req.url.startsWith('/files/')) {
     const fileName = req.url.slice(7);
-    const filePath = path.join(CONTENT_DIR, path.basename(fileName));
+    const filePath = contentFile(fileName);
     if (!fs.existsSync(filePath)) {
       res.writeHead(404);
       res.end('Not found');
@@ -232,8 +264,7 @@ function handleMessage(text) {
   touchActivity();
   console.log(JSON.stringify({ source: 'user-event', ...event }));
   if (event.choice) {
-    const eventsFile = path.join(STATE_DIR, 'events');
-    fs.appendFileSync(eventsFile, JSON.stringify(event) + '\n');
+    appendJsonLine(stateFile(STATE_FILES.events), event);
   }
 }
 
@@ -260,33 +291,31 @@ const debounceTimers = new Map();
 // ========== Server Startup ==========
 
 function startServer() {
-  if (!fs.existsSync(CONTENT_DIR)) fs.mkdirSync(CONTENT_DIR, { recursive: true });
-  if (!fs.existsSync(STATE_DIR)) fs.mkdirSync(STATE_DIR, { recursive: true });
+  ensureDir(CONTENT_DIR);
+  ensureDir(STATE_DIR);
 
   // Track known files to distinguish new screens from updates.
   // macOS fs.watch reports 'rename' for both new files and overwrites,
   // so we can't rely on eventType alone.
-  const knownFiles = new Set(
-    fs.readdirSync(CONTENT_DIR).filter(f => f.endsWith('.html'))
-  );
+  const knownFiles = new Set(listScreenFiles());
 
   const server = http.createServer(handleRequest);
   server.on('upgrade', handleUpgrade);
 
   const watcher = fs.watch(CONTENT_DIR, (eventType, filename) => {
-    if (!filename || !filename.endsWith('.html')) return;
+    if (!isHtmlFile(filename)) return;
 
     if (debounceTimers.has(filename)) clearTimeout(debounceTimers.get(filename));
     debounceTimers.set(filename, setTimeout(() => {
       debounceTimers.delete(filename);
-      const filePath = path.join(CONTENT_DIR, filename);
+      const filePath = contentFile(filename);
 
       if (!fs.existsSync(filePath)) return; // file was deleted
       touchActivity();
 
       if (!knownFiles.has(filename)) {
         knownFiles.add(filename);
-        const eventsFile = path.join(STATE_DIR, 'events');
+        const eventsFile = stateFile(STATE_FILES.events);
         if (fs.existsSync(eventsFile)) fs.unlinkSync(eventsFile);
         console.log(JSON.stringify({ type: 'screen-added', file: filePath }));
       } else {
@@ -300,12 +329,9 @@ function startServer() {
 
   function shutdown(reason) {
     console.log(JSON.stringify({ type: 'server-stopped', reason }));
-    const infoFile = path.join(STATE_DIR, 'server-info');
+    const infoFile = stateFile(STATE_FILES.serverInfo);
     if (fs.existsSync(infoFile)) fs.unlinkSync(infoFile);
-    fs.writeFileSync(
-      path.join(STATE_DIR, 'server-stopped'),
-      JSON.stringify({ reason, timestamp: Date.now() }) + '\n'
-    );
+    writeJsonLine(stateFile(STATE_FILES.serverStopped), { reason, timestamp: Date.now() });
     watcher.close();
     clearInterval(lifecycleCheck);
     server.close(() => process.exit(0));
@@ -343,7 +369,7 @@ function startServer() {
       screen_dir: CONTENT_DIR, state_dir: STATE_DIR
     });
     console.log(info);
-    fs.writeFileSync(path.join(STATE_DIR, 'server-info'), info + '\n');
+    fs.writeFileSync(stateFile(STATE_FILES.serverInfo), info + '\n');
   });
 }
 
