@@ -14,6 +14,7 @@ pub mod embedded_relay;
 pub mod encryption;
 pub mod lan;
 pub mod ngrok;
+mod pairing_protocol;
 pub mod pairing;
 pub mod qr_generator;
 pub mod relay_client;
@@ -22,7 +23,7 @@ pub mod remote_server;
 
 pub use device::DeviceIdentity;
 pub use encryption::{decrypt_from_base64, encrypt_to_base64, KeyPair};
-pub use pairing::{PairingProtocol, PairingState};
+pub use pairing_protocol::{PairingProtocol, PairingState};
 pub use qr_generator::QrGenerator;
 pub use relay_transport::RelayClient;
 pub use remote_server::RemoteServer;

@@ -2,8 +2,9 @@
 //!
 //! Provides unified diff calculation, merge, and status management.
 
+mod engine;
 pub mod service;
 pub mod types;
 
-pub use service::DiffService;
+pub use engine::DiffService;
 pub use types::*;

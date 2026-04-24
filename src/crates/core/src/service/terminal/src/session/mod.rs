@@ -3,13 +3,14 @@
 //! This module handles terminal session lifecycle, persistence,
 //! and serialization for recovery.
 
-mod binding;
+pub mod binding;
 mod manager;
 mod persistent;
 mod serializer;
 mod singleton;
+mod terminal_binding;
 
-pub use binding::{TerminalBindingOptions, TerminalSessionBinding};
+pub use terminal_binding::{TerminalBindingOptions, TerminalSessionBinding};
 pub use manager::{
     CommandCompletionReason, CommandExecuteResult, CommandStream, CommandStreamEvent,
     ExecuteOptions, SessionManager,

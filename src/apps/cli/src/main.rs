@@ -8,6 +8,7 @@ mod agent;
 mod config;
 mod modes;
 mod session;
+mod session_store;
 mod ui;
 
 use anyhow::{Context, Result};
