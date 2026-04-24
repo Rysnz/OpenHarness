@@ -1,8 +1,8 @@
-mod stream_handler;
-mod types;
+mod provider_streams;
+pub mod wire;
 
-pub use stream_handler::handle_anthropic_stream;
-pub use stream_handler::handle_gemini_stream;
-pub use stream_handler::handle_openai_stream;
-pub use stream_handler::handle_responses_stream;
-pub use types::unified::{UnifiedResponse, UnifiedTokenUsage, UnifiedToolCall};
+pub use provider_streams::handle_anthropic_stream;
+pub use provider_streams::handle_gemini_stream;
+pub use provider_streams::handle_openai_stream;
+pub use provider_streams::handle_responses_stream;
+pub use wire::unified::{UnifiedResponse, UnifiedTokenUsage, UnifiedToolCall};
