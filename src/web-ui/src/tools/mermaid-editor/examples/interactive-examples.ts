@@ -4,6 +4,51 @@
 
 import { MermaidPanelData, NodeMetadata, HighlightState } from '../types/MermaidPanelTypes';
 
+type ScenarioKind = 'success' | 'failure' | 'partial';
+
+const clonePanelExample = (example: MermaidPanelData): MermaidPanelData =>
+  JSON.parse(JSON.stringify(example)) as MermaidPanelData;
+
+const getInteractiveNodeIds = (example: MermaidPanelData): string[] =>
+  Object.keys(example.interactive_config?.node_metadata || {});
+
+const highlightState = (
+  executed: string[] = [],
+  failed: string[] = [],
+  current: string | null = null,
+  warnings: string[] = []
+): HighlightState => ({ executed, failed, current, warnings });
+
+const scenarioHighlights: Record<ScenarioKind, (nodeIds: string[]) => HighlightState> = {
+  success: (nodeIds) => highlightState(nodeIds),
+  failure: (nodeIds) => {
+    const midPoint = Math.floor(nodeIds.length / 2);
+    return highlightState(nodeIds.slice(0, midPoint), nodeIds.slice(midPoint));
+  },
+  partial: (nodeIds) => {
+    const executedCount = Math.floor(nodeIds.length * 0.7);
+    return highlightState(
+      nodeIds.slice(0, executedCount),
+      nodeIds.slice(executedCount, executedCount + 1),
+      nodeIds[executedCount + 1] || null,
+      nodeIds.slice(executedCount + 2, executedCount + 3)
+    );
+  },
+};
+
+const dynamicStep = (
+  step: number,
+  description: string,
+  executed: string[],
+  failed: string[],
+  current: string | null,
+  warnings: string[] = []
+): { step: number; highlights: HighlightState; description: string } => ({
+  step,
+  highlights: highlightState(executed, failed, current, warnings),
+  description,
+});
+
 // Example 1: login flow debugging
 export const loginFlowExample: MermaidPanelData = {
   mermaid_code: `graph TD
@@ -357,105 +402,26 @@ export const databaseTransactionExample: MermaidPanelData = {
 };
 
 // Test scenario: simulated execution flow
-export const createTestScenario = (baseExample: MermaidPanelData, scenario: 'success' | 'failure' | 'partial'): MermaidPanelData => {
-  const example = JSON.parse(JSON.stringify(baseExample)) as MermaidPanelData;
+export const createTestScenario = (baseExample: MermaidPanelData, scenario: ScenarioKind): MermaidPanelData => {
+  const example = clonePanelExample(baseExample);
   
   if (!example.interactive_config) return example;
 
-  const nodeIds = Object.keys(example.interactive_config.node_metadata);
-  
-  switch (scenario) {
-    case 'success':
-      // All nodes succeed.
-      example.interactive_config.highlights = {
-        executed: nodeIds,
-        failed: [],
-        current: null,
-        warnings: []
-      };
-      break;
-      
-    case 'failure':
-      // Partial failure.
-      const midPoint = Math.floor(nodeIds.length / 2);
-      example.interactive_config.highlights = {
-        executed: nodeIds.slice(0, midPoint),
-        failed: nodeIds.slice(midPoint),
-        current: null,
-        warnings: []
-      };
-      break;
-      
-    case 'partial':
-      // Partial execution with warnings.
-      const executedCount = Math.floor(nodeIds.length * 0.7);
-      example.interactive_config.highlights = {
-        executed: nodeIds.slice(0, executedCount),
-        failed: nodeIds.slice(executedCount, executedCount + 1),
-        current: nodeIds[executedCount + 1] || null,
-        warnings: nodeIds.slice(executedCount + 2, executedCount + 3)
-      };
-      break;
-  }
+  example.interactive_config.highlights = scenarioHighlights[scenario](getInteractiveNodeIds(example));
 
   return example;
 };
 
 // Test case for dynamic highlight updates
 export const createDynamicUpdateTest = (baseExample: MermaidPanelData): Array<{ step: number; highlights: HighlightState; description: string }> => {
-  const nodeIds = Object.keys(baseExample.interactive_config?.node_metadata || {});
+  const nodeIds = getInteractiveNodeIds(baseExample);
   
   return [
-    {
-      step: 1,
-      highlights: {
-        executed: [],
-        failed: [],
-        current: nodeIds[0],
-        warnings: []
-      },
-      description: 'Start execution, current node: first node'
-    },
-    {
-      step: 2,
-      highlights: {
-        executed: [nodeIds[0]],
-        failed: [],
-        current: nodeIds[1],
-        warnings: []
-      },
-      description: 'First node completed, current node: second node'
-    },
-    {
-      step: 3,
-      highlights: {
-        executed: [nodeIds[0], nodeIds[1]],
-        failed: [],
-        current: nodeIds[2],
-        warnings: []
-      },
-      description: 'Second node completed, current node: third node'
-    },
-    {
-      step: 4,
-      highlights: {
-        executed: [nodeIds[0], nodeIds[1], nodeIds[2]],
-        failed: [nodeIds[3]],
-        current: null,
-        warnings: []
-      },
-      description: 'Third node completed, fourth node failed'
-    },
-    {
-      step: 5,
-      highlights: {
-        executed: [nodeIds[0], nodeIds[1], nodeIds[2]],
-        failed: [nodeIds[3]],
-        current: null,
-        warnings: [nodeIds[4]]
-      },
-      description: 'Flow finished, fifth node has a warning'
-    }
+    dynamicStep(1, 'Start execution, current node: first node', [], [], nodeIds[0]),
+    dynamicStep(2, 'First node completed, current node: second node', [nodeIds[0]], [], nodeIds[1]),
+    dynamicStep(3, 'Second node completed, current node: third node', [nodeIds[0], nodeIds[1]], [], nodeIds[2]),
+    dynamicStep(4, 'Third node completed, fourth node failed', [nodeIds[0], nodeIds[1], nodeIds[2]], [nodeIds[3]], null),
+    dynamicStep(5, 'Flow finished, fifth node has a warning', [nodeIds[0], nodeIds[1], nodeIds[2]], [nodeIds[3]], null, [nodeIds[4]])
   ];
 };
 
