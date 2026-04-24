@@ -451,15 +451,35 @@ export const MERMAID_COLOR_SCHEMES = {
   }
 };
 
+const DIAGRAM_TYPE_DISPLAY_NAMES: Record<string, string> = {
+  flowchart: 'Flowchart',
+  sequence: 'Sequence Diagram',
+  classDiagram: 'Class Diagram',
+  stateDiagram: 'State Diagram',
+  erDiagram: 'Entity Relationship Diagram',
+  journey: 'User Journey',
+  gantt: 'Gantt Chart',
+  pie: 'Pie Chart',
+  mindmap: 'Mind Map',
+  timeline: 'Timeline',
+  gitgraph: 'Git Graph',
+  c4Context: 'C4 Context Diagram',
+  quadrant: 'Quadrant Chart'
+};
+
+const fallbackTemplateFor = (diagramType: string) => `${diagramType}
+    A[Start] --> B[End]`;
+
+const randomIdSuffix = () => Math.random().toString(36).slice(2, 7);
+
 // Default template for a diagram type.
 export function getDefaultTemplate(diagramType: string): string {
   const template = MERMAID_QUICK_TEMPLATES.find(t => t.diagramType === diagramType);
-  return template?.sourceCode || `${diagramType}
-    A[Start] --> B[End]`;
+  return template?.sourceCode || fallbackTemplateFor(diagramType);
 }
 
 export function generateNodeId(prefix: string = 'node'): string {
-  return `${prefix}_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+  return `${prefix}_${Date.now()}_${randomIdSuffix()}`;
 }
 
 export function generateEdgeId(source: string, target: string): string {
@@ -480,21 +500,5 @@ export function formatSourceCode(sourceCode: string): string {
 
 // Display names for diagram types.
 export function getDiagramTypeDisplayName(type: string): string {
-  const typeNames: Record<string, string> = {
-    'flowchart': 'Flowchart',
-    'sequence': 'Sequence Diagram',
-    'classDiagram': 'Class Diagram',
-    'stateDiagram': 'State Diagram',
-    'erDiagram': 'Entity Relationship Diagram',
-    'journey': 'User Journey',
-    'gantt': 'Gantt Chart',
-    'pie': 'Pie Chart',
-    'mindmap': 'Mind Map',
-    'timeline': 'Timeline',
-    'gitgraph': 'Git Graph',
-    'c4Context': 'C4 Context Diagram',
-    'quadrant': 'Quadrant Chart'
-  };
-  
-  return typeNames[type] || type;
+  return DIAGRAM_TYPE_DISPLAY_NAMES[type] || type;
 }
