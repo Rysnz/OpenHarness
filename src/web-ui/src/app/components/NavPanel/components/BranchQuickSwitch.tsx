@@ -15,6 +15,17 @@ import { createLogger } from '@/shared/utils/logger';
 import './BranchQuickSwitch.scss';
 
 const log = createLogger('BranchQuickSwitch');
+const PANEL_WIDTH = 280;
+const PANEL_MARGIN = 12;
+const PANEL_HEIGHT = 320;
+const PANEL_GAP = 8;
+const FOCUS_DELAY_MS = 50;
+const OUTSIDE_CLICK_DELAY_MS = 10;
+
+interface OverlayPosition {
+  top: number;
+  left: number;
+}
 
 export interface BranchQuickSwitchProps {
   isOpen: boolean;
@@ -23,6 +34,78 @@ export interface BranchQuickSwitchProps {
   currentBranch: string;
   anchorRef: React.RefObject<HTMLElement>;
   onSwitchSuccess?: (branchName: string) => void;
+}
+
+function getPanelPosition(anchor: HTMLElement): OverlayPosition {
+  const rect = anchor.getBoundingClientRect();
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+
+  let left = rect.right + PANEL_GAP;
+  if (left + PANEL_WIDTH > viewportWidth - PANEL_MARGIN) {
+    left = rect.left - PANEL_WIDTH - PANEL_GAP;
+  }
+
+  let top = rect.top;
+  if (top + PANEL_HEIGHT > viewportHeight - PANEL_MARGIN) {
+    top = viewportHeight - PANEL_HEIGHT - PANEL_MARGIN;
+  }
+
+  return {
+    top: Math.max(PANEL_MARGIN, top),
+    left: Math.max(PANEL_MARGIN, left)
+  };
+}
+
+function normalizeBranches(branches: GitBranchType[]): GitBranchType[] {
+  return branches.map(branch => ({
+    name: branch.name,
+    current: branch.current,
+    remote: branch.remote,
+    lastCommit: branch.lastCommit,
+    ahead: branch.ahead,
+    behind: branch.behind,
+  }));
+}
+
+function filterAndSortBranches(branches: GitBranchType[], searchTerm: string): GitBranchType[] {
+  const query = searchTerm.trim().toLowerCase();
+  const visibleBranches = query
+    ? branches.filter(branch => branch.name.toLowerCase().includes(query))
+    : branches;
+
+  return [...visibleBranches].sort((a, b) => {
+    if (a.current) return -1;
+    if (b.current) return 1;
+    return a.name.localeCompare(b.name);
+  });
+}
+
+function branchItemClassName(branch: GitBranchType, index: number, selectedIndex: number, switchingBranch: string | null): string {
+  return [
+    'branch-quick-switch__item',
+    branch.current && 'branch-quick-switch__item--current',
+    index === selectedIndex && 'branch-quick-switch__item--selected',
+    switchingBranch === branch.name && 'branch-quick-switch__item--switching',
+  ].filter(Boolean).join(' ');
+}
+
+function scrollSelectedBranchIntoView(list: HTMLDivElement | null, selectedIndex: number): void {
+  if (!list) {
+    return;
+  }
+
+  const items = list.querySelectorAll('.branch-quick-switch__item');
+  const selectedItem = items[selectedIndex] as HTMLElement;
+  selectedItem?.scrollIntoView({ block: 'nearest' });
+}
+
+function emitBranchChanged(repositoryPath: string, branchName: string): void {
+  gitEventService.emit('branch:changed', {
+    repositoryPath,
+    branch: { name: branchName, current: true, remote: false, ahead: 0, behind: 0 },
+    timestamp: new Date(),
+  });
 }
 
 export const BranchQuickSwitch: React.FC<BranchQuickSwitchProps> = ({
@@ -46,30 +129,10 @@ export const BranchQuickSwitch: React.FC<BranchQuickSwitchProps> = ({
   const panelRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
-  const PANEL_WIDTH = 280;
-  const PANEL_MARGIN = 12;
-
   // Position relative to anchor (NavPanel item)
   useEffect(() => {
     if (isOpen && anchorRef.current) {
-      const rect = anchorRef.current.getBoundingClientRect();
-      const viewportWidth = window.innerWidth;
-      const viewportHeight = window.innerHeight;
-
-      let left = rect.right + 8;
-      if (left + PANEL_WIDTH > viewportWidth - PANEL_MARGIN) {
-        left = rect.left - PANEL_WIDTH - 8;
-      }
-      left = Math.max(PANEL_MARGIN, left);
-
-      const panelHeight = 320;
-      let top = rect.top;
-      if (top + panelHeight > viewportHeight - PANEL_MARGIN) {
-        top = viewportHeight - panelHeight - PANEL_MARGIN;
-      }
-      top = Math.max(PANEL_MARGIN, top);
-
-      setPosition({ top, left });
+      setPosition(getPanelPosition(anchorRef.current));
     }
   }, [isOpen, anchorRef]);
 
@@ -78,7 +141,7 @@ export const BranchQuickSwitch: React.FC<BranchQuickSwitchProps> = ({
       setSearchTerm('');
       setSelectedIndex(0);
     } else {
-      setTimeout(() => inputRef.current?.focus(), 50);
+      setTimeout(() => inputRef.current?.focus(), FOCUS_DELAY_MS);
     }
   }, [isOpen]);
 
@@ -91,7 +154,7 @@ export const BranchQuickSwitch: React.FC<BranchQuickSwitchProps> = ({
     };
     const timer = setTimeout(() => {
       document.addEventListener('mousedown', handleClickOutside);
-    }, 10);
+    }, OUTSIDE_CLICK_DELAY_MS);
     return () => {
       clearTimeout(timer);
       document.removeEventListener('mousedown', handleClickOutside);
@@ -112,10 +175,7 @@ export const BranchQuickSwitch: React.FC<BranchQuickSwitchProps> = ({
     try {
       const cachedState = gitStateManager.getState(repositoryPath);
       if (cachedState?.branches && cachedState.branches.length > 0) {
-        setBranches(cachedState.branches.map(b => ({
-          name: b.name, current: b.current, remote: b.remote,
-          lastCommit: b.lastCommit, ahead: b.ahead, behind: b.behind,
-        })));
+        setBranches(normalizeBranches(cachedState.branches));
         setIsLoading(false);
         gitStateManager.refresh(repositoryPath, { layers: ['detailed'], silent: true });
         return;
@@ -123,10 +183,7 @@ export const BranchQuickSwitch: React.FC<BranchQuickSwitchProps> = ({
       await gitStateManager.refresh(repositoryPath, { layers: ['detailed'], force: true });
       const updatedState = gitStateManager.getState(repositoryPath);
       if (updatedState?.branches) {
-        setBranches(updatedState.branches.map(b => ({
-          name: b.name, current: b.current, remote: b.remote,
-          lastCommit: b.lastCommit, ahead: b.ahead, behind: b.behind,
-        })));
+        setBranches(normalizeBranches(updatedState.branches));
       } else {
         const branchList = await gitService.getBranches(repositoryPath, false);
         setBranches(branchList);
@@ -145,16 +202,7 @@ export const BranchQuickSwitch: React.FC<BranchQuickSwitchProps> = ({
   }, [isOpen, loadBranches, repositoryPath]);
 
   const filteredBranches = useMemo(() => {
-    let result = branches;
-    if (searchTerm.trim()) {
-      const lower = searchTerm.toLowerCase();
-      result = result.filter(b => b.name.toLowerCase().includes(lower));
-    }
-    return [...result].sort((a, b) => {
-      if (a.current) return -1;
-      if (b.current) return 1;
-      return a.name.localeCompare(b.name);
-    });
+    return filterAndSortBranches(branches, searchTerm);
   }, [branches, searchTerm]);
 
   useEffect(() => { setSelectedIndex(0); }, [filteredBranches.length]);
@@ -170,11 +218,7 @@ export const BranchQuickSwitch: React.FC<BranchQuickSwitchProps> = ({
           t('quickSwitch.notifications.switchSuccess', { branch: branchName }),
           { duration: 3000 }
         );
-        gitEventService.emit('branch:changed', {
-          repositoryPath,
-          branch: { name: branchName, current: true, remote: false, ahead: 0, behind: 0 },
-          timestamp: new Date(),
-        });
+        emitBranchChanged(repositoryPath, branchName);
         onSwitchSuccess?.(branchName);
         onClose();
       } else {
@@ -216,9 +260,7 @@ export const BranchQuickSwitch: React.FC<BranchQuickSwitchProps> = ({
 
   useEffect(() => {
     if (listRef.current && filteredBranches.length > 0) {
-      const items = listRef.current.querySelectorAll('.branch-quick-switch__item');
-      const selectedItem = items[selectedIndex] as HTMLElement;
-      if (selectedItem) selectedItem.scrollIntoView({ block: 'nearest' });
+      scrollSelectedBranchIntoView(listRef.current, selectedIndex);
     }
   }, [selectedIndex, filteredBranches.length]);
 
@@ -255,12 +297,7 @@ export const BranchQuickSwitch: React.FC<BranchQuickSwitchProps> = ({
           filteredBranches.map((branch, index) => (
             <div
               key={branch.name}
-              className={[
-                'branch-quick-switch__item',
-                branch.current && 'branch-quick-switch__item--current',
-                index === selectedIndex && 'branch-quick-switch__item--selected',
-                switchingBranch === branch.name && 'branch-quick-switch__item--switching',
-              ].filter(Boolean).join(' ')}
+              className={branchItemClassName(branch, index, selectedIndex, switchingBranch)}
               onClick={() => handleSwitchBranch(branch.name)}
               onMouseEnter={() => setSelectedIndex(index)}
             >
