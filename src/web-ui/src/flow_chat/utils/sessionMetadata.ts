@@ -15,6 +15,9 @@ const RELATIONSHIP_METADATA_KEYS = new Set([
   'parentTurnIndex',
 ]);
 
+const TEXT_ITEM_TYPE = 'text';
+const TOOL_ITEM_TYPE = 'tool';
+
 type SessionRelationshipInput = Pick<Session, 'sessionKind' | 'parentSessionId' | 'btwOrigin'>;
 
 export interface ResolvedSessionRelationship {
@@ -41,6 +44,29 @@ function normalizeTurnIndex(value: unknown): number | undefined {
   }
 
   return undefined;
+}
+
+function countRoundItems(
+  turn: Session['dialogTurns'][number],
+  itemType: typeof TEXT_ITEM_TYPE | typeof TOOL_ITEM_TYPE
+): number {
+  return turn.modelRounds.reduce((sum, round) => {
+    return sum + round.items.filter(item => item.type === itemType).length;
+  }, 0);
+}
+
+function preserveNonRelationshipMetadata(
+  existingCustomMetadata?: SessionCustomMetadata
+): SessionCustomMetadata {
+  return Object.entries(existingCustomMetadata || {}).reduce<SessionCustomMetadata>(
+    (metadata, [key, value]) => {
+      if (!RELATIONSHIP_METADATA_KEYS.has(key)) {
+        metadata[key] = value;
+      }
+      return metadata;
+    },
+    {}
+  );
 }
 
 export function normalizeSessionKind(value: unknown): SessionKind {
@@ -126,18 +152,10 @@ export function calculateSessionStats(
 ): Pick<SessionMetadata, 'turnCount' | 'messageCount' | 'toolCallCount'> {
   const turnCount = session.dialogTurns.length;
   const messageCount = session.dialogTurns.reduce((sum, turn) => {
-    return (
-      sum +
-      1 +
-      turn.modelRounds.reduce((roundSum, round) => {
-        return roundSum + round.items.filter(item => item.type === 'text').length;
-      }, 0)
-    );
+    return sum + 1 + countRoundItems(turn, TEXT_ITEM_TYPE);
   }, 0);
   const toolCallCount = session.dialogTurns.reduce((sum, turn) => {
-    return sum + turn.modelRounds.reduce((roundSum, round) => {
-      return roundSum + round.items.filter(item => item.type === 'tool').length;
-    }, 0);
+    return sum + countRoundItems(turn, TOOL_ITEM_TYPE);
   }, 0);
 
   return { turnCount, messageCount, toolCallCount };
@@ -148,28 +166,49 @@ function buildSessionCustomMetadata(
   existingCustomMetadata?: SessionCustomMetadata
 ): SessionCustomMetadata {
   const normalized = normalizeSessionRelationship(session);
-  const nextCustomMetadata: SessionCustomMetadata = {};
-
-  for (const [key, value] of Object.entries(existingCustomMetadata || {})) {
-    if (!RELATIONSHIP_METADATA_KEYS.has(key)) {
-      nextCustomMetadata[key] = value;
-    }
-  }
+  const nextCustomMetadata = preserveNonRelationshipMetadata(existingCustomMetadata);
 
   nextCustomMetadata.kind = normalized.sessionKind;
 
   if (normalized.sessionKind === 'btw') {
-    nextCustomMetadata.parentSessionId = normalized.parentSessionId ?? null;
-    nextCustomMetadata.parentRequestId = normalized.btwOrigin?.requestId ?? null;
-    nextCustomMetadata.parentDialogTurnId =
-      normalized.btwOrigin?.parentDialogTurnId ?? null;
-    nextCustomMetadata.parentTurnIndex =
-      normalized.btwOrigin?.parentTurnIndex ?? null;
+    Object.assign(nextCustomMetadata, {
+      parentSessionId: normalized.parentSessionId ?? null,
+      parentRequestId: normalized.btwOrigin?.requestId ?? null,
+      parentDialogTurnId: normalized.btwOrigin?.parentDialogTurnId ?? null,
+      parentTurnIndex: normalized.btwOrigin?.parentTurnIndex ?? null,
+    });
   }
 
   nextCustomMetadata.lastFinishedAt = session.lastFinishedAt ?? null;
 
   return nextCustomMetadata;
+}
+
+function mergeCount(current: number, existing?: number): number {
+  return Math.max(current, existing ?? 0);
+}
+
+function resolveSessionName(
+  session: Pick<Session, 'title'>,
+  existingMetadata?: SessionMetadata | null
+): string {
+  return (
+    session.title ||
+    existingMetadata?.sessionName ||
+    i18nService.t('flow-chat:session.new')
+  );
+}
+
+function resolveAgentType(
+  session: Pick<Session, 'mode' | 'config'>,
+  existingMetadata?: SessionMetadata | null
+): string {
+  return (
+    session.mode ||
+    session.config.agentType ||
+    existingMetadata?.agentType ||
+    'agentic'
+  );
 }
 
 function buildSessionTags(
@@ -211,28 +250,15 @@ export function buildSessionMetadata(
   return {
     ...existingMetadata,
     sessionId: session.sessionId,
-    sessionName:
-      session.title ||
-      existingMetadata?.sessionName ||
-      i18nService.t('flow-chat:session.new'),
-    agentType:
-      session.mode ||
-      session.config.agentType ||
-      existingMetadata?.agentType ||
-      'agentic',
+    sessionName: resolveSessionName(session, existingMetadata),
+    agentType: resolveAgentType(session, existingMetadata),
     modelName:
       session.config.modelName || existingMetadata?.modelName || 'auto',
     createdAt: existingMetadata?.createdAt ?? session.createdAt,
     lastActiveAt: Date.now(),
-    turnCount: Math.max(stats.turnCount, existingMetadata?.turnCount ?? 0),
-    messageCount: Math.max(
-      stats.messageCount,
-      existingMetadata?.messageCount ?? 0
-    ),
-    toolCallCount: Math.max(
-      stats.toolCallCount,
-      existingMetadata?.toolCallCount ?? 0
-    ),
+    turnCount: mergeCount(stats.turnCount, existingMetadata?.turnCount),
+    messageCount: mergeCount(stats.messageCount, existingMetadata?.messageCount),
+    toolCallCount: mergeCount(stats.toolCallCount, existingMetadata?.toolCallCount),
     status: 'active',
     snapshotSessionId: existingMetadata?.snapshotSessionId,
     tags: buildSessionTags(sessionKind, existingMetadata?.tags),
