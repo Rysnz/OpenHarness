@@ -1,4 +1,56 @@
 @use '../../../component-library/styles/tokens' as *;
+@use 'sass:map';
+
+$feature-modal-sizes: (
+  sm: (width: 380px, height: 520px),
+  md: (width: 440px, height: 580px),
+  lg: (width: 480px, height: 640px),
+  xl: (width: 540px, height: 700px),
+);
+
+@mixin feature-flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@mixin feature-modal-size($width, $height) {
+  width: min($width, 90vw);
+  height: min($height, 90vh);
+}
+
+@mixin feature-circle($size) {
+  width: $size;
+  height: $size;
+  border-radius: 50%;
+}
+
+@mixin feature-cover-media {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+@mixin feature-thin-scrollbar($width: 4px) {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-base) transparent;
+
+  &::-webkit-scrollbar { width: $width; }
+  &::-webkit-scrollbar-track { background: transparent; }
+  &::-webkit-scrollbar-thumb {
+    background: var(--border-base);
+    border-radius: calc($width / 2);
+  }
+}
+
+@mixin feature-table-cell {
+  padding: 6px 12px;
+  text-align: left;
+  border: 1px solid var(--border-base);
+  line-height: 1.5;
+  vertical-align: middle;
+}
 
 // ─── Overlay backdrop ─────────────────────────────────────────────────────────
 .feature-modal-backdrop {
@@ -34,25 +86,22 @@
   }
 
   // Fixed portrait sizes
-  &--sm  { width: min(380px, 90vw); height: min(520px, 90vh); }
-  &--md  { width: min(440px, 90vw); height: min(580px, 90vh); }
-  &--lg  { width: min(480px, 90vw); height: min(640px, 90vh); }
-  &--xl  { width: min(540px, 90vw); height: min(700px, 90vh); }
+  @each $name, $size in $feature-modal-sizes {
+    &--#{$name} {
+      @include feature-modal-size(map.get($size, width), map.get($size, height));
+    }
+  }
 
   // ─── Close button ──────────────────────────────────────────────────────────
   &__close {
     position: absolute;
     top: 14px;
     right: 14px;
-    width: 28px;
-    height: 28px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    @include feature-circle(28px);
+    @include feature-flex-center;
     line-height: 0;
     background: var(--color-bg-secondary);
     border: 1px solid var(--border-base);
-    border-radius: 50%;
     color: var(--color-text-muted);
     cursor: pointer;
     z-index: 1;
@@ -74,14 +123,7 @@
     position: relative;
 
     // Thin scrollbar
-    scrollbar-width: thin;
-    scrollbar-color: var(--border-base) transparent;
-    &::-webkit-scrollbar { width: 4px; }
-    &::-webkit-scrollbar-track { background: transparent; }
-    &::-webkit-scrollbar-thumb {
-      background: var(--border-base);
-      border-radius: 2px;
-    }
+    @include feature-thin-scrollbar;
   }
 
   // ─── Footer navigation ─────────────────────────────────────────────────────
@@ -102,9 +144,7 @@
   }
 
   &__dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
+    @include feature-circle(6px);
     background: var(--color-bg-tertiary);
     border: 1px solid var(--border-base);
     cursor: pointer;
@@ -194,7 +234,7 @@
     background: var(--color-bg-secondary);
     flex-shrink: 0;
 
-    img, video { width: 100%; height: 100%; object-fit: cover; display: block; }
+    img, video { @include feature-cover-media; }
   }
 
   &--media_left .feature-modal-page__media,
@@ -310,11 +350,7 @@
       font-size: 12px;
 
       th, td {
-        padding: 6px 12px;
-        text-align: left;
-        border: 1px solid var(--border-base);
-        line-height: 1.5;
-        vertical-align: middle;
+        @include feature-table-cell;
       }
 
       thead th {
@@ -335,26 +371,19 @@
 
 // ─── Media renderer ───────────────────────────────────────────────────────────
 .announcement-media {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  @include feature-flex-center;
   width: 100%;
   height: 100%;
 
   video, img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
+    @include feature-cover-media;
   }
 
   &__placeholder {
     width: 100%;
     height: 100%;
     min-height: 120px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    @include feature-flex-center;
     color: var(--color-text-muted);
     font-size: 13px;
   }
