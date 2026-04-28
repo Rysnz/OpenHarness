@@ -9,6 +9,9 @@ import type {
   PanelContent,
 } from '../types';
 import './EditorArea.scss';
+
+type EditorPaneName = 'primary' | 'secondary' | 'tertiary';
+
 export interface EditorAreaProps {
   workspacePath?: string;
   isSceneActive?: boolean;
@@ -153,85 +156,78 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
 
   const { splitMode, splitRatio, splitRatio2 } = layout;
 
-  if (splitMode === 'none') {
-    return (
-      <div ref={containerRef} className="canvas-editor-area">
-        <div className="canvas-editor-area__primary">
-          {renderEditorGroup('primary', primaryGroup)}
-        </div>
-      </div>
-    );
-  }
+  const renderPane = (
+    pane: EditorPaneName,
+    group: typeof primaryGroup,
+    style?: React.CSSProperties
+  ) => (
+    <div className={`canvas-editor-area__${pane}`} style={style}>
+      {renderEditorGroup(pane, group)}
+    </div>
+  );
 
-  if (splitMode === 'horizontal') {
-    return (
-      <div ref={containerRef} className="canvas-editor-area is-split is-horizontal">
-        <div className="canvas-editor-area__primary" style={{ width: `${splitRatio * 100}%` }}>
-          {renderEditorGroup('primary', primaryGroup)}
-        </div>
-        <SplitHandle
-          direction="horizontal"
-          ratio={splitRatio}
-          onRatioChange={setSplitRatio}
-          containerRef={containerRef}
-        />
-        <div className="canvas-editor-area__secondary" style={{ width: `${(1 - splitRatio) * 100}%` }}>
-          {renderEditorGroup('secondary', secondaryGroup)}
-        </div>
-      </div>
-    );
-  }
+  const renderSplitHandle = (
+    direction: 'horizontal' | 'vertical',
+    ratio: number,
+    onRatioChange: (ratio: number) => void,
+    ref: React.RefObject<HTMLDivElement>
+  ) => (
+    <SplitHandle
+      direction={direction}
+      ratio={ratio}
+      onRatioChange={onRatioChange}
+      containerRef={ref}
+    />
+  );
 
-  if (splitMode === 'vertical') {
-    return (
-      <div ref={containerRef} className="canvas-editor-area is-split is-vertical">
-        <div className="canvas-editor-area__primary" style={{ height: `${splitRatio * 100}%` }}>
-          {renderEditorGroup('primary', primaryGroup)}
+  switch (splitMode) {
+    case 'none':
+      return (
+        <div ref={containerRef} className="canvas-editor-area">
+          {renderPane('primary', primaryGroup)}
         </div>
-        <SplitHandle
-          direction="vertical"
-          ratio={splitRatio}
-          onRatioChange={setSplitRatio}
-          containerRef={containerRef}
-        />
-        <div className="canvas-editor-area__secondary" style={{ height: `${(1 - splitRatio) * 100}%` }}>
-          {renderEditorGroup('secondary', secondaryGroup)}
-        </div>
-      </div>
-    );
-  }
+      );
 
-  if (splitMode === 'grid') {
-    return (
-      <div ref={containerRef} className="canvas-editor-area is-grid">
-        <div ref={topRowRef} className="canvas-editor-area__top-row" style={{ flex: `0 0 calc(${splitRatio * 100}% - 2px)` }}>
-          <div className="canvas-editor-area__primary" style={{ flex: `0 0 calc(${splitRatio2 * 100}% - 2px)` }}>
-            {renderEditorGroup('primary', primaryGroup)}
+    case 'horizontal':
+      return (
+        <div ref={containerRef} className="canvas-editor-area is-split is-horizontal">
+          {renderPane('primary', primaryGroup, { width: `${splitRatio * 100}%` })}
+          {renderSplitHandle('horizontal', splitRatio, setSplitRatio, containerRef)}
+          {renderPane('secondary', secondaryGroup, { width: `${(1 - splitRatio) * 100}%` })}
+        </div>
+      );
+
+    case 'vertical':
+      return (
+        <div ref={containerRef} className="canvas-editor-area is-split is-vertical">
+          {renderPane('primary', primaryGroup, { height: `${splitRatio * 100}%` })}
+          {renderSplitHandle('vertical', splitRatio, setSplitRatio, containerRef)}
+          {renderPane('secondary', secondaryGroup, { height: `${(1 - splitRatio) * 100}%` })}
+        </div>
+      );
+
+    case 'grid':
+      return (
+        <div ref={containerRef} className="canvas-editor-area is-grid">
+          <div
+            ref={topRowRef}
+            className="canvas-editor-area__top-row"
+            style={{ flex: `0 0 calc(${splitRatio * 100}% - 2px)` }}
+          >
+            {renderPane('primary', primaryGroup, {
+              flex: `0 0 calc(${splitRatio2 * 100}% - 2px)`,
+            })}
+            {renderSplitHandle('horizontal', splitRatio2, setSplitRatio2, topRowRef)}
+            {renderPane('secondary', secondaryGroup, { flex: 1, minWidth: 0 })}
           </div>
-          <SplitHandle
-            direction="horizontal"
-            ratio={splitRatio2}
-            onRatioChange={setSplitRatio2}
-            containerRef={topRowRef}
-          />
-          <div className="canvas-editor-area__secondary" style={{ flex: 1, minWidth: 0 }}>
-            {renderEditorGroup('secondary', secondaryGroup)}
-          </div>
+          {renderSplitHandle('vertical', splitRatio, setSplitRatio, containerRef)}
+          {renderPane('tertiary', tertiaryGroup, { flex: 1, minHeight: 0 })}
         </div>
-        <SplitHandle
-          direction="vertical"
-          ratio={splitRatio}
-          onRatioChange={setSplitRatio}
-          containerRef={containerRef}
-        />
-        <div className="canvas-editor-area__tertiary" style={{ flex: 1, minHeight: 0 }}>
-          {renderEditorGroup('tertiary', tertiaryGroup)}
-        </div>
-      </div>
-    );
-  }
+      );
 
-  return null;
+    default:
+      return null;
+  }
 };
 
 EditorArea.displayName = 'EditorArea';
