@@ -74,6 +74,50 @@ export interface UseEditorHistoryReturn {
   setInitialContent: (content: string) => void
 }
 
+function createHistoryEntry(
+  content: string,
+  versionId: number,
+  options?: PushChangeOptions
+): HistoryEntry {
+  return {
+    content,
+    selectionStart: options?.selectionStart ?? null,
+    selectionEnd: options?.selectionEnd ?? null,
+    transactionType: options?.transactionType ?? 'external',
+    timestamp: Date.now(),
+    versionId
+  }
+}
+
+function getSelection(entry?: HistoryEntry): HistorySelection | null {
+  if (!entry || entry.selectionStart === null || entry.selectionEnd === null) {
+    return null
+  }
+
+  return {
+    start: entry.selectionStart,
+    end: entry.selectionEnd
+  }
+}
+
+function canMergeTyping(
+  entry: HistoryEntry | undefined,
+  transactionType: HistoryEntry['transactionType'],
+  now: number,
+  debounceMs: number
+): boolean {
+  return Boolean(
+    entry &&
+    now - entry.timestamp < debounceMs &&
+    transactionType === 'typing' &&
+    entry.transactionType === 'typing'
+  )
+}
+
+function capHistory(stack: HistoryEntry[], maxHistorySize: number): HistoryEntry[] {
+  return stack.length > maxHistorySize ? stack.slice(stack.length - maxHistorySize) : stack
+}
+
 /**
  * Editor history hook.
  *
@@ -95,14 +139,9 @@ export function useEditorHistory(options: UseEditorHistoryOptions): UseEditorHis
 
   const versionIdRef = useRef(1)
   
-  const [historyStack, setHistoryStack] = useState<HistoryEntry[]>(() => [{
-    content: initialContent,
-    selectionStart: null,
-    selectionEnd: null,
-    transactionType: 'external',
-    timestamp: Date.now(),
-    versionId: 1
-  }])
+  const [historyStack, setHistoryStack] = useState<HistoryEntry[]>(() => [
+    createHistoryEntry(initialContent, 1)
+  ])
   
   const [currentIndex, setCurrentIndex] = useState(0)
   
@@ -114,9 +153,7 @@ export function useEditorHistory(options: UseEditorHistoryOptions): UseEditorHis
 
   const currentEntry = historyStack[currentIndex]
   const content = currentEntry?.content ?? initialContent
-  const selection = currentEntry && currentEntry.selectionStart !== null && currentEntry.selectionEnd !== null
-    ? { start: currentEntry.selectionStart, end: currentEntry.selectionEnd }
-    : null
+  const selection = getSelection(currentEntry)
   const currentVersionId = currentEntry?.versionId ?? 1
   const isDirty = currentVersionId !== savedVersionId
   
@@ -140,17 +177,13 @@ export function useEditorHistory(options: UseEditorHistoryOptions): UseEditorHis
       clearTimeout(debounceTimerRef.current)
     }
 
-    const now = Date.now()
     const lastEntry = historyStack[currentIndex]
-    const selectionStart = options?.selectionStart ?? null
-    const selectionEnd = options?.selectionEnd ?? null
     const transactionType = options?.transactionType ?? 'typing'
+    const now = Date.now()
     
-    const shouldMerge = lastEntry && 
-      (now - lastEntry.timestamp) < debounceMs &&
+    const shouldMerge =
       currentIndex === historyStack.length - 1 &&
-      transactionType === 'typing' &&
-      lastEntry.transactionType === 'typing'
+      canMergeTyping(lastEntry, transactionType, now, debounceMs)
 
     if (shouldMerge) {
       setHistoryStack(prev => {
@@ -158,8 +191,8 @@ export function useEditorHistory(options: UseEditorHistoryOptions): UseEditorHis
         newStack[currentIndex] = {
           ...newStack[currentIndex],
           content: newContent,
-          selectionStart,
-          selectionEnd,
+          selectionStart: options?.selectionStart ?? null,
+          selectionEnd: options?.selectionEnd ?? null,
           timestamp: now
         }
         return newStack
@@ -168,25 +201,15 @@ export function useEditorHistory(options: UseEditorHistoryOptions): UseEditorHis
       versionIdRef.current += 1
       const newVersionId = versionIdRef.current
       
-      const newEntry: HistoryEntry = {
-        content: newContent,
-        selectionStart,
-        selectionEnd,
-        transactionType,
-        timestamp: now,
-        versionId: newVersionId
-      }
+      const newEntry = createHistoryEntry(newContent, newVersionId, {
+        ...options,
+        transactionType
+      })
 
       setHistoryStack(prev => {
         const newStack = prev.slice(0, currentIndex + 1)
         newStack.push(newEntry)
-        
-        if (newStack.length > maxHistorySize) {
-          newStack.shift()
-          return newStack
-        }
-        
-        return newStack
+        return capHistory(newStack, maxHistorySize)
       })
       
       setCurrentIndex(prev => {
@@ -240,15 +263,7 @@ export function useEditorHistory(options: UseEditorHistoryOptions): UseEditorHis
   /** Reset to specific content (clears history) */
   const resetTo = useCallback((newContent: string) => {
     versionIdRef.current = 1
-    
-    const newEntry: HistoryEntry = {
-      content: newContent,
-      selectionStart: null,
-      selectionEnd: null,
-      transactionType: 'external',
-      timestamp: Date.now(),
-      versionId: 1
-    }
+    const newEntry = createHistoryEntry(newContent, 1)
     
     setHistoryStack([newEntry])
     setCurrentIndex(0)
@@ -261,15 +276,7 @@ export function useEditorHistory(options: UseEditorHistoryOptions): UseEditorHis
   const setInitialContent = useCallback((newContent: string) => {
     versionIdRef.current += 1
     const newVersionId = versionIdRef.current
-    
-    const newEntry: HistoryEntry = {
-      content: newContent,
-      selectionStart: null,
-      selectionEnd: null,
-      transactionType: 'external',
-      timestamp: Date.now(),
-      versionId: newVersionId
-    }
+    const newEntry = createHistoryEntry(newContent, newVersionId)
     
     setHistoryStack([newEntry])
     setCurrentIndex(0)
