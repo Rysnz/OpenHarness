@@ -4,9 +4,29 @@
 
 use crate::util::types::{Message, ToolDefinition};
 use log::warn;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 pub struct AnthropicMessageConverter;
+
+enum MessageRole {
+    System,
+    User,
+    Assistant,
+    Tool,
+    Unknown(String),
+}
+
+impl MessageRole {
+    fn parse(role: &str) -> Self {
+        match role {
+            "system" => Self::System,
+            "user" => Self::User,
+            "assistant" => Self::Assistant,
+            "tool" => Self::Tool,
+            other => Self::Unknown(other.to_string()),
+        }
+    }
+}
 
 impl AnthropicMessageConverter {
     /// Convert unified message format to Anthropic format
@@ -17,25 +37,25 @@ impl AnthropicMessageConverter {
         let mut anthropic_messages = Vec::new();
 
         for msg in messages {
-            match msg.role.as_str() {
-                "system" => {
+            match MessageRole::parse(msg.role.as_str()) {
+                MessageRole::System => {
                     if let Some(content) = msg.content {
                         system_message = Some(content);
                     }
                 }
-                "user" => {
+                MessageRole::User => {
                     anthropic_messages.push(Self::convert_user_message(msg));
                 }
-                "assistant" => {
+                MessageRole::Assistant => {
                     if let Some(converted) = Self::convert_assistant_message(msg) {
                         anthropic_messages.push(converted);
                     }
                 }
-                "tool" => {
+                MessageRole::Tool => {
                     anthropic_messages.push(Self::convert_tool_result_message(msg));
                 }
-                _ => {
-                    warn!("Unknown message role: {}", msg.role);
+                MessageRole::Unknown(role) => {
+                    warn!("Unknown message role: {}", role);
                 }
             }
         }
@@ -51,54 +71,8 @@ impl AnthropicMessageConverter {
         let mut merged: Vec<Value> = Vec::new();
 
         for msg in messages {
-            let role = msg.get("role").and_then(|r| r.as_str()).unwrap_or("");
-
-            if let Some(last) = merged.last_mut() {
-                let last_role = last.get("role").and_then(|r| r.as_str()).unwrap_or("");
-
-                if last_role == role && role == "user" {
-                    let current_content = msg.get("content");
-                    let last_content = last.get_mut("content");
-
-                    match (last_content, current_content) {
-                        (Some(Value::Array(last_arr)), Some(Value::Array(curr_arr))) => {
-                            last_arr.extend(curr_arr.clone());
-                            continue;
-                        }
-                        (Some(Value::Array(last_arr)), Some(Value::String(curr_str))) => {
-                            last_arr.push(json!({
-                                "type": "text",
-                                "text": curr_str
-                            }));
-                            continue;
-                        }
-                        (Some(Value::String(last_str)), Some(Value::Array(curr_arr))) => {
-                            let mut new_content = vec![json!({
-                                "type": "text",
-                                "text": last_str
-                            })];
-                            new_content.extend(curr_arr.clone());
-                            *last = json!({
-                                "role": "user",
-                                "content": new_content
-                            });
-                            continue;
-                        }
-                        (Some(Value::String(last_str)), Some(Value::String(curr_str))) => {
-                            let merged_text = if last_str.is_empty() {
-                                curr_str.to_string()
-                            } else {
-                                format!("{}\n\n{}", last_str, curr_str)
-                            };
-                            *last = json!({
-                                "role": "user",
-                                "content": merged_text
-                            });
-                            continue;
-                        }
-                        _ => {}
-                    }
-                }
+            if Self::try_merge_user_message(merged.last_mut(), &msg) {
+                continue;
             }
 
             merged.push(msg);
@@ -107,22 +81,79 @@ impl AnthropicMessageConverter {
         merged
     }
 
+    fn try_merge_user_message(last: Option<&mut Value>, current: &Value) -> bool {
+        let Some(last) = last else {
+            return false;
+        };
+
+        if Self::message_role(last) != Some("user") || Self::message_role(current) != Some("user") {
+            return false;
+        }
+
+        let Some(current_content) = current.get("content") else {
+            return false;
+        };
+        let Some(last_content) = last.get_mut("content") else {
+            return false;
+        };
+
+        match (last_content, current_content) {
+            (Value::Array(last_arr), Value::Array(curr_arr)) => {
+                last_arr.extend(curr_arr.clone());
+            }
+            (Value::Array(last_arr), Value::String(curr_str)) => {
+                last_arr.push(Self::text_block(curr_str));
+            }
+            (Value::String(last_str), Value::Array(curr_arr)) => {
+                let mut new_content = vec![Self::text_block(last_str)];
+                new_content.extend(curr_arr.clone());
+                *last = Self::role_message("user", Value::Array(new_content));
+            }
+            (Value::String(last_str), Value::String(curr_str)) => {
+                *last_str = Self::join_text_blocks(last_str, curr_str);
+            }
+            _ => return false,
+        }
+
+        true
+    }
+
+    fn message_role(message: &Value) -> Option<&str> {
+        message.get("role").and_then(|role| role.as_str())
+    }
+
+    fn role_message(role: &str, content: Value) -> Value {
+        json!({
+            "role": role,
+            "content": content
+        })
+    }
+
+    fn text_block(text: &str) -> Value {
+        json!({
+            "type": "text",
+            "text": text
+        })
+    }
+
+    fn join_text_blocks(existing: &str, next: &str) -> String {
+        if existing.is_empty() {
+            next.to_string()
+        } else {
+            format!("{}\n\n{}", existing, next)
+        }
+    }
+
     fn convert_user_message(msg: Message) -> Value {
         let content = msg.content.unwrap_or_default();
 
         if let Ok(parsed) = serde_json::from_str::<Value>(&content) {
             if parsed.is_array() {
-                return json!({
-                    "role": "user",
-                    "content": parsed
-                });
+                return Self::role_message("user", parsed);
             }
         }
 
-        json!({
-            "role": "user",
-            "content": content
-        })
+        Self::role_message("user", json!(content))
     }
 
     /// Convert assistant messages; return None when empty.
@@ -145,10 +176,7 @@ impl AnthropicMessageConverter {
 
         if let Some(text) = msg.content {
             if !text.is_empty() {
-                content.push(json!({
-                    "type": "text",
-                    "text": text
-                }));
+                content.push(Self::text_block(&text));
             }
         }
 
@@ -166,10 +194,7 @@ impl AnthropicMessageConverter {
         if content.is_empty() {
             None
         } else {
-            Some(json!({
-                "role": "assistant",
-                "content": content
-            }))
+            Some(Self::role_message("assistant", json!(content)))
         }
     }
 
@@ -208,10 +233,7 @@ impl AnthropicMessageConverter {
             tool_result["is_error"] = json!(true);
         }
 
-        json!({
-            "role": "user",
-            "content": [tool_result]
-        })
+        Self::role_message("user", json!([tool_result]))
     }
 
     /// Convert tool definitions to Anthropic format
