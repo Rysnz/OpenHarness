@@ -22,17 +22,60 @@ import { i18nService } from '@/infrastructure/i18n';
 class NotificationService {
   private idCounter = 0;
 
-   
   private generateId(): string {
     return `notification-${Date.now()}-${++this.idCounter}`;
   }
 
-   
+  private get timestamp(): number {
+    return Date.now();
+  }
+
+  private clampProgress(value: number): number {
+    return Math.max(0, Math.min(100, value));
+  }
+
+  private publish(notification: Notification): string {
+    notificationStore.addNotification(notification);
+    return notification.id;
+  }
+
+  private dismissLater(id: string, duration?: number): void {
+    if (!duration || duration <= 0) {
+      return;
+    }
+
+    setTimeout(() => {
+      this.dismiss(id);
+    }, duration);
+  }
+
+  private finishActiveNotification(id: string, message: string | undefined, type: 'success' | 'error'): void {
+    notificationStore.removeNotification(id);
+
+    if (!message) {
+      return;
+    }
+
+    this.toast(type, message, type === 'error' ? { duration: 0 } : undefined);
+  }
+
+  private getProgressMode(options: ProgressOptions): ProgressMode {
+    if (options.progressMode) {
+      return options.progressMode;
+    }
+    if (options.textOnly) {
+      return 'text-only';
+    }
+    if (options.total !== undefined) {
+      return 'fraction';
+    }
+    return 'percentage';
+  }
+
   success(message: string, options?: ToastOptions): string {
     return this.toast('success', message, options);
   }
 
-   
   error(message: string, options?: ToastOptions): string {
     return this.toast('error', message, {
       ...options,
@@ -40,21 +83,18 @@ class NotificationService {
     });
   }
 
-   
   warning(message: string, options?: ToastOptions): string {
     return this.toast('warning', message, options);
   }
 
-   
   info(message: string, options?: ToastOptions): string {
     return this.toast('info', message, options);
   }
 
-   
   private toast(type: NotificationType, message: string, options?: ToastOptions): string {
     const id = this.generateId();
     const state = notificationStore.getState();
-    
+
     const notification: Notification = {
       id,
       type,
@@ -62,7 +102,7 @@ class NotificationService {
       title: options?.title || this.getDefaultTitle(type),
       message,
       messageNode: options?.messageNode,
-      timestamp: Date.now(),
+      timestamp: this.timestamp,
       duration: options?.duration ?? state.config.defaultDuration,
       closable: options?.closable ?? true,
       actions: options?.actions,
@@ -71,31 +111,15 @@ class NotificationService {
       status: 'active'
     };
 
-    notificationStore.addNotification(notification);
-
-    
-    if (notification.duration && notification.duration > 0) {
-      setTimeout(() => {
-        this.dismiss(id);
-      }, notification.duration);
-    }
+    this.publish(notification);
+    this.dismissLater(id, notification.duration);
 
     return id;
   }
 
-   
   progress(options: ProgressOptions): ProgressController {
     const id = this.generateId();
-
-    
-    let progressMode: ProgressMode = 'percentage';
-    if (options.progressMode) {
-      progressMode = options.progressMode;
-    } else if (options.textOnly) {
-      progressMode = 'text-only';
-    } else if (options.total !== undefined) {
-      progressMode = 'fraction';
-    }
+    const progressMode = this.getProgressMode(options);
 
     const notification: Notification = {
       id,
@@ -103,85 +127,69 @@ class NotificationService {
       variant: 'progress',
       title: options.title,
       message: options.message,
-      timestamp: Date.now(),
+      timestamp: this.timestamp,
       progress: options.initialProgress ?? 0,
       progressText: options.message,
       progressMode,
       current: options.initialCurrent ?? 0,
       total: options.total,
-      textOnly: options.textOnly ?? false,  
+      textOnly: options.textOnly ?? false,
       cancellable: options.cancellable ?? false,
       onCancel: options.onCancel,
-      duration: 0, 
-      closable: false, 
+      duration: 0,
+      closable: false,
       metadata: options.metadata,
       read: false,
       status: 'active'
     };
 
-    notificationStore.addNotification(notification);
+    this.publish(notification);
 
-    
-    return this.createProgressController(id, progressMode, options.total);
+    return this.createProgressController(id, options.total);
   }
 
-   
-  private createProgressController(id: string, _mode: ProgressMode = 'percentage', total?: number): ProgressController {
+  private createProgressController(id: string, total?: number): ProgressController {
     return {
       id,
       update: (progress: number, text?: string) => {
         const updates: Partial<Notification> = {
-          progress: Math.max(0, Math.min(100, progress))
+          progress: this.clampProgress(progress)
         };
         if (text) {
           updates.progressText = text;
-          updates.message = text; 
+          updates.message = text;
         }
         notificationStore.updateNotification(id, updates);
       },
       updateFraction: (current: number, newTotal?: number, text?: string) => {
         const actualTotal = newTotal ?? total ?? 100;
         const progress = actualTotal > 0 ? (current / actualTotal) * 100 : 0;
-        
+
         const updates: Partial<Notification> = {
           current,
           total: actualTotal,
-          progress: Math.max(0, Math.min(100, progress))
+          progress: this.clampProgress(progress)
         };
-        
+
         if (text) {
           updates.progressText = text;
           updates.message = text;
         }
-        
+
         notificationStore.updateNotification(id, updates);
       },
       complete: (message?: string) => {
-        
-        notificationStore.removeNotification(id);
-        
-        
-        if (message) {
-          this.success(message);
-        }
+        this.finishActiveNotification(id, message, 'success');
       },
       fail: (message?: string) => {
-        
-        notificationStore.removeNotification(id);
-        
-        
-        if (message) {
-          this.error(message);
-        }
+        this.finishActiveNotification(id, message, 'error');
       },
       cancel: () => {
-        
         notificationStore.removeNotification(id);
       }
     };
   }
 
-   
   persistent(options: PersistentOptions): string {
     const id = this.generateId();
 
@@ -191,8 +199,8 @@ class NotificationService {
       variant: 'persistent',
       title: options.title,
       message: options.message,
-      timestamp: Date.now(),
-      duration: 0, 
+      timestamp: this.timestamp,
+      duration: 0,
       closable: options.closable ?? true,
       actions: options.actions,
       metadata: options.metadata,
@@ -200,12 +208,9 @@ class NotificationService {
       status: 'active'
     };
 
-    notificationStore.addNotification(notification);
-
-    return id;
+    return this.publish(notification);
   }
 
-   
   silent(options: SilentOptions): string {
     const id = this.generateId();
 
@@ -215,7 +220,7 @@ class NotificationService {
       variant: 'silent',
       title: options.title,
       message: options.message,
-      timestamp: Date.now(),
+      timestamp: this.timestamp,
       duration: 0,
       closable: true,
       metadata: options.metadata,
@@ -223,12 +228,9 @@ class NotificationService {
       status: 'active'
     };
 
-    notificationStore.addNotification(notification);
-
-    return id;
+    return this.publish(notification);
   }
 
-   
   loading(options: LoadingOptions): LoadingController {
     const id = this.generateId();
 
@@ -238,23 +240,21 @@ class NotificationService {
       variant: 'loading',
       title: options.title,
       message: options.message,
-      timestamp: Date.now(),
+      timestamp: this.timestamp,
       cancellable: options.cancellable ?? false,
       onCancel: options.onCancel,
-      duration: 0, 
-      closable: false, 
+      duration: 0,
+      closable: false,
       metadata: options.metadata,
       read: false,
       status: 'active'
     };
 
-    notificationStore.addNotification(notification);
+    this.publish(notification);
 
-    
     return this.createLoadingController(id);
   }
 
-   
   private createLoadingController(id: string): LoadingController {
     return {
       id,
@@ -264,71 +264,49 @@ class NotificationService {
         });
       },
       complete: (message?: string) => {
-        
-        notificationStore.removeNotification(id);
-        
-        
-        if (message) {
-          this.success(message);
-        }
+        this.finishActiveNotification(id, message, 'success');
       },
       fail: (message?: string) => {
-        
-        notificationStore.removeNotification(id);
-        
-        
-        if (message) {
-          this.error(message);
-        }
+        this.finishActiveNotification(id, message, 'error');
       },
       cancel: () => {
-        
         notificationStore.removeNotification(id);
       }
     };
   }
 
-   
   update(id: string, updates: Partial<Notification>): void {
     notificationStore.updateNotification(id, updates);
   }
 
-   
   dismiss(id: string): void {
     notificationStore.removeNotification(id);
   }
 
-   
   dismissAll(): void {
     notificationStore.clearActiveNotifications();
   }
 
-   
   markAsRead(id: string): void {
     notificationStore.markAsRead(id);
   }
 
-   
   markAllAsRead(): void {
     notificationStore.markAllAsRead();
   }
 
-   
   deleteFromHistory(id: string): void {
     notificationStore.removeFromHistory(id);
   }
 
-   
   clearHistory(): void {
     notificationStore.clearHistory();
   }
 
-   
   toggleCenter(open?: boolean): void {
     notificationStore.toggleCenter(open);
   }
 
-   
   private getDefaultTitle(type: NotificationType): string {
     const titles: Record<NotificationType, string> = {
       success: i18nService.t('common:status.success'),
