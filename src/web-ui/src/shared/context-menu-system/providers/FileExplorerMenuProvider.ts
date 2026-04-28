@@ -10,6 +10,12 @@ import { workspaceManager } from '../../../infrastructure/services/business/work
 import { isRemoteWorkspace } from '../../../shared/types';
 import { addFileMentionToChat } from '@/shared/utils/chatContext';
 
+const separator = (id: string): MenuItem => ({
+  id,
+  label: '',
+  separator: true
+});
+
 export class FileExplorerMenuProvider implements IMenuProvider {
   readonly id = 'file-explorer';
   readonly name = i18nService.t('common:contextMenu.fileExplorerMenu.name');
@@ -32,94 +38,97 @@ export class FileExplorerMenuProvider implements IMenuProvider {
   }
 
   async getMenuItems(context: MenuContext): Promise<MenuItem[]> {
-    const items: MenuItem[] = [];
     const revealInExplorerDisabled = isRemoteWorkspace(workspaceManager.getState().currentWorkspace);
 
     if (context.type === ContextType.EMPTY_SPACE) {
-      const emptyContext = context as any;
-      
-      
-      const workspaceRoot = this.findWorkspaceRoot(emptyContext.targetElement);
-      
-      if (workspaceRoot) {
-        const parentPath = workspaceRoot; 
-        
-        items.push({
-          id: 'file-new-file',
-          label: i18nService.t('common:file.newFile'),
-          icon: 'FilePlus',
-          onClick: () => {
-            globalEventBus.emit('file:new-file', { parentPath });
-          }
-        });
-
-        items.push({
-          id: 'file-new-folder',
-          label: i18nService.t('common:file.newFolder'),
-          icon: 'FolderPlus',
-          onClick: () => {
-            globalEventBus.emit('file:new-folder', { parentPath });
-          }
-        });
-
-        items.push({
-          id: 'file-separator-paste',
-          label: '',
-          separator: true
-        });
-
-        
-        items.push({
-          id: 'file-paste',
-          label: i18nService.t('common:actions.paste'),
-          icon: 'Clipboard',
-          shortcut: 'Ctrl+V',
-          onClick: async () => {
-            globalEventBus.emit('file:paste', { targetDirectory: parentPath });
-          }
-        });
-      }
-      
-      return items;
+      return this.getEmptySpaceItems(context as any);
     }
-    
-    
-    const fileContext = context as FileNodeContext;
-    const isDirectory = fileContext.isDirectory;
-    const isReadOnly = fileContext.isReadOnly;
 
-    
-    if (!isDirectory) {
-      items.push({
+    const fileContext = context as FileNodeContext;
+    const isDirectory = Boolean(fileContext.isDirectory);
+    const isReadOnly = Boolean(fileContext.isReadOnly);
+    const items: MenuItem[] = [
+      ...this.getOpenItems(fileContext),
+      ...this.getWriteItems(fileContext, isReadOnly),
+      ...this.getChatItems(fileContext, isDirectory),
+      ...this.getPathItems(revealInExplorerDisabled),
+    ];
+
+    return items;
+  }
+
+  private getEmptySpaceItems(context: { targetElement?: HTMLElement | null }): MenuItem[] {
+    const parentPath = this.findWorkspaceRoot(context.targetElement ?? null);
+
+    if (!parentPath) {
+      return [];
+    }
+
+    return [
+      {
+        id: 'file-new-file',
+        label: i18nService.t('common:file.newFile'),
+        icon: 'FilePlus',
+        onClick: () => {
+          globalEventBus.emit('file:new-file', { parentPath });
+        }
+      },
+      {
+        id: 'file-new-folder',
+        label: i18nService.t('common:file.newFolder'),
+        icon: 'FolderPlus',
+        onClick: () => {
+          globalEventBus.emit('file:new-folder', { parentPath });
+        }
+      },
+      separator('file-separator-paste'),
+      {
+        id: 'file-paste',
+        label: i18nService.t('common:actions.paste'),
+        icon: 'Clipboard',
+        shortcut: 'Ctrl+V',
+        onClick: async () => {
+          globalEventBus.emit('file:paste', { targetDirectory: parentPath });
+        }
+      }
+    ];
+  }
+
+  private getOpenItems(fileContext: FileNodeContext): MenuItem[] {
+    if (fileContext.isDirectory) {
+      return [];
+    }
+
+    return [
+      {
         id: 'file-open',
         label: i18nService.t('common:actions.open'),
         icon: 'FileText',
         onClick: () => {
-          globalEventBus.emit('file:open', { path: fileContext.filePath });
-        }
-      });
-
-      items.push({
+            globalEventBus.emit('file:open', { path: fileContext.filePath });
+          }
+      },
+      {
         id: 'file-download',
         label: i18nService.t('common:file.download'),
         icon: 'Download',
         onClick: () => {
-          globalEventBus.emit('file:download', { path: fileContext.filePath });
-        }
-      });
+            globalEventBus.emit('file:download', { path: fileContext.filePath });
+          }
+      },
+      separator('file-separator-1')
+    ];
+  }
 
-      items.push({
-        id: 'file-separator-1',
-        label: '',
-        separator: true
-      });
+  private getWriteItems(fileContext: FileNodeContext, isReadOnly: boolean): MenuItem[] {
+    if (isReadOnly) {
+      return [];
     }
 
-    
-    if (!isReadOnly) {
-      
-      if (isDirectory) {
-        items.push({
+    const items: MenuItem[] = [];
+
+    if (fileContext.isDirectory) {
+      items.push({
           id: 'file-new',
           label: i18nService.t('common:actions.new'),
           icon: 'Plus',
@@ -143,11 +152,11 @@ export class FileExplorerMenuProvider implements IMenuProvider {
               }
             }
           ]
-        });
-      }
+      });
+    }
 
-      
-      items.push({
+    items.push(
+      {
         id: 'file-rename',
         label: i18nService.t('common:file.rename'),
         icon: 'Edit',
@@ -156,10 +165,8 @@ export class FileExplorerMenuProvider implements IMenuProvider {
         onClick: async (ctx) => {
           await commandExecutor.execute('file.rename', ctx);
         }
-      });
-
-      
-      items.push({
+      },
+      {
         id: 'file-delete',
         label: i18nService.t('common:file.delete'),
         icon: 'Trash2',
@@ -167,40 +174,28 @@ export class FileExplorerMenuProvider implements IMenuProvider {
         onClick: async (ctx) => {
           await commandExecutor.execute('file.delete', ctx);
         }
-      });
-
-      items.push({
-        id: 'file-separator-3',
-        label: '',
-        separator: true
-      });
-
-      
-      
-      
-      const targetDirectory = isDirectory
-        ? fileContext.filePath
-        : this.getParentDirectory(fileContext.filePath);
-
-      items.push({
+      },
+      separator('file-separator-3'),
+      {
         id: 'file-paste',
         label: i18nService.t('common:actions.paste'),
         icon: 'Clipboard',
         shortcut: 'Ctrl+V',
         onClick: async () => {
-          globalEventBus.emit('file:paste', { targetDirectory });
+          globalEventBus.emit('file:paste', {
+            targetDirectory: this.getPasteTargetDirectory(fileContext)
+          });
         }
-      });
+      },
+      separator('file-separator-paste')
+    );
 
-      items.push({
-        id: 'file-separator-paste',
-        label: '',
-        separator: true
-      });
-    }
+    return items;
+  }
 
-    
-    items.push({
+  private getChatItems(fileContext: FileNodeContext, isDirectory: boolean): MenuItem[] {
+    return [
+      {
       id: 'file-add-to-chat',
       label: i18nService.t('common:editor.addToChat'),
       icon: 'MessageSquarePlus',
@@ -214,15 +209,14 @@ export class FileExplorerMenuProvider implements IMenuProvider {
           fileContext.workspacePath,
         );
       }
-    });
+      },
+      separator('file-separator-chat')
+    ];
+  }
 
-    items.push({
-      id: 'file-separator-chat',
-      label: '',
-      separator: true
-    });
-
-    items.push({
+  private getPathItems(revealInExplorerDisabled: boolean): MenuItem[] {
+    return [
+      {
       id: 'file-copy-path',
       label: i18nService.t('common:file.copyPath'),
       icon: 'Copy',
@@ -230,9 +224,8 @@ export class FileExplorerMenuProvider implements IMenuProvider {
       onClick: async (ctx) => {
         await commandExecutor.execute('file.copy-path', ctx);
       }
-    });
-
-    items.push({
+      },
+      {
       id: 'file-copy-relative-path',
       label: i18nService.t('common:file.copyRelativePath'),
       icon: 'Copy',
@@ -240,9 +233,8 @@ export class FileExplorerMenuProvider implements IMenuProvider {
       onClick: async (ctx) => {
         await commandExecutor.execute('file.copy-relative-path', ctx);
       }
-    });
-
-    items.push({
+      },
+      {
       id: 'file-reveal',
       label: i18nService.t('common:file.reveal'),
       icon: 'FolderOpen',
@@ -251,9 +243,8 @@ export class FileExplorerMenuProvider implements IMenuProvider {
       onClick: async (ctx) => {
         await commandExecutor.execute('file.reveal-in-explorer', ctx);
       }
-    });
-
-    return items;
+      }
+    ];
   }
 
   isEnabled(): boolean {
@@ -282,5 +273,11 @@ export class FileExplorerMenuProvider implements IMenuProvider {
     const parts = filePath.split(separator);
     parts.pop();
     return parts.join(separator);
+  }
+
+  private getPasteTargetDirectory(fileContext: FileNodeContext): string {
+    return fileContext.isDirectory
+      ? fileContext.filePath
+      : this.getParentDirectory(fileContext.filePath);
   }
 }
