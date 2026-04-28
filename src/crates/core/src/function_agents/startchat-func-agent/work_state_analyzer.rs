@@ -10,7 +10,135 @@ use log::{debug, info};
 use std::path::Path;
 use std::sync::Arc;
 
+const MAX_MODIFIED_FILES: usize = 10;
+
 pub struct WorkStateAnalyzer;
+
+struct ParsedGitStatus {
+    unstaged_files: u32,
+    staged_files: u32,
+    modified_files: Vec<FileModification>,
+}
+
+fn should_collect_git_diff(git_state: &Option<GitWorkState>) -> bool {
+    git_state
+        .as_ref()
+        .is_some_and(|g| g.unstaged_files > 0 || g.staged_files > 0)
+}
+
+fn visible_ai_actions(
+    ai_analysis: AIGeneratedAnalysis,
+    options: &WorkStateOptions,
+) -> (
+    String,
+    Vec<WorkItem>,
+    Vec<PredictedAction>,
+    Vec<QuickAction>,
+) {
+    let predicted_actions = if options.predict_next_actions {
+        ai_analysis.predicted_actions
+    } else {
+        Vec::new()
+    };
+    let quick_actions = if options.include_quick_actions {
+        ai_analysis.quick_actions
+    } else {
+        Vec::new()
+    };
+
+    (
+        ai_analysis.summary,
+        ai_analysis.ongoing_work,
+        predicted_actions,
+        quick_actions,
+    )
+}
+
+fn parse_git_status(status: &str) -> ParsedGitStatus {
+    let mut parsed = ParsedGitStatus {
+        unstaged_files: 0,
+        staged_files: 0,
+        modified_files: Vec::new(),
+    };
+
+    for line in status.lines().filter(|line| !line.is_empty()) {
+        let Some((modification, is_staged)) = parse_git_status_line(line) else {
+            continue;
+        };
+
+        if is_staged {
+            parsed.staged_files += 1;
+        } else {
+            parsed.unstaged_files += 1;
+        }
+
+        if parsed.modified_files.len() < MAX_MODIFIED_FILES {
+            parsed.modified_files.push(modification);
+        }
+    }
+
+    parsed
+}
+
+fn parse_git_status_line(line: &str) -> Option<(FileModification, bool)> {
+    let status_code = line.get(0..2)?;
+    let file_path = line.get(3..)?.trim().to_string();
+    if file_path.is_empty() {
+        return None;
+    }
+
+    let (change_type, is_staged) = git_change_from_status(status_code);
+    Some((
+        FileModification {
+            module: extract_module(&file_path),
+            path: file_path,
+            change_type,
+        },
+        is_staged,
+    ))
+}
+
+fn git_change_from_status(status_code: &str) -> (FileChangeType, bool) {
+    match status_code {
+        "A " => (FileChangeType::Added, true),
+        " M" => (FileChangeType::Modified, false),
+        "M " => (FileChangeType::Modified, true),
+        "MM" => (FileChangeType::Modified, true),
+        " D" => (FileChangeType::Deleted, false),
+        "D " => (FileChangeType::Deleted, true),
+        "??" => (FileChangeType::Untracked, false),
+        "R " => (FileChangeType::Renamed, true),
+        _ => (FileChangeType::Modified, false),
+    }
+}
+
+fn extract_module(file_path: &str) -> Option<String> {
+    let path = Path::new(file_path);
+
+    path.components()
+        .next()
+        .map(|component| component.as_os_str().to_string_lossy().to_string())
+}
+
+fn time_of_day_for_hour(hour: u32) -> TimeOfDay {
+    match hour {
+        5..=11 => TimeOfDay::Morning,
+        12..=17 => TimeOfDay::Afternoon,
+        18..=22 => TimeOfDay::Evening,
+        _ => TimeOfDay::Night,
+    }
+}
+
+fn minutes_since_commit_from_output(output: std::process::Output) -> Option<u64> {
+    if !output.status.success() {
+        return None;
+    }
+
+    let timestamp_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let timestamp = timestamp_str.parse::<i64>().ok()?;
+    let now = Local::now().timestamp();
+    Some(((now - timestamp) / 60) as u64)
+}
 
 impl WorkStateAnalyzer {
     pub async fn analyze_work_state(
@@ -28,10 +156,7 @@ impl WorkStateAnalyzer {
             None
         };
 
-        let git_diff = if git_state
-            .as_ref()
-            .is_some_and(|g| g.unstaged_files > 0 || g.staged_files > 0)
-        {
+        let git_diff = if should_collect_git_diff(&git_state) {
             Self::get_git_diff(repo_path).await.unwrap_or_default()
         } else {
             String::new()
@@ -44,18 +169,8 @@ impl WorkStateAnalyzer {
                 .await?;
 
         debug!("AI complete analysis generation succeeded");
-        let summary = ai_analysis.summary;
-        let ongoing_work = ai_analysis.ongoing_work;
-        let predicted_actions = if options.predict_next_actions {
-            ai_analysis.predicted_actions
-        } else {
-            Vec::new()
-        };
-        let quick_actions = if options.include_quick_actions {
-            ai_analysis.quick_actions
-        } else {
-            Vec::new()
-        };
+        let (summary, ongoing_work, predicted_actions, quick_actions) =
+            visible_ai_actions(ai_analysis, &options);
 
         let current_state = CurrentWorkState {
             summary,
@@ -142,59 +257,18 @@ impl WorkStateAnalyzer {
 
         let status_str = String::from_utf8_lossy(&status_output.stdout);
 
-        let mut unstaged_files = 0;
-        let mut staged_files = 0;
-        let mut modified_files = Vec::new();
-
-        for line in status_str.lines() {
-            if line.is_empty() {
-                continue;
-            }
-
-            let status_code = &line[0..2];
-            let file_path = if line.len() > 3 {
-                line[3..].trim().to_string()
-            } else {
-                continue;
-            };
-
-            let (change_type, is_staged) = match status_code {
-                "A " => (FileChangeType::Added, true),
-                " M" => (FileChangeType::Modified, false),
-                "M " => (FileChangeType::Modified, true),
-                "MM" => (FileChangeType::Modified, true),
-                " D" => (FileChangeType::Deleted, false),
-                "D " => (FileChangeType::Deleted, true),
-                "??" => (FileChangeType::Untracked, false),
-                "R " => (FileChangeType::Renamed, true),
-                _ => (FileChangeType::Modified, false),
-            };
-
-            if is_staged {
-                staged_files += 1;
-            } else {
-                unstaged_files += 1;
-            }
-
-            if modified_files.len() < 10 {
-                modified_files.push(FileModification {
-                    path: file_path.clone(),
-                    change_type,
-                    module: Self::extract_module(&file_path),
-                });
-            }
-        }
+        let parsed_status = parse_git_status(&status_str);
 
         let unpushed_commits = Self::get_unpushed_commits(repo_path)?;
         let ahead_behind = Self::get_ahead_behind(repo_path).ok();
 
         Ok(GitWorkState {
             current_branch,
-            unstaged_files,
-            staged_files,
+            unstaged_files: parsed_status.unstaged_files,
+            staged_files: parsed_status.staged_files,
             unpushed_commits,
             ahead_behind,
-            modified_files,
+            modified_files: parsed_status.modified_files,
         })
     }
 
@@ -253,24 +327,9 @@ impl WorkStateAnalyzer {
         }
     }
 
-    fn extract_module(file_path: &str) -> Option<String> {
-        let path = Path::new(file_path);
-
-        if let Some(component) = path.components().next() {
-            return Some(component.as_os_str().to_string_lossy().to_string());
-        }
-
-        None
-    }
-
     async fn get_time_info(repo_path: &Path) -> TimeInfo {
         let hour = Local::now().hour();
-        let time_of_day = match hour {
-            5..=11 => TimeOfDay::Morning,
-            12..=17 => TimeOfDay::Afternoon,
-            18..=22 => TimeOfDay::Evening,
-            _ => TimeOfDay::Night,
-        };
+        let time_of_day = time_of_day_for_hour(hour);
 
         let output = crate::util::process_manager::create_command("git")
             .arg("log")
@@ -279,25 +338,8 @@ impl WorkStateAnalyzer {
             .current_dir(repo_path)
             .output();
 
-        let (minutes_since_last_commit, last_commit_time_desc) = if let Ok(output) = output {
-            if output.status.success() {
-                let timestamp_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                if let Ok(timestamp) = timestamp_str.parse::<i64>() {
-                    let now = Local::now().timestamp();
-                    let diff_seconds = now - timestamp;
-                    let minutes = (diff_seconds / 60) as u64;
-
-                    // Don't format time description here, let frontend handle i18n
-                    (Some(minutes), None)
-                } else {
-                    (None, None)
-                }
-            } else {
-                (None, None)
-            }
-        } else {
-            (None, None)
-        };
+        let minutes_since_last_commit = output.ok().and_then(minutes_since_commit_from_output);
+        let last_commit_time_desc = None;
 
         TimeInfo {
             minutes_since_last_commit,
