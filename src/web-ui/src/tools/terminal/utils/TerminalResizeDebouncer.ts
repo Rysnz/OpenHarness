@@ -16,6 +16,11 @@ const BACKEND_RESIZE_DEBOUNCE_MS = 50;
 /** Idle callback timeout (ms). */
 const IDLE_CALLBACK_TIMEOUT_MS = 2000;
 
+interface TerminalSize {
+  cols: number;
+  rows: number;
+}
+
 export interface ResizeCallback {
   (cols: number, rows: number): void | Promise<void>;
 }
@@ -68,6 +73,21 @@ function isNewOptions(options: ResizeDebounceOptions | LegacyResizeDebounceOptio
   return 'onXtermResize' in options && 'onBackendResize' in options;
 }
 
+function getTerminalSize(terminal: Terminal): TerminalSize {
+  return {
+    cols: terminal.cols,
+    rows: terminal.rows,
+  };
+}
+
+function sameSize(size: TerminalSize, cols: number, rows: number): boolean {
+  return size.cols === cols && size.rows === rows;
+}
+
+function shouldResizeImmediately(terminal: Terminal, immediate: boolean): boolean {
+  return immediate || terminal.buffer.normal.length < START_DEBOUNCING_THRESHOLD;
+}
+
 /**
  * Debounced terminal resize controller.
  * Uses immediate resize for small buffers, debounced backend updates, and idle scheduling when hidden.
@@ -92,36 +112,32 @@ export class TerminalResizeDebouncer {
     this.isNewApi = isNewOptions(options);
   }
 
+  private get newOptions(): ResizeDebounceOptions {
+    return this.options as ResizeDebounceOptions;
+  }
+
+  private get legacyOptions(): LegacyResizeDebounceOptions {
+    return this.options as LegacyResizeDebounceOptions;
+  }
+
   /**
    * Request a resize operation.
    */
   resize(cols: number, rows: number, immediate = false): void {
     if (this.disposed) return;
 
-    this.latestCols = cols;
-    this.latestRows = rows;
+    this.setLatestSize(cols, rows);
 
     const terminal = this.options.getTerminal();
     if (!terminal) return;
 
-    const currentCols = terminal.cols;
-    const currentRows = terminal.rows;
-
-    if (cols === currentCols && rows === currentRows) {
+    const currentSize = getTerminalSize(terminal);
+    if (sameSize(currentSize, cols, rows)) {
       return;
     }
 
-    const bufferLength = terminal.buffer.normal.length;
-
-    if (immediate || bufferLength < START_DEBOUNCING_THRESHOLD) {
-      this.clearPendingJobs();
-      if (this.isNewApi) {
-        const opts = this.options as ResizeDebounceOptions;
-        opts.onXtermResize(cols, rows);
-        this.scheduleBackendResize(cols, rows);
-      } else {
-        this.executeResize(cols, rows, true);
-      }
+    if (shouldResizeImmediately(terminal, immediate)) {
+      this.resizeImmediately(cols, rows);
       return;
     }
 
@@ -130,29 +146,36 @@ export class TerminalResizeDebouncer {
       return;
     }
 
-    const colsChanged = cols !== currentCols;
-    const rowsChanged = rows !== currentRows;
+    this.resizeVisibleTerminal(cols, rows, currentSize);
+  }
 
+  private resizeVisibleTerminal(cols: number, rows: number, currentSize: TerminalSize): void {
     if (this.isNewApi) {
-      const opts = this.options as ResizeDebounceOptions;
-      
-      if (rowsChanged && !colsChanged) {
-        opts.onXtermResize(currentCols, rows);
-        this.scheduleBackendResize(currentCols, rows);
-      }
-      else if (colsChanged) {
-        this.debounceXtermResizeX(cols, rows);
-      }
+      this.resizeVisibleNewApi(cols, rows, currentSize);
     } else {
-      const opts = this.options as LegacyResizeDebounceOptions;
-      
-      if (rowsChanged) {
-        opts.onResizeY(rows);
-      }
+      this.resizeVisibleLegacyApi(cols, rows, currentSize);
+    }
+  }
 
-      if (colsChanged) {
-        this.debounceResizeXLegacy(cols);
-      }
+  private resizeVisibleNewApi(cols: number, rows: number, currentSize: TerminalSize): void {
+    const colsChanged = cols !== currentSize.cols;
+    const rowsChanged = rows !== currentSize.rows;
+
+    if (rowsChanged && !colsChanged) {
+      this.newOptions.onXtermResize(currentSize.cols, rows);
+      this.scheduleBackendResize(currentSize.cols, rows);
+    } else if (colsChanged) {
+      this.debounceXtermResizeX(cols, rows);
+    }
+  }
+
+  private resizeVisibleLegacyApi(cols: number, rows: number, currentSize: TerminalSize): void {
+    if (rows !== currentSize.rows) {
+      this.legacyOptions.onResizeY(rows);
+    }
+
+    if (cols !== currentSize.cols) {
+      this.debounceResizeXLegacy(cols);
     }
   }
 
@@ -162,11 +185,7 @@ export class TerminalResizeDebouncer {
   flush(forceCallback = false): void {
     if (this.disposed) return;
 
-    const hasPendingResize = 
-      this.resizeXTimeoutId !== null ||
-      this.resizeXIdleCallbackId !== null ||
-      this.resizeYIdleCallbackId !== null ||
-      this.backendResizeTimeoutId !== null;
+    const hasPendingResize = this.hasPendingResize();
 
     if (hasPendingResize) {
       this.clearPendingJobs();
@@ -202,16 +221,31 @@ export class TerminalResizeDebouncer {
     this.clearPendingJobs();
   }
 
+  private setLatestSize(cols: number, rows: number): void {
+    this.latestCols = cols;
+    this.latestRows = rows;
+  }
+
+  private resizeImmediately(cols: number, rows: number): void {
+    this.clearPendingJobs();
+    if (this.isNewApi) {
+      this.newOptions.onXtermResize(cols, rows);
+      this.scheduleBackendResize(cols, rows);
+    } else {
+      this.executeResize(cols, rows, true);
+    }
+  }
+
   private executeResize(cols: number, rows: number, includeBackend: boolean): void {
     if (this.isNewApi) {
-      const opts = this.options as ResizeDebounceOptions;
+      const opts = this.newOptions;
       opts.onXtermResize(cols, rows);
       if (includeBackend) {
         opts.onBackendResize(cols, rows);
         opts.onResizeComplete?.();
       }
     } else {
-      const opts = this.options as LegacyResizeDebounceOptions;
+      const opts = this.legacyOptions;
       opts.onResizeBoth(cols, rows);
     }
   }
@@ -224,8 +258,7 @@ export class TerminalResizeDebouncer {
     this.resizeXTimeoutId = setTimeout(() => {
       this.resizeXTimeoutId = null;
       if (!this.disposed && this.isNewApi) {
-        const opts = this.options as ResizeDebounceOptions;
-        opts.onXtermResize(cols, rows);
+        this.newOptions.onXtermResize(cols, rows);
         this.scheduleBackendResize(cols, rows);
       }
     }, RESIZE_X_DEBOUNCE_MS);
@@ -243,11 +276,10 @@ export class TerminalResizeDebouncer {
     this.backendResizeTimeoutId = setTimeout(() => {
       this.backendResizeTimeoutId = null;
       if (!this.disposed && this.pendingBackendResize) {
-        const opts = this.options as ResizeDebounceOptions;
         const { cols: c, rows: r } = this.pendingBackendResize;
         this.pendingBackendResize = null;
-        opts.onBackendResize(c, r);
-        opts.onResizeComplete?.();
+        this.newOptions.onBackendResize(c, r);
+        this.newOptions.onResizeComplete?.();
       }
     }, BACKEND_RESIZE_DEBOUNCE_MS);
   }
@@ -260,8 +292,7 @@ export class TerminalResizeDebouncer {
     this.resizeXTimeoutId = setTimeout(() => {
       this.resizeXTimeoutId = null;
       if (!this.disposed && !this.isNewApi) {
-        const opts = this.options as LegacyResizeDebounceOptions;
-        opts.onResizeX(cols);
+        this.legacyOptions.onResizeX(cols);
       }
     }, RESIZE_X_DEBOUNCE_MS);
   }
@@ -270,8 +301,7 @@ export class TerminalResizeDebouncer {
     const terminal = this.options.getTerminal();
     if (!terminal) return;
 
-    const currentCols = terminal.cols;
-    const currentRows = terminal.rows;
+    const currentSize = getTerminalSize(terminal);
 
     if (this.isNewApi) {
       if (this.resizeXIdleCallbackId === null) {
@@ -286,26 +316,24 @@ export class TerminalResizeDebouncer {
         );
       }
     } else {
-      const opts = this.options as LegacyResizeDebounceOptions;
-      
-      if (cols !== currentCols && this.resizeXIdleCallbackId === null) {
+      if (cols !== currentSize.cols && this.resizeXIdleCallbackId === null) {
         this.resizeXIdleCallbackId = requestIdleCallback(
           () => {
             this.resizeXIdleCallbackId = null;
             if (!this.disposed) {
-              opts.onResizeX(this.latestCols);
+              this.legacyOptions.onResizeX(this.latestCols);
             }
           },
           { timeout: IDLE_CALLBACK_TIMEOUT_MS }
         );
       }
 
-      if (rows !== currentRows && this.resizeYIdleCallbackId === null) {
+      if (rows !== currentSize.rows && this.resizeYIdleCallbackId === null) {
         this.resizeYIdleCallbackId = requestIdleCallback(
           () => {
             this.resizeYIdleCallbackId = null;
             if (!this.disposed) {
-              opts.onResizeY(this.latestRows);
+              this.legacyOptions.onResizeY(this.latestRows);
             }
           },
           { timeout: IDLE_CALLBACK_TIMEOUT_MS }
