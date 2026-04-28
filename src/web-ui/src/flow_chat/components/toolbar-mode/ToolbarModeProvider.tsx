@@ -19,21 +19,97 @@ interface ToolbarModeProviderProps {
   children: ReactNode;
 }
 
+type AppWindow = ReturnType<typeof getCurrentWindow>;
+
+const createDefaultToolbarState = (): ToolbarModeState => ({
+  sessionId: null,
+  sessionTitle: null,
+  isProcessing: false,
+  latestContent: '',
+  latestToolName: null,
+  hasPendingConfirmation: false,
+  pendingToolId: null,
+  hasError: false,
+  todoProgress: null,
+});
+
+function isMacPlatform(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    '__TAURI__' in window &&
+    typeof navigator !== 'undefined' &&
+    typeof navigator.platform === 'string' &&
+    navigator.platform.toUpperCase().includes('MAC')
+  );
+}
+
+async function readDecorationState(win: AppWindow): Promise<boolean | undefined> {
+  try {
+    if (typeof (win as any).isDecorated === 'function') {
+      return await (win as any).isDecorated();
+    }
+  } catch {
+  }
+  return undefined;
+}
+
+async function captureWindowState(win: AppWindow): Promise<SavedWindowState> {
+  const [position, size, isMaximized, isDecorated] = await Promise.all([
+    win.outerPosition(),
+    win.outerSize(),
+    win.isMaximized(),
+    readDecorationState(win),
+  ]);
+
+  return {
+    x: position.x,
+    y: position.y,
+    width: size.width,
+    height: size.height,
+    isMaximized,
+    isDecorated,
+  };
+}
+
+async function applyMacOverlayTitleBar(win: AppWindow, label: string): Promise<void> {
+  try {
+    await win.setTitleBarStyle('overlay');
+  } catch (error) {
+    log.debug(label, error);
+  }
+}
+
+async function getExpandedToolbarPosition(win: AppWindow): Promise<{ x: number; y: number }> {
+  const monitor = await currentMonitor();
+
+  if (!monitor) {
+    return { x: 100, y: 100 };
+  }
+
+  const scaleFactor = await win.scaleFactor();
+  const margin = Math.round(20 * scaleFactor);
+  const taskbarHeight = Math.round(50 * scaleFactor);
+
+  return {
+    x: monitor.size.width - TOOLBAR_EXPANDED_SIZE.width - margin,
+    y: monitor.size.height - TOOLBAR_EXPANDED_SIZE.height - margin - taskbarHeight,
+  };
+}
+
+async function setToolbarDecorations(win: AppWindow, isMacOS: boolean): Promise<void> {
+  if (isMacOS) {
+    await applyMacOverlayTitleBar(win, 'Failed to apply macOS overlay title bar (ignored)');
+    return;
+  }
+
+  await win.setDecorations(false);
+}
+
 export const ToolbarModeProvider: React.FC<ToolbarModeProviderProps> = ({ children }) => {
   const [isToolbarMode, setIsToolbarMode] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [isPinned, setIsPinned] = useState(false);
-  const [toolbarState, setToolbarState] = useState<ToolbarModeState>({
-    sessionId: null,
-    sessionTitle: null,
-    isProcessing: false,
-    latestContent: '',
-    latestToolName: null,
-    hasPendingConfirmation: false,
-    pendingToolId: null,
-    hasError: false,
-    todoProgress: null,
-  });
+  const [toolbarState, setToolbarState] = useState<ToolbarModeState>(createDefaultToolbarState);
 
   const savedWindowStateRef = useRef<SavedWindowState | null>(null);
 
@@ -42,56 +118,19 @@ export const ToolbarModeProvider: React.FC<ToolbarModeProviderProps> = ({ childr
       window.dispatchEvent(new CustomEvent('toolbar-mode-activating'));
 
       const win = getCurrentWindow();
-      const isMacOS =
-        typeof window !== 'undefined' &&
-        '__TAURI__' in window &&
-        typeof navigator !== 'undefined' &&
-        typeof navigator.platform === 'string' &&
-        navigator.platform.toUpperCase().includes('MAC');
+      const isMacOS = isMacPlatform();
+      const savedState = await captureWindowState(win);
 
-      const [position, size, isMaximized, isDecorated] = await Promise.all([
-        win.outerPosition(),
-        win.outerSize(),
-        win.isMaximized(),
-        (async () => {
-          try {
-            if (typeof (win as any).isDecorated === 'function') {
-              return await (win as any).isDecorated();
-            }
-          } catch {
-          }
-          return undefined;
-        })(),
-      ]);
-
-      savedWindowStateRef.current = {
-        x: position.x,
-        y: position.y,
-        width: size.width,
-        height: size.height,
-        isMaximized,
-        isDecorated,
-      };
+      savedWindowStateRef.current = savedState;
 
       setIsToolbarMode(true);
       setIsExpanded(true);
 
-      if (isMaximized) {
+      if (savedState.isMaximized) {
         await win.unmaximize();
       }
 
-      let x = 100;
-      let y = 100;
-
-      const monitor = await currentMonitor();
-      if (monitor) {
-        const scaleFactor = await win.scaleFactor();
-        const margin = Math.round(20 * scaleFactor);
-        const taskbarHeight = Math.round(50 * scaleFactor);
-
-        x = monitor.size.width - TOOLBAR_EXPANDED_SIZE.width - margin;
-        y = monitor.size.height - TOOLBAR_EXPANDED_SIZE.height - margin - taskbarHeight;
-      }
+      const { x, y } = await getExpandedToolbarPosition(win);
 
       const toolbarWindowOps: Array<Promise<unknown>> = [
         win.setAlwaysOnTop(true),
@@ -100,14 +139,7 @@ export const ToolbarModeProvider: React.FC<ToolbarModeProviderProps> = ({ childr
         win.setResizable(true),
         win.setSkipTaskbar(true),
       ];
-      if (!isMacOS) {
-        toolbarWindowOps.push(win.setDecorations(false));
-      } else {
-        try {
-          await win.setTitleBarStyle('overlay');
-        } catch {
-        }
-      }
+      toolbarWindowOps.push(setToolbarDecorations(win, isMacOS));
       await Promise.all(toolbarWindowOps);
 
       await win.setMinSize(new PhysicalSize(TOOLBAR_EXPANDED_MIN.width, TOOLBAR_EXPANDED_MIN.height));
@@ -123,22 +155,13 @@ export const ToolbarModeProvider: React.FC<ToolbarModeProviderProps> = ({ childr
       setIsExpanded(false);
 
       const win = getCurrentWindow();
-      const isMacOS =
-        typeof window !== 'undefined' &&
-        '__TAURI__' in window &&
-        typeof navigator !== 'undefined' &&
-        typeof navigator.platform === 'string' &&
-        navigator.platform.toUpperCase().includes('MAC');
+      const isMacOS = isMacPlatform();
       const saved = savedWindowStateRef.current;
 
       await win.setMinSize(null);
 
       if (isMacOS) {
-        try {
-          await win.setTitleBarStyle('overlay');
-        } catch (error) {
-          log.debug('Failed to restore macOS overlay title bar (early, ignored)', error);
-        }
+        await applyMacOverlayTitleBar(win, 'Failed to restore macOS overlay title bar (early, ignored)');
       } else {
         try {
           const targetDecorations = saved?.isDecorated ?? false;
@@ -167,13 +190,9 @@ export const ToolbarModeProvider: React.FC<ToolbarModeProviderProps> = ({ childr
       }
 
       if (isMacOS) {
-        try {
-          await win.setTitleBarStyle('overlay');
-          await new Promise<void>((resolve) => setTimeout(resolve, 60));
-          await win.setTitleBarStyle('overlay');
-        } catch (error) {
-          log.debug('Failed to re-apply macOS overlay title bar (ignored)', error);
-        }
+        await applyMacOverlayTitleBar(win, 'Failed to re-apply macOS overlay title bar (ignored)');
+        await new Promise<void>((resolve) => setTimeout(resolve, 60));
+        await applyMacOverlayTitleBar(win, 'Failed to re-apply macOS overlay title bar (ignored)');
       }
 
       await win.setFocus();
