@@ -1,6 +1,38 @@
 use super::types::CompressionFallbackOptions;
-use crate::agentic::core::{strip_prompt_markup, CompressedTodoItem, CompressedTodoSnapshot};
+use crate::agentic::core::{CompressedTodoItem, CompressedTodoSnapshot, strip_prompt_markup};
 use serde_json::{Map, Value};
+
+const GREP_ARGUMENT_FIELDS: &[&str] = &[
+    "pattern",
+    "path",
+    "glob",
+    "type",
+    "head_limit",
+    "multiline",
+    "-A",
+    "-B",
+    "-C",
+    "-i",
+    "-n",
+    "output_mode",
+];
+
+const HEAVY_STRING_KEYS: &[&str] = &[
+    "content",
+    "contents",
+    "old_string",
+    "new_string",
+    "text",
+    "output",
+    "stdout",
+    "stderr",
+    "diff",
+    "file_diff",
+    "original_content",
+    "new_content",
+    "data_url",
+    "data_base64",
+];
 
 pub(super) fn sanitize_user_text(
     text: &str,
@@ -69,117 +101,53 @@ pub(super) fn sanitize_tool_arguments(
     };
 
     let sanitized = match tool_name {
-        "Read" => {
-            let mut result = Map::new();
-            copy_field(object, &mut result, "file_path");
-            copy_field(object, &mut result, "start_line");
-            copy_field(object, &mut result, "limit");
-            result
-        }
-        "Write" => {
-            let mut result = Map::new();
-            copy_field(object, &mut result, "file_path");
-            insert_cleared_field(object, &mut result, "content");
-            result
-        }
-        "Edit" => {
-            let mut result = Map::new();
-            copy_field(object, &mut result, "file_path");
-            copy_field(object, &mut result, "replace_all");
-            insert_cleared_field(object, &mut result, "old_string");
-            insert_cleared_field(object, &mut result, "new_string");
-            result
-        }
-        "Grep" => {
-            let mut result = Map::new();
-            for key in [
-                "pattern",
-                "path",
-                "glob",
-                "type",
-                "head_limit",
-                "multiline",
-                "-A",
-                "-B",
-                "-C",
-                "-i",
-                "-n",
-                "output_mode",
-            ] {
-                copy_field(object, &mut result, key);
-            }
-            result
-        }
-        "Glob" => {
-            let mut result = Map::new();
-            copy_field(object, &mut result, "pattern");
-            copy_field(object, &mut result, "path");
-            copy_field(object, &mut result, "limit");
-            result
-        }
-        "LS" => {
-            let mut result = Map::new();
-            copy_field(object, &mut result, "path");
-            copy_field(object, &mut result, "ignore");
-            copy_field(object, &mut result, "limit");
-            result
-        }
-        "GetFileDiff" => {
-            let mut result = Map::new();
-            copy_field(object, &mut result, "file_path");
-            result
-        }
-        "DeleteFile" => {
-            let mut result = Map::new();
-            copy_field(object, &mut result, "path");
-            copy_field(object, &mut result, "recursive");
-            result
-        }
+        "Read" => SanitizedArguments::from(object)
+            .copy_many(&["file_path", "start_line", "limit"])
+            .finish(),
+        "Write" => SanitizedArguments::from(object)
+            .copy("file_path")
+            .clear("content")
+            .finish(),
+        "Edit" => SanitizedArguments::from(object)
+            .copy_many(&["file_path", "replace_all"])
+            .clear_many(&["old_string", "new_string"])
+            .finish(),
+        "Grep" => SanitizedArguments::from(object)
+            .copy_many(GREP_ARGUMENT_FIELDS)
+            .finish(),
+        "Glob" => SanitizedArguments::from(object)
+            .copy_many(&["pattern", "path", "limit"])
+            .finish(),
+        "LS" => SanitizedArguments::from(object)
+            .copy_many(&["path", "ignore", "limit"])
+            .finish(),
+        "GetFileDiff" => SanitizedArguments::from(object).copy("file_path").finish(),
+        "DeleteFile" => SanitizedArguments::from(object)
+            .copy_many(&["path", "recursive"])
+            .finish(),
         "Git" => {
-            let mut result = Map::new();
-            copy_field(object, &mut result, "operation");
-            copy_field(object, &mut result, "working_directory");
+            let mut result =
+                SanitizedArguments::from(object).copy_many(&["operation", "working_directory"]);
             if let Some(args) = object.get("args") {
                 if let Some(value) = sanitize_generic_value(args, options) {
-                    result.insert("args".to_string(), value);
+                    result.insert_value("args", value);
                 }
             }
-            result
+            result.finish()
         }
-        "Bash" => {
-            let mut result = Map::new();
-            insert_sanitize_text(object, &mut result, "command", options.tool_command_chars);
-            result
-        }
-        "TerminalControl" => {
-            let mut result = Map::new();
-            copy_field(object, &mut result, "action");
-            copy_field(object, &mut result, "terminal_session_id");
-            result
-        }
-        "Skill" => {
-            let mut result = Map::new();
-            copy_field(object, &mut result, "command");
-            result
-        }
-        "CreatePlan" => {
-            let mut result = Map::new();
-            copy_field(object, &mut result, "name");
-            copy_field(object, &mut result, "overview");
-            insert_cleared_field(object, &mut result, "plan");
-            insert_cleared_field(object, &mut result, "todos");
-            result
-        }
-        "WebSearch" => {
-            let mut result = Map::new();
-            copy_field(object, &mut result, "query");
-            result
-        }
-        "WebFetch" => {
-            let mut result = Map::new();
-            copy_field(object, &mut result, "url");
-            result
-        }
+        "Bash" => SanitizedArguments::from(object)
+            .sanitize_text("command", options.tool_command_chars)
+            .finish(),
+        "TerminalControl" => SanitizedArguments::from(object)
+            .copy_many(&["action", "terminal_session_id"])
+            .finish(),
+        "Skill" => SanitizedArguments::from(object).copy("command").finish(),
+        "CreatePlan" => SanitizedArguments::from(object)
+            .copy_many(&["name", "overview"])
+            .clear_many(&["plan", "todos"])
+            .finish(),
+        "WebSearch" => SanitizedArguments::from(object).copy("query").finish(),
+        "WebFetch" => SanitizedArguments::from(object).copy("url").finish(),
         _ => sanitize_generic_object(object, options),
     };
 
@@ -197,24 +165,7 @@ pub(super) fn sanitize_generic_object(
     let mut sanitized = Map::new();
 
     for (key, value) in object {
-        let heavy_string = matches!(
-            key.as_str(),
-            "content"
-                | "contents"
-                | "old_string"
-                | "new_string"
-                | "text"
-                | "output"
-                | "stdout"
-                | "stderr"
-                | "diff"
-                | "file_diff"
-                | "original_content"
-                | "new_content"
-                | "data_url"
-                | "data_base64"
-        );
-        if heavy_string {
+        if HEAVY_STRING_KEYS.contains(&key.as_str()) {
             if let Some(text) = value.as_str() {
                 sanitized.insert(
                     format!("{key}_chars"),
@@ -279,27 +230,65 @@ fn sanitize_text(text: &str, limit: usize) -> Option<String> {
     Some(truncated)
 }
 
-fn copy_field(source: &Map<String, Value>, target: &mut Map<String, Value>, key: &str) {
-    if let Some(value) = source.get(key) {
-        target.insert(key.to_string(), value.clone());
-    }
+struct SanitizedArguments<'a> {
+    source: &'a Map<String, Value>,
+    target: Map<String, Value>,
 }
 
-fn insert_sanitize_text(
-    source: &Map<String, Value>,
-    target: &mut Map<String, Value>,
-    key: &str,
-    limit: usize,
-) {
-    if let Some(value) = source.get(key).and_then(Value::as_str) {
-        if let Some(text) = sanitize_text(value, limit) {
-            target.insert(key.to_string(), Value::String(text));
+impl<'a> SanitizedArguments<'a> {
+    fn from(source: &'a Map<String, Value>) -> Self {
+        Self {
+            source,
+            target: Map::new(),
         }
     }
-}
 
-fn insert_cleared_field(source: &Map<String, Value>, target: &mut Map<String, Value>, key: &str) {
-    if source.get(key).is_some() {
-        target.insert(key.to_string(), Value::String("[cleared]".to_string()));
+    fn copy(mut self, key: &str) -> Self {
+        if let Some(value) = self.source.get(key) {
+            self.target.insert(key.to_string(), value.clone());
+        }
+        self
+    }
+
+    fn copy_many(mut self, keys: &[&str]) -> Self {
+        for key in keys {
+            self = self.copy(key);
+        }
+        self
+    }
+
+    fn clear(mut self, key: &str) -> Self {
+        if self.source.get(key).is_some() {
+            self.target
+                .insert(key.to_string(), Value::String("[cleared]".to_string()));
+        }
+        self
+    }
+
+    fn clear_many(mut self, keys: &[&str]) -> Self {
+        for key in keys {
+            self = self.clear(key);
+        }
+        self
+    }
+
+    fn sanitize_text(mut self, key: &str, limit: usize) -> Self {
+        if let Some(text) = self
+            .source
+            .get(key)
+            .and_then(Value::as_str)
+            .and_then(|text| sanitize_text(text, limit))
+        {
+            self.target.insert(key.to_string(), Value::String(text));
+        }
+        self
+    }
+
+    fn insert_value(&mut self, key: &str, value: Value) {
+        self.target.insert(key.to_string(), value);
+    }
+
+    fn finish(self) -> Map<String, Value> {
+        self.target
     }
 }
