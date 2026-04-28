@@ -84,33 +84,35 @@ export const useSnapshot = (): UseSnapshotReturn => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load snapshot stats
+  const workspaceScope = workspacePath || undefined;
+
+  const reportSnapshotError = useCallback((message: string, err: unknown, translationKey: string) => {
+    log.error(message, err);
+    setError(t(translationKey));
+  }, [t]);
+
   const loadStats = useCallback(async () => {
     try {
       setError(null);
-      const statsData = await snapshotAPI.getSnapshotStats(workspacePath || undefined);
+      const statsData = await snapshotAPI.getSnapshotStats(workspaceScope);
       setStats(statsData);
     } catch (err) {
-      log.error('Failed to load snapshot stats', err);
-      setError(t('snapshot.loadStatsFailed'));
+      reportSnapshotError('Failed to load snapshot stats', err, 'snapshot.loadStatsFailed');
       setStats(null);
     }
-  }, [t, workspacePath]);
+  }, [reportSnapshotError, workspaceScope]);
 
-  // Load snapshot sessions
   const loadSessions = useCallback(async () => {
     try {
       setError(null);
-      const sessionsData = await snapshotAPI.getSnapshotSessions(workspacePath || undefined);
+      const sessionsData = await snapshotAPI.getSnapshotSessions(workspaceScope);
       setSessions(sessionsData || []);
     } catch (err) {
-      log.error('Failed to load snapshot sessions', err);
-      setError(t('snapshot.loadSessionsFailed'));
+      reportSnapshotError('Failed to load snapshot sessions', err, 'snapshot.loadSessionsFailed');
       setSessions([]);
     }
-  }, [t, workspacePath]);
+  }, [reportSnapshotError, workspaceScope]);
 
-  // Load session operations
   const loadSessionOperations = useCallback(async (sessionId: string) => {
     if (!sessionId) {
       setOperations([]);
@@ -121,121 +123,104 @@ export const useSnapshot = (): UseSnapshotReturn => {
     setError(null);
     
     try {
-      const operationsData = await snapshotAPI.getSessionOperations(sessionId, workspacePath || undefined);
+      const operationsData = await snapshotAPI.getSessionOperations(sessionId, workspaceScope);
       const operations = operationsData || [];
       setOperations(operations);
       return operations;
     } catch (err) {
-      log.error('Failed to load session operations', err);
-      setError(t('snapshot.loadOperationsFailed'));
+      reportSnapshotError('Failed to load session operations', err, 'snapshot.loadOperationsFailed');
       setOperations([]);
       return [];
     } finally {
       setLoading(false);
     }
-  }, [t, workspacePath]);
+  }, [reportSnapshotError, workspaceScope]);
 
-  // Fetch operation diff
+  const reloadAfterMutation = useCallback(async (sessionId?: string) => {
+    const refreshes: Promise<unknown>[] = [loadStats(), loadSessions()];
+
+    if (sessionId) {
+      refreshes.unshift(loadSessionOperations(sessionId));
+    }
+
+    await Promise.all(refreshes);
+  }, [loadSessionOperations, loadStats, loadSessions]);
+
   const getOperationDiff = useCallback(async (sessionId: string, filePath: string) => {
     try {
       setError(null);
-      const diffData = await snapshotAPI.getOperationDiff(sessionId, filePath, undefined, workspacePath || undefined);
-      return diffData;
+      return await snapshotAPI.getOperationDiff(sessionId, filePath, undefined, workspaceScope);
     } catch (err) {
-      log.error('Failed to get operation diff', err);
-      setError(t('snapshot.getDiffFailed'));
+      reportSnapshotError('Failed to get operation diff', err, 'snapshot.getDiffFailed');
       throw err;
     }
-  }, [t, workspacePath]);
+  }, [reportSnapshotError, workspaceScope]);
 
-  // Accept operation
+  const runOperationMutation = useCallback(async (
+    sessionId: string,
+    operation: () => Promise<unknown>,
+    logMessage: string,
+    errorKey: string
+  ) => {
+    try {
+      setError(null);
+      await operation();
+      await reloadAfterMutation(sessionId);
+    } catch (err) {
+      reportSnapshotError(logMessage, err, errorKey);
+    }
+  }, [reloadAfterMutation, reportSnapshotError]);
+
   const acceptOperation = useCallback(async (sessionId: string, operationId: string) => {
-    try {
-      setError(null);
-      await snapshotAPI.acceptOperation(sessionId, operationId, workspacePath || undefined);
-      
-      // Reload data
-      await Promise.all([
-        loadSessionOperations(sessionId),
-        loadStats(),
-        loadSessions()
-      ]);
-    } catch (err) {
-      log.error('Failed to accept operation', err);
-      setError(t('snapshot.acceptOperationFailed'));
-    }
-  }, [loadSessionOperations, loadStats, loadSessions, t, workspacePath]);
+    await runOperationMutation(
+      sessionId,
+      () => snapshotAPI.acceptOperation(sessionId, operationId, workspaceScope),
+      'Failed to accept operation',
+      'snapshot.acceptOperationFailed'
+    );
+  }, [runOperationMutation, workspaceScope]);
 
-  // Reject operation
   const rejectOperation = useCallback(async (sessionId: string, operationId: string) => {
-    try {
-      setError(null);
-      await snapshotAPI.rejectOperation(sessionId, operationId, workspacePath || undefined);
-      
-      // Reload data
-      await Promise.all([
-        loadSessionOperations(sessionId),
-        loadStats(),
-        loadSessions()
-      ]);
-    } catch (err) {
-      log.error('Failed to reject operation', err);
-      setError(t('snapshot.rejectOperationFailed'));
-    }
-  }, [loadSessionOperations, loadStats, loadSessions, t, workspacePath]);
+    await runOperationMutation(
+      sessionId,
+      () => snapshotAPI.rejectOperation(sessionId, operationId, workspaceScope),
+      'Failed to reject operation',
+      'snapshot.rejectOperationFailed'
+    );
+  }, [runOperationMutation, workspaceScope]);
 
-  // Roll back the session
   const rollbackSession = useCallback(async (sessionId: string) => {
-    try {
-      setError(null);
-      await snapshotAPI.rollbackSession(sessionId, workspacePath || undefined);
-      
-      // Reload data
-      await Promise.all([
-        loadSessionOperations(sessionId),
-        loadStats(),
-        loadSessions()
-      ]);
-    } catch (err) {
-      log.error('Failed to rollback session', err);
-      setError(t('snapshot.rollbackSessionFailed'));
-    }
-  }, [loadSessionOperations, loadStats, loadSessions, t, workspacePath]);
+    await runOperationMutation(
+      sessionId,
+      () => snapshotAPI.rollbackSession(sessionId, workspaceScope),
+      'Failed to rollback session',
+      'snapshot.rollbackSessionFailed'
+    );
+  }, [runOperationMutation, workspaceScope]);
 
-  // Cleanup expired data
   const cleanupExpiredData = useCallback(async (maxAgeDays: number = 30) => {
     try {
       setError(null);
-      await snapshotAPI.cleanupSnapshotData(maxAgeDays, workspacePath || undefined);
-      
-      // Reload stats
-      await Promise.all([
-        loadStats(),
-        loadSessions()
-      ]);
+      await snapshotAPI.cleanupSnapshotData(maxAgeDays, workspaceScope);
+      await reloadAfterMutation();
     } catch (err) {
-      log.error('Failed to cleanup expired data', err);
-      setError(t('snapshot.cleanupFailed'));
+      reportSnapshotError('Failed to cleanup expired data', err, 'snapshot.cleanupFailed');
     }
-  }, [loadStats, loadSessions, t, workspacePath]);
+  }, [reloadAfterMutation, reportSnapshotError, workspaceScope]);
 
-  // Update snapshot session info (called on backend create)
   const updateSnapshotSession = useCallback((session: SnapshotSession) => {
     setSessions(prevSessions => {
       const existingIndex = prevSessions.findIndex(s => s.session_id === session.session_id);
       if (existingIndex >= 0) {
-        // Update existing session
         const newSessions = [...prevSessions];
         newSessions[existingIndex] = session;
         return newSessions;
-      } else {
-        // Add new session
-        return [...prevSessions, session];
       }
+
+      return [...prevSessions, session];
     });
   }, []);
 
-  // Clear error
   const clearError = useCallback(() => {
     setError(null);
   }, []);
