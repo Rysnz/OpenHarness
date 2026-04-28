@@ -7,6 +7,7 @@
 import { createLogger } from '@/shared/utils/logger';
 
 const log = createLogger('EventBus');
+const HANDLER_ERROR_EVENT = 'event:handler:error';
 
 export type EventHandler<T = any> = (data: T) => void;
 export type EventUnsubscriber = () => void;
@@ -53,18 +54,7 @@ export class EventBus {
     this.validateEventName(event);
     this.validateHandler(handler);
 
-    if (!this.listeners.has(event)) {
-      this.listeners.set(event, new Set());
-    }
-
-    const handlers = this.listeners.get(event)!;
-    
-    // Enforce max listeners per event.
-    if (handlers.size >= this.options.maxListeners) {
-      throw new Error(`Too many listeners for event '${event}'. Maximum is ${this.options.maxListeners}`);
-    }
-
-    handlers.add(handler);
+    const handlers = this.addHandler(this.listeners, event, handler);
 
     if (this.options.enableLogging) {
       log.debug('Added listener', { event, totalListeners: handlers.size });
@@ -81,12 +71,7 @@ export class EventBus {
     this.validateEventName(event);
     this.validateHandler(handler);
 
-    if (!this.onceListeners.has(event)) {
-      this.onceListeners.set(event, new Set());
-    }
-
-    const handlers = this.onceListeners.get(event)!;
-    handlers.add(handler);
+    const handlers = this.addHandler(this.onceListeners, event, handler, false);
 
     if (this.options.enableLogging) {
       log.debug('Added once listener', { event });
@@ -104,23 +89,8 @@ export class EventBus {
   off<T = any>(event: string, handler: EventHandler<T>): void {
     this.validateEventName(event);
 
-    // Remove regular listeners.
-    const listeners = this.listeners.get(event);
-    if (listeners) {
-      listeners.delete(handler);
-      if (listeners.size === 0) {
-        this.listeners.delete(event);
-      }
-    }
-
-    // Remove once listeners.
-    const onceListeners = this.onceListeners.get(event);
-    if (onceListeners) {
-      onceListeners.delete(handler);
-      if (onceListeners.size === 0) {
-        this.onceListeners.delete(event);
-      }
-    }
+    this.removeHandler(this.listeners, event, handler);
+    this.removeHandler(this.onceListeners, event, handler);
 
     if (this.options.enableLogging) {
       log.debug('Removed listener', { event });
@@ -133,39 +103,15 @@ export class EventBus {
   emit<T = any>(event: string, data?: T, sender?: string): boolean {
     this.validateEventName(event);
 
-    const metadata: EventMetadata = {
-      name: event,
-      timestamp: new Date(),
-      sender,
-      data
-    };
-
-    // Record event history.
-    this.recordEvent(metadata);
+    this.recordEvent(this.createMetadata(event, data, sender));
 
     if (this.options.enableLogging) {
       log.debug('Emitting event', { event, data });
     }
 
-    let hasListeners = false;
-
-    // Dispatch regular listeners.
-    const listeners = this.listeners.get(event);
-    if (listeners && listeners.size > 0) {
-      hasListeners = true;
-      this.executeHandlers(Array.from(listeners), data, event);
-    }
-
-    // Dispatch once listeners.
-    const onceListeners = this.onceListeners.get(event);
-    if (onceListeners && onceListeners.size > 0) {
-      hasListeners = true;
-      this.executeHandlers(Array.from(onceListeners), data, event);
-      // Clear once listeners.
-      this.onceListeners.delete(event);
-    }
-
-    return hasListeners;
+    const dispatchedRegular = this.dispatchStoredHandlers(this.listeners, event, data);
+    const dispatchedOnce = this.dispatchStoredHandlers(this.onceListeners, event, data, true);
+    return dispatchedRegular || dispatchedOnce;
   }
 
   /**
@@ -223,8 +169,8 @@ export class EventBus {
    */
   eventNames(): string[] {
     const events = new Set<string>();
-    this.listeners.forEach((_, event) => events.add(event));
-    this.onceListeners.forEach((_, event) => events.add(event));
+    this.addEventNames(events, this.listeners);
+    this.addEventNames(events, this.onceListeners);
     return Array.from(events);
   }
 
@@ -276,14 +222,84 @@ export class EventBus {
     }
   }
 
+  private createMetadata<T>(event: string, data?: T, sender?: string): EventMetadata {
+    return {
+      name: event,
+      timestamp: new Date(),
+      sender,
+      data
+    };
+  }
+
+  private addHandler<T>(
+    registry: Map<string, Set<EventHandler>>,
+    event: string,
+    handler: EventHandler<T>,
+    enforceLimit = true
+  ): Set<EventHandler> {
+    const handlers = this.getOrCreateHandlers(registry, event);
+
+    if (enforceLimit && handlers.size >= this.options.maxListeners) {
+      throw new Error(`Too many listeners for event '${event}'. Maximum is ${this.options.maxListeners}`);
+    }
+
+    handlers.add(handler);
+    return handlers;
+  }
+
+  private getOrCreateHandlers(
+    registry: Map<string, Set<EventHandler>>,
+    event: string
+  ): Set<EventHandler> {
+    let handlers = registry.get(event);
+    if (!handlers) {
+      handlers = new Set();
+      registry.set(event, handlers);
+    }
+    return handlers;
+  }
+
+  private removeHandler<T>(
+    registry: Map<string, Set<EventHandler>>,
+    event: string,
+    handler: EventHandler<T>
+  ): void {
+    const handlers = registry.get(event);
+    if (!handlers) {
+      return;
+    }
+
+    handlers.delete(handler);
+    if (handlers.size === 0) {
+      registry.delete(event);
+    }
+  }
+
+  private dispatchStoredHandlers<T>(
+    registry: Map<string, Set<EventHandler>>,
+    event: string,
+    data: T | undefined,
+    clearAfterDispatch = false
+  ): boolean {
+    const handlers = registry.get(event);
+    if (!handlers || handlers.size === 0) {
+      return false;
+    }
+
+    this.executeHandlers(Array.from(handlers), data, event);
+    if (clearAfterDispatch) {
+      registry.delete(event);
+    }
+    return true;
+  }
+
   private executeHandlers(handlers: EventHandler[], data: any, event: string): void {
     handlers.forEach(handler => {
       try {
         handler(data);
       } catch (error) {
         log.error('Error in event handler', { event, error });
-        // Emit a dedicated error event for handler failures.
-        this.emit('event:handler:error', {
+        this.emit(HANDLER_ERROR_EVENT, {
           event,
           error,
           handler: handler.toString()
@@ -292,10 +308,12 @@ export class EventBus {
     });
   }
 
+  private addEventNames(events: Set<string>, registry: Map<string, Set<EventHandler>>): void {
+    registry.forEach((_, event) => events.add(event));
+  }
+
   private recordEvent(metadata: EventMetadata): void {
     this.eventHistory.push(metadata);
-    
-    // Enforce history size limit.
     if (this.eventHistory.length > this.MAX_HISTORY) {
       this.eventHistory = this.eventHistory.slice(-this.MAX_HISTORY);
     }
