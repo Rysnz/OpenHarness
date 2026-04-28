@@ -1,7 +1,7 @@
 //! Clipboard File API
 
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Serialize)]
 pub struct ClipboardFilesResponse {
@@ -219,82 +219,17 @@ pub async fn get_clipboard_files() -> Result<ClipboardFilesResponse, String> {
 
 #[tauri::command]
 pub async fn paste_files(request: PasteFilesRequest) -> Result<PasteFilesResponse, String> {
-    let target_dir = Path::new(&request.target_directory);
-
-    if !target_dir.exists() {
-        return Err(format!(
-            "Target directory does not exist: {}",
-            request.target_directory
-        ));
-    }
-
-    if !target_dir.is_dir() {
-        return Err(format!(
-            "Target path is not a directory: {}",
-            request.target_directory
-        ));
-    }
-
+    let target_dir = validate_target_directory(&request.target_directory)?;
     let mut success_count = 0;
     let mut failed_files = Vec::new();
 
     for source_path in &request.source_paths {
-        let source = Path::new(source_path);
-
-        if !source.exists() {
-            failed_files.push(FailedFile {
-                path: source_path.clone(),
-                error: "Source file does not exist".to_string(),
-            });
-            continue;
-        }
-
-        let file_name = match source.file_name() {
-            Some(name) => name,
-            None => {
-                failed_files.push(FailedFile {
-                    path: source_path.clone(),
-                    error: "Failed to get file name".to_string(),
-                });
-                continue;
-            }
-        };
-
-        let target_path = target_dir.join(file_name);
-
-        let final_target = if target_path.exists() {
-            generate_unique_path(&target_path)
-        } else {
-            target_path
-        };
-
-        let result = if source.is_dir() {
-            copy_directory_recursive(source, &final_target)
-        } else {
-            std::fs::copy(source, &final_target)
-                .map(|_| ())
-                .map_err(|e| e.to_string())
-        };
-
-        match result {
-            Ok(_) => {
+        match paste_single_source(source_path, target_dir, request.is_cut) {
+            Ok(()) => {
                 success_count += 1;
-
-                if request.is_cut {
-                    if source.is_dir() {
-                        if let Err(e) = std::fs::remove_dir_all(source) {
-                            log::warn!("Failed to remove source directory after cut: {}", e);
-                        }
-                    } else if let Err(e) = std::fs::remove_file(source) {
-                        log::warn!("Failed to remove source file after cut: {}", e);
-                    }
-                }
             }
             Err(e) => {
-                failed_files.push(FailedFile {
-                    path: source_path.clone(),
-                    error: e,
-                });
+                failed_files.push(failed_file(source_path, e));
             }
         }
     }
@@ -305,7 +240,84 @@ pub async fn paste_files(request: PasteFilesRequest) -> Result<PasteFilesRespons
     })
 }
 
-fn generate_unique_path(path: &Path) -> std::path::PathBuf {
+fn validate_target_directory(target_directory: &str) -> Result<&Path, String> {
+    let target_dir = Path::new(target_directory);
+
+    if !target_dir.exists() {
+        return Err(format!(
+            "Target directory does not exist: {}",
+            target_directory
+        ));
+    }
+
+    if !target_dir.is_dir() {
+        return Err(format!(
+            "Target path is not a directory: {}",
+            target_directory
+        ));
+    }
+
+    Ok(target_dir)
+}
+
+fn paste_single_source(source_path: &str, target_dir: &Path, is_cut: bool) -> Result<(), String> {
+    let source = Path::new(source_path);
+
+    if !source.exists() {
+        return Err("Source file does not exist".to_string());
+    }
+
+    let final_target = resolve_paste_target(source, target_dir)?;
+    copy_source(source, &final_target)?;
+
+    if is_cut {
+        remove_cut_source(source);
+    }
+
+    Ok(())
+}
+
+fn resolve_paste_target(source: &Path, target_dir: &Path) -> Result<PathBuf, String> {
+    let file_name = source
+        .file_name()
+        .ok_or_else(|| "Failed to get file name".to_string())?;
+    let target_path = target_dir.join(file_name);
+
+    Ok(if target_path.exists() {
+        generate_unique_path(&target_path)
+    } else {
+        target_path
+    })
+}
+
+fn copy_source(source: &Path, target: &Path) -> Result<(), String> {
+    if source.is_dir() {
+        copy_directory_recursive(source, target)
+    } else {
+        std::fs::copy(source, target)
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+}
+
+fn remove_cut_source(source: &Path) {
+    if source.is_dir() {
+        if let Err(e) = std::fs::remove_dir_all(source) {
+            log::warn!("Failed to remove source directory after cut: {}", e);
+        }
+    } else if let Err(e) = std::fs::remove_file(source) {
+        log::warn!("Failed to remove source file after cut: {}", e);
+    }
+}
+
+fn failed_file(path: &str, error: String) -> FailedFile {
+    FailedFile {
+        path: path.to_string(),
+        error,
+    }
+}
+
+fn generate_unique_path(path: &Path) -> PathBuf {
     let parent = path.parent().unwrap_or(Path::new(""));
     let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
     let extension = path.extension().and_then(|s| s.to_str());
