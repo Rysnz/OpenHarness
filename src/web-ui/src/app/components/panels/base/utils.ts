@@ -1,13 +1,12 @@
 /**
- * Utility functions for panel content type configuration and management.
- * Provides helpers for icon resolution, capability checking, and file generation.
+ * Utility functions for panel content configuration and management.
  */
 
 import React from 'react';
-import { 
-  Code, 
-  FileText, 
-  GitBranch, 
+import {
+  Code,
+  FileText,
+  GitBranch,
   Eye,
   Edit3,
   BookOpen,
@@ -20,306 +19,116 @@ import {
 } from 'lucide-react';
 import { PanelContentType, PanelContentConfig } from './types';
 
-// Configuration mapping for each panel content type
-export const PANEL_CONTENT_CONFIGS: Record<PanelContentType, PanelContentConfig> = {
-  'empty': {
-    type: 'empty',
-    displayName: 'Empty',
-    icon: FileText,
-    supportsCopy: false,
-    supportsDownload: false,
-    showHeader: false
-  },
-  'code-preview': {
-    type: 'code-preview',
-    displayName: 'Code Preview',
-    icon: Code,
-    supportsCopy: true,
-    supportsDownload: true,
-    showHeader: true
-  },
-  'code-viewer': {
-    type: 'code-viewer',
-    displayName: 'Code Viewer',
-    icon: Code,
-    supportsCopy: true,
-    supportsDownload: true,
-    showHeader: false
-  },
-  'code-editor': {
-    type: 'code-editor',
-    displayName: 'Code Editor',
-    icon: Code,
-    supportsCopy: true,
-    supportsDownload: true,
-    showHeader: false
-  },
-  'markdown-viewer': {
-    type: 'markdown-viewer',
-    displayName: 'Markdown Viewer',
-    icon: FileText,
-    supportsCopy: true,
-    supportsDownload: true,
-    showHeader: true
-  },
-  'markdown-editor': {
-    type: 'markdown-editor',
-    displayName: 'Markdown Editor',
-    icon: FileText,
-    supportsCopy: true,
-    supportsDownload: true,
-    showHeader: false
-  },
-  'mermaid-editor': {
-    type: 'mermaid-editor',
-    displayName: 'Mermaid Editor',
-    icon: Edit3,
-    supportsCopy: true,
-    supportsDownload: true,
-    showHeader: false
-  },
-  'text-viewer': {
-    type: 'text-viewer',
-    displayName: 'Text Viewer',
-    icon: Eye,
-    supportsCopy: true,
-    supportsDownload: true,
-    showHeader: true
-  },
-  'file-viewer': {
-    type: 'file-viewer',
-    displayName: 'File Viewer',
-    icon: Code,
-    supportsCopy: true,
-    supportsDownload: true,
-    showHeader: false
-  },
-  'image-viewer': {
-    type: 'image-viewer',
-    displayName: 'Image Viewer',
-    icon: Image,
-    supportsCopy: false,
-    supportsDownload: false,
-    showHeader: false
-  },
-  'diff-code-editor': {
-    type: 'diff-code-editor',
-    displayName: 'Diff Editor',
-    icon: Code,
-    supportsCopy: true,
-    supportsDownload: true,
-    showHeader: false
-  },
-  'git-diff': {
-    type: 'git-diff',
-    displayName: 'Git Diff',
-    icon: GitBranch,
-    supportsCopy: true,
-    supportsDownload: true,
-    showHeader: false
-  },
-  'git-settings': {
-    type: 'git-settings',
-    displayName: 'Git Settings',
-    icon: GitBranch,
-    supportsCopy: false,
-    supportsDownload: false,
-    showHeader: false
-  },
-  'git-graph': {
-    type: 'git-graph',
-    displayName: 'Git Graph',
-    icon: GitBranch,
-    supportsCopy: false,
-    supportsDownload: false,
-    showHeader: false
-  },
-  'git-branch-history': {
-    type: 'git-branch-history',
-    displayName: 'Git Branch History',
-    icon: GitBranch,
-    supportsCopy: false,
-    supportsDownload: false,
-    showHeader: false
-  },
-  'ai-session': {
-    type: 'ai-session',
-    displayName: 'AI Session',
-    icon: BookOpen,
-    supportsCopy: false,
-    supportsDownload: false,
-    showHeader: false
-  },
-  'planner': {
-    type: 'planner',
-    displayName: 'Planner',
-    icon: ClipboardList,
-    supportsCopy: false,
-    supportsDownload: false,
-    showHeader: false
-  },
-  'ui-editor': {
-    type: 'ui-editor',
-    displayName: 'UI Editor',
-    icon: Edit3,
-    supportsCopy: false,
-    supportsDownload: false,
-    showHeader: false
-  },
-  'ui-relation-graph': {
-    type: 'ui-relation-graph',
-    displayName: 'UI Relation Graph',
-    icon: Network,
-    supportsCopy: false,
-    supportsDownload: false,
-    showHeader: false
-  },
-  'design-tokens': {
-    type: 'design-tokens',
-    displayName: 'Design Tokens',
-    icon: Settings,
-    supportsCopy: false,
-    supportsDownload: false,
-    showHeader: false
-  },
-  'task-detail': {
-    type: 'task-detail',
-    displayName: 'Task Detail',
-    icon: ClipboardList,
-    supportsCopy: false,
-    supportsDownload: false,
-    showHeader: false
-  },
-  'plan-viewer': {
-    type: 'plan-viewer',
-    displayName: 'Plan Viewer',
-    icon: ClipboardList,
-    supportsCopy: false,
-    supportsDownload: false,
-    showHeader: false
-  },
-  'btw-session': {
-    type: 'btw-session',
-    displayName: 'Side Session',
-    icon: MessageSquareQuote,
-    supportsCopy: false,
-    supportsDownload: false,
-    showHeader: false
-  },
-  'terminal': {
-    type: 'terminal',
-    displayName: 'Terminal',
-    icon: Code,
-    supportsCopy: false,
-    supportsDownload: false,
-    showHeader: false
-  },
-  'browser': {
-    type: 'browser',
-    displayName: 'Browser',
-    icon: Globe,
-    supportsCopy: false,
-    supportsDownload: false,
-    showHeader: false
-  },
+type PanelIcon = PanelContentConfig['icon'];
+type PanelConfigOptions = Partial<Pick<
+  PanelContentConfig,
+  'supportsCopy' | 'supportsDownload' | 'showHeader'
+>>;
+
+interface PanelConfigSpec {
+  type: PanelContentType;
+  displayName: string;
+  icon: PanelIcon;
+  options?: PanelConfigOptions;
+}
+
+const DEFAULT_PANEL_OPTIONS: Required<PanelConfigOptions> = {
+  supportsCopy: false,
+  supportsDownload: false,
+  showHeader: false,
 };
 
-/**
- * Gets the icon component for a given panel content type.
- * 
- * @param type - The panel content type
- * @returns React element with the appropriate icon (size: 16px)
- */
+const COPY_AND_DOWNLOAD: PanelConfigOptions = {
+  supportsCopy: true,
+  supportsDownload: true,
+};
+
+const HEADER_COPY_AND_DOWNLOAD: PanelConfigOptions = {
+  ...COPY_AND_DOWNLOAD,
+  showHeader: true,
+};
+
+const PANEL_CONFIG_SPECS: PanelConfigSpec[] = [
+  { type: 'empty', displayName: 'Empty', icon: FileText },
+  { type: 'code-preview', displayName: 'Code Preview', icon: Code, options: HEADER_COPY_AND_DOWNLOAD },
+  { type: 'code-viewer', displayName: 'Code Viewer', icon: Code, options: COPY_AND_DOWNLOAD },
+  { type: 'code-editor', displayName: 'Code Editor', icon: Code, options: COPY_AND_DOWNLOAD },
+  { type: 'markdown-viewer', displayName: 'Markdown Viewer', icon: FileText, options: HEADER_COPY_AND_DOWNLOAD },
+  { type: 'markdown-editor', displayName: 'Markdown Editor', icon: FileText, options: COPY_AND_DOWNLOAD },
+  { type: 'mermaid-editor', displayName: 'Mermaid Editor', icon: Edit3, options: COPY_AND_DOWNLOAD },
+  { type: 'text-viewer', displayName: 'Text Viewer', icon: Eye, options: HEADER_COPY_AND_DOWNLOAD },
+  { type: 'file-viewer', displayName: 'File Viewer', icon: Code, options: COPY_AND_DOWNLOAD },
+  { type: 'image-viewer', displayName: 'Image Viewer', icon: Image },
+  { type: 'diff-code-editor', displayName: 'Diff Editor', icon: Code, options: COPY_AND_DOWNLOAD },
+  { type: 'git-diff', displayName: 'Git Diff', icon: GitBranch, options: COPY_AND_DOWNLOAD },
+  { type: 'git-settings', displayName: 'Git Settings', icon: GitBranch },
+  { type: 'git-graph', displayName: 'Git Graph', icon: GitBranch },
+  { type: 'git-branch-history', displayName: 'Git Branch History', icon: GitBranch },
+  { type: 'ai-session', displayName: 'AI Session', icon: BookOpen },
+  { type: 'planner', displayName: 'Planner', icon: ClipboardList },
+  { type: 'ui-editor', displayName: 'UI Editor', icon: Edit3 },
+  { type: 'ui-relation-graph', displayName: 'UI Relation Graph', icon: Network },
+  { type: 'design-tokens', displayName: 'Design Tokens', icon: Settings },
+  { type: 'task-detail', displayName: 'Task Detail', icon: ClipboardList },
+  { type: 'plan-viewer', displayName: 'Plan Viewer', icon: ClipboardList },
+  { type: 'btw-session', displayName: 'Side Session', icon: MessageSquareQuote },
+  { type: 'terminal', displayName: 'Terminal', icon: Code },
+  { type: 'browser', displayName: 'Browser', icon: Globe },
+];
+
+const FILE_EXTENSION_BY_TYPE = new Map<PanelContentType, string>([
+  ['markdown-viewer', 'md'],
+  ['markdown-editor', 'md'],
+  ['mermaid-editor', 'mmd'],
+]);
+
+function createPanelConfig(spec: PanelConfigSpec): PanelContentConfig {
+  return {
+    ...DEFAULT_PANEL_OPTIONS,
+    ...spec.options,
+    type: spec.type,
+    displayName: spec.displayName,
+    icon: spec.icon,
+  };
+}
+
+function getPanelConfig(type: PanelContentType): PanelContentConfig {
+  return PANEL_CONTENT_CONFIGS[type] ?? PANEL_CONTENT_CONFIGS.empty;
+}
+
+export const PANEL_CONTENT_CONFIGS: Record<PanelContentType, PanelContentConfig> =
+  PANEL_CONFIG_SPECS.reduce((configs, spec) => {
+    configs[spec.type] = createPanelConfig(spec);
+    return configs;
+  }, {} as Record<PanelContentType, PanelContentConfig>);
+
 export const getContentIcon = (type: PanelContentType): React.ReactElement => {
-  if (!type || !PANEL_CONTENT_CONFIGS[type]) {
-    const DefaultIcon = PANEL_CONTENT_CONFIGS.empty.icon;
-    return React.createElement(DefaultIcon, { size: 16 });
-  }
-  const config = PANEL_CONTENT_CONFIGS[type];
-  const IconComponent = config.icon;
+  const IconComponent = getPanelConfig(type).icon;
   return React.createElement(IconComponent, { size: 16 });
 };
 
-/**
- * Gets the display name for a given panel content type.
- * 
- * @param type - The panel content type
- * @returns Human-readable display name
- */
 export const getContentTypeName = (type: PanelContentType): string => {
-  if (!type || !PANEL_CONTENT_CONFIGS[type]) {
-    return PANEL_CONTENT_CONFIGS.empty.displayName;
-  }
-  return PANEL_CONTENT_CONFIGS[type].displayName;
+  return getPanelConfig(type).displayName;
 };
 
-/**
- * Checks whether a content type supports copy functionality.
- * 
- * @param type - The panel content type
- * @returns True if the content type supports copying
- */
 export const supportsContentCopy = (type: PanelContentType): boolean => {
-  if (!type || !PANEL_CONTENT_CONFIGS[type]) {
-    return false;
-  }
-  return PANEL_CONTENT_CONFIGS[type].supportsCopy;
+  return getPanelConfig(type).supportsCopy;
 };
 
-/**
- * Checks whether a content type supports download functionality.
- * 
- * @param type - The panel content type
- * @returns True if the content type supports downloading
- */
 export const supportsContentDownload = (type: PanelContentType): boolean => {
-  if (!type || !PANEL_CONTENT_CONFIGS[type]) {
-    return false;
-  }
-  return PANEL_CONTENT_CONFIGS[type].supportsDownload;
+  return getPanelConfig(type).supportsDownload;
 };
 
-/**
- * Checks whether a content type should display a panel header.
- * 
- * @param type - The panel content type
- * @returns True if the content type should show the default header
- */
 export const shouldShowHeader = (type: PanelContentType): boolean => {
-  if (!type || !PANEL_CONTENT_CONFIGS[type]) {
-    return false;
-  }
-  return PANEL_CONTENT_CONFIGS[type].showHeader;
+  return getPanelConfig(type).showHeader;
 };
 
-/**
- * Generates a unique identifier for a panel tab.
- * 
- * @returns Unique tab ID in the format "tab_{timestamp}_{random}"
- */
 export const generateTabId = (): string => {
-  return `tab_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  return `tab_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
 };
 
-/**
- * Generates an appropriate filename based on content type and title.
- * 
- * @param type - The panel content type
- * @param title - The content title (used as base filename)
- * @returns Filename with appropriate extension for the content type
- */
 export const generateFileName = (type: PanelContentType, title: string): string => {
   const baseName = title || 'content';
-  
-  switch (type) {
-    case 'markdown-viewer':
-    case 'markdown-editor':
-      return `${baseName}.md`;
-    case 'code-preview':
-      return `${baseName}.txt`;
-    case 'mermaid-editor':
-      return `${baseName}.mmd`;
-    default:
-      return `${baseName}.txt`;
-  }
+  const extension = FILE_EXTENSION_BY_TYPE.get(type) ?? 'txt';
+  return `${baseName}.${extension}`;
 };
