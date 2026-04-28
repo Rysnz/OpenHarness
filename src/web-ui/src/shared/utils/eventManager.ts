@@ -9,6 +9,7 @@ export type EventListener<T = any> = {
   callback: EventCallback<T>;
   once: boolean;
   priority: number;
+  maxExecutions?: number;
 };
 
 export interface EventManagerInterface {
@@ -39,58 +40,17 @@ export class EventManager implements EventManagerInterface {
 
    
   on<T = any>(event: string, callback: EventCallback<T>, options: EventListenerOptions = {}): () => void {
-    const listener: EventListener<T> = {
-      callback,
-      once: false,
-      priority: options.priority ?? 0
-    };
-
     if (this.debugMode) {
       log.debug('Registering event listener', { event });
     }
 
-    if (!this.listeners.has(event)) {
-      this.listeners.set(event, []);
-    }
-
-    const eventListeners = this.listeners.get(event)!;
-    eventListeners.push(listener);
-    
-    
-    eventListeners.sort((a, b) => b.priority - a.priority);
-
-    
-    if (options.maxExecutions) {
-      if (!this.executionCounts.has(event)) {
-        this.executionCounts.set(event, new Map());
-      }
-      this.executionCounts.get(event)!.set(callback, 0);
-    }
-
-
-    
+    this.registerListener(event, this.createListener(callback, false, options));
     return () => this.off(event, callback);
   }
 
    
   once<T = any>(event: string, callback: EventCallback<T>, options: EventListenerOptions = {}): () => void {
-    const listener: EventListener<T> = {
-      callback,
-      once: true,
-      priority: options.priority ?? 0
-    };
-
-    if (!this.listeners.has(event)) {
-      this.listeners.set(event, []);
-    }
-
-    const eventListeners = this.listeners.get(event)!;
-    eventListeners.push(listener);
-    
-    
-    eventListeners.sort((a, b) => b.priority - a.priority);
-
-
+    this.registerListener(event, this.createListener(callback, true, options));
     return () => this.off(event, callback);
   }
 
@@ -105,53 +65,39 @@ export class EventManager implements EventManagerInterface {
       log.debug('Emitting event', { event, listenerCount: eventListeners.length });
     }
 
-    const listenersToRemove: EventListener[] = [];
-    const promises: Promise<void>[] = [];
+    const expiredListeners: EventListener[] = [];
+    const pendingCallbacks: Promise<void>[] = [];
 
     for (const listener of eventListeners) {
       try {
-        
-        const eventExecutionCounts = this.executionCounts.get(event);
-        if (eventExecutionCounts && eventExecutionCounts.has(listener.callback)) {
-          const count = eventExecutionCounts.get(listener.callback)!;
-          const maxExecutions = 1; 
-          
-          if (count >= maxExecutions) {
-            listenersToRemove.push(listener);
-            continue;
-          }
-          
-          eventExecutionCounts.set(listener.callback, count + 1);
+        if (this.hasReachedExecutionLimit(event, listener)) {
+          expiredListeners.push(listener);
+          continue;
         }
 
-        
         const result = listener.callback(data);
         if (result instanceof Promise) {
-          promises.push(result);
+          pendingCallbacks.push(result);
         }
 
-        
         if (listener.once) {
-          listenersToRemove.push(listener);
+          expiredListeners.push(listener);
         }
       } catch (error) {
         log.error('Error in event listener', { event, error });
       }
     }
 
-    
-    if (promises.length > 0) {
+    if (pendingCallbacks.length > 0) {
       try {
-        await Promise.allSettled(promises);
+        await Promise.allSettled(pendingCallbacks);
       } catch (error) {
         log.error('Error in async event listeners', { event, error });
       }
     }
 
-    
-    if (listenersToRemove.length > 0) {
-      const remainingListeners = eventListeners.filter(l => !listenersToRemove.includes(l));
-      this.listeners.set(event, remainingListeners);
+    if (expiredListeners.length > 0) {
+      this.removeListeners(event, expiredListeners);
     }
   }
 
@@ -211,6 +157,79 @@ export class EventManager implements EventManagerInterface {
       info[event] = listeners.length;
     }
     return info;
+  }
+
+  private createListener<T>(
+    callback: EventCallback<T>,
+    once: boolean,
+    options: EventListenerOptions
+  ): EventListener<T> {
+    return {
+      callback,
+      once,
+      priority: options.priority ?? 0,
+      maxExecutions: options.maxExecutions,
+    };
+  }
+
+  private registerListener(event: string, listener: EventListener): void {
+    const eventListeners = this.getOrCreateListenerList(event);
+    eventListeners.push(listener);
+    eventListeners.sort((a, b) => b.priority - a.priority);
+
+    if (listener.maxExecutions) {
+      this.getOrCreateExecutionCounts(event).set(listener.callback, 0);
+    }
+  }
+
+  private getOrCreateListenerList(event: string): EventListener[] {
+    let eventListeners = this.listeners.get(event);
+    if (!eventListeners) {
+      eventListeners = [];
+      this.listeners.set(event, eventListeners);
+    }
+    return eventListeners;
+  }
+
+  private getOrCreateExecutionCounts(event: string): Map<EventCallback, number> {
+    let counts = this.executionCounts.get(event);
+    if (!counts) {
+      counts = new Map();
+      this.executionCounts.set(event, counts);
+    }
+    return counts;
+  }
+
+  private hasReachedExecutionLimit(event: string, listener: EventListener): boolean {
+    if (!listener.maxExecutions) {
+      return false;
+    }
+
+    const counts = this.getOrCreateExecutionCounts(event);
+    const currentCount = counts.get(listener.callback) ?? 0;
+    if (currentCount >= listener.maxExecutions) {
+      return true;
+    }
+
+    counts.set(listener.callback, currentCount + 1);
+    return false;
+  }
+
+  private removeListeners(event: string, listenersToRemove: EventListener[]): void {
+    const currentListeners = this.listeners.get(event);
+    if (!currentListeners) {
+      return;
+    }
+
+    const nextListeners = currentListeners.filter(listener => !listenersToRemove.includes(listener));
+    this.listeners.set(event, nextListeners);
+
+    const counts = this.executionCounts.get(event);
+    if (counts) {
+      for (const listener of listenersToRemove) {
+        counts.delete(listener.callback);
+      }
+    }
   }
 }
 export const EventTypes = {
