@@ -12,6 +12,12 @@ import './ReferencesPanel.scss';
 
 const log = createLogger('ReferencesPanel');
 
+const PANEL_WIDTH = 500;
+const VIEWPORT_MARGIN = 20;
+const CONTAINER_CLASS = 'references-panel-container';
+
+type Translate = ReturnType<typeof useI18n>['t'];
+
 export interface ReferenceLocation {
   uri: string;
   range: {
@@ -47,6 +53,157 @@ export interface ReferencesPanelProps {
   maxHeight?: number;
 }
 
+function extractFileName(uri: string): string {
+  const match = uri.match(/[^/\\]+$/);
+  return match ? match[0] : uri;
+}
+
+function groupReferences(
+  references: ReferenceLocation[],
+  t: Translate
+): GroupedReferences[] {
+  const groups = new Map<string, GroupedReferences>();
+
+  for (const location of references) {
+    const filePath = location.uri;
+    const fileName = extractFileName(filePath);
+    const group =
+      groups.get(filePath) ??
+      {
+        filePath,
+        fileName,
+        references: [],
+      };
+
+    group.references.push({
+      location,
+      lineNumber: location.range.start.line + 1,
+      preview: location.text || t('lsp.referencesPanel.previewFallback'),
+    });
+    groups.set(filePath, group);
+  }
+
+  return Array.from(groups.values())
+    .map((group) => ({
+      ...group,
+      references: [...group.references].sort((a, b) => a.lineNumber - b.lineNumber),
+    }))
+    .sort((a, b) => a.fileName.localeCompare(b.fileName));
+}
+
+function resolvePanelStyle(
+  position: ReferencesPanelProps['position'],
+  maxHeight: number
+): React.CSSProperties {
+  const style: React.CSSProperties = {
+    maxHeight: `${maxHeight}px`,
+  };
+
+  if (position.x + PANEL_WIDTH > window.innerWidth - VIEWPORT_MARGIN) {
+    style.right = `${window.innerWidth - position.x}px`;
+  } else {
+    style.left = `${position.x}px`;
+  }
+
+  if (position.y + maxHeight > window.innerHeight - VIEWPORT_MARGIN) {
+    style.bottom = `${window.innerHeight - position.y}px`;
+  } else {
+    style.top = `${position.y}px`;
+  }
+
+  return style;
+}
+
+function panelTitle(references: ReferenceLocation[], symbolName: string | undefined, t: Translate) {
+  const title = symbolName
+    ? t('lsp.referencesPanel.titleWithSymbol', { symbol: symbolName })
+    : t('lsp.referencesPanel.title');
+
+  return (
+    <>
+      {title}
+      <span className="references-panel__count">({references.length})</span>
+    </>
+  );
+}
+
+function emptyMessage(symbolName: string | undefined, t: Translate): string {
+  return symbolName
+    ? t('lsp.referencesPanel.emptyWithSymbol', { symbol: symbolName })
+    : t('lsp.referencesPanel.emptyDescription');
+}
+
+function CloseButton({ onClose }: { onClose: () => void }) {
+  return (
+    <IconButton
+      className="references-panel__close"
+      onClick={onClose}
+      size="small"
+      variant="ghost"
+    >
+      <X size={16} />
+    </IconButton>
+  );
+}
+
+function ReferencesHeader({
+  children,
+  onClose,
+}: {
+  children: React.ReactNode;
+  onClose: () => void;
+}) {
+  return (
+    <div className="references-panel__header">
+      <div className="references-panel__title">
+        <FileText size={16} />
+        <span>{children}</span>
+      </div>
+      <CloseButton onClose={onClose} />
+    </div>
+  );
+}
+
+function ReferenceGroupView({
+  group,
+  onReferenceClick,
+  emptyLineLabel,
+}: {
+  group: GroupedReferences;
+  onReferenceClick: (reference: ReferenceLocation) => void;
+  emptyLineLabel: string;
+}) {
+  return (
+    <div className="references-panel__file-group">
+      <div className="references-panel__file-header" title={group.filePath}>
+        <FileText size={14} />
+        <div className="references-panel__file-path">
+          {group.filePath.replace(/^file:\/\/\//, '')}
+        </div>
+        <div className="references-panel__file-count">{group.references.length}</div>
+      </div>
+
+      <div className="references-panel__reference-list">
+        {group.references.map((reference, index) => (
+          <div
+            key={`${group.filePath}-${index}`}
+            className="references-panel__reference-item"
+            onClick={() => onReferenceClick(reference.location)}
+          >
+            <ChevronRight size={14} className="references-panel__reference-icon" />
+            <div className="references-panel__reference-line">
+              {reference.lineNumber}
+            </div>
+            <div className="references-panel__reference-preview">
+              {reference.preview.trim() || emptyLineLabel}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export const ReferencesPanel: React.FC<ReferencesPanelProps> = ({
   references,
   symbolName,
@@ -56,95 +213,27 @@ export const ReferencesPanel: React.FC<ReferencesPanelProps> = ({
   maxHeight = 400,
 }) => {
   const { t } = useI18n('tools');
-  const groupedReferences = useMemo(() => {
-    const groups = new Map<string, GroupedReferences>();
-
-    references.forEach((ref) => {
-      const filePath = ref.uri;
-      const fileName = extractFileName(filePath);
-
-      if (!groups.has(filePath)) {
-        groups.set(filePath, {
-          filePath,
-          fileName,
-          references: [],
-        });
-      }
-
-      const group = groups.get(filePath)!;
-      group.references.push({
-        location: ref,
-        lineNumber: ref.range.start.line + 1,
-        preview: ref.text || t('lsp.referencesPanel.previewFallback'),
-      });
-    });
-
-    const sortedGroups = Array.from(groups.values());
-    sortedGroups.forEach((group) => {
-      group.references.sort((a, b) => a.lineNumber - b.lineNumber);
-    });
-    sortedGroups.sort((a, b) => a.fileName.localeCompare(b.fileName));
-
-    return sortedGroups;
-  }, [references, t]);
-
-  function extractFileName(uri: string): string {
-    const match = uri.match(/[^/\\]+$/);
-    return match ? match[0] : uri;
-  }
-
+  const groupedReferences = useMemo(
+    () => groupReferences(references, t),
+    [references, t]
+  );
+  const panelStyle = useMemo(
+    () => resolvePanelStyle(position, maxHeight),
+    [position, maxHeight]
+  );
   const handleReferenceClick = useCallback(
-    (ref: ReferenceLocation) => {
-      onReferenceClick(ref);
-    },
+    (ref: ReferenceLocation) => onReferenceClick(ref),
     [onReferenceClick]
   );
-
-  const panelStyle = useMemo(() => {
-    const style: React.CSSProperties = {
-      maxHeight: `${maxHeight}px`,
-    };
-
-    const viewportWidth = window.innerWidth;
-    const panelWidth = 500;
-
-    if (position.x + panelWidth > viewportWidth - 20) {
-      style.right = `${viewportWidth - position.x}px`;
-    } else {
-      style.left = `${position.x}px`;
-    }
-
-    const viewportHeight = window.innerHeight;
-    if (position.y + maxHeight > viewportHeight - 20) {
-      style.bottom = `${viewportHeight - position.y}px`;
-    } else {
-      style.top = `${position.y}px`;
-    }
-
-    return style;
-  }, [position, maxHeight]);
 
   if (references.length === 0) {
     return (
       <div className="references-panel" style={panelStyle}>
-        <div className="references-panel__header">
-          <div className="references-panel__title">
-            <FileText size={16} />
-            <span>{t('lsp.referencesPanel.emptyTitle')}</span>
-          </div>
-          <IconButton 
-            className="references-panel__close" 
-            onClick={onClose}
-            size="small"
-            variant="ghost"
-          >
-            <X size={16} />
-          </IconButton>
-        </div>
+        <ReferencesHeader onClose={onClose}>
+          {t('lsp.referencesPanel.emptyTitle')}
+        </ReferencesHeader>
         <div className="references-panel__empty">
-          {symbolName
-            ? t('lsp.referencesPanel.emptyWithSymbol', { symbol: symbolName })
-            : t('lsp.referencesPanel.emptyDescription')}
+          {emptyMessage(symbolName, t)}
         </div>
       </div>
     );
@@ -152,57 +241,18 @@ export const ReferencesPanel: React.FC<ReferencesPanelProps> = ({
 
   return (
     <div className="references-panel" style={panelStyle}>
-      <div className="references-panel__header">
-        <div className="references-panel__title">
-          <FileText size={16} />
-          <span>
-            {symbolName
-              ? t('lsp.referencesPanel.titleWithSymbol', { symbol: symbolName })
-              : t('lsp.referencesPanel.title')}
-            <span className="references-panel__count">({references.length})</span>
-          </span>
-        </div>
-        <IconButton 
-          className="references-panel__close" 
-          onClick={onClose}
-          size="small"
-          variant="ghost"
-        >
-          <X size={16} />
-        </IconButton>
-      </div>
+      <ReferencesHeader onClose={onClose}>
+        {panelTitle(references, symbolName, t)}
+      </ReferencesHeader>
 
       <div className="references-panel__content">
         {groupedReferences.map((group) => (
-          <div key={group.filePath} className="references-panel__file-group">
-            <div className="references-panel__file-header" title={group.filePath}>
-              <FileText size={14} />
-              <div className="references-panel__file-path">
-                {group.filePath.replace(/^file:\/\/\//, '')}
-              </div>
-              <div className="references-panel__file-count">
-                {group.references.length}
-              </div>
-            </div>
-
-            <div className="references-panel__reference-list">
-              {group.references.map((ref, index) => (
-                <div
-                  key={`${group.filePath}-${index}`}
-                  className="references-panel__reference-item"
-                  onClick={() => handleReferenceClick(ref.location)}
-                >
-                  <ChevronRight size={14} className="references-panel__reference-icon" />
-                  <div className="references-panel__reference-line">
-                    {ref.lineNumber}
-                  </div>
-                  <div className="references-panel__reference-preview">
-                    {ref.preview.trim() || t('lsp.referencesPanel.emptyLine')}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          <ReferenceGroupView
+            key={group.filePath}
+            group={group}
+            onReferenceClick={handleReferenceClick}
+            emptyLineLabel={t('lsp.referencesPanel.emptyLine')}
+          />
         ))}
       </div>
     </div>
@@ -228,25 +278,7 @@ export class ReferencesPanelController {
       onReferenceClick: (ref: ReferenceLocation) => void;
     }
   ): void {
-    if (!this.container) {
-      this.container = document.createElement('div');
-      this.container.className = 'references-panel-container';
-      
-      this.container.style.position = 'fixed';
-      this.container.style.top = '0';
-      this.container.style.left = '0';
-      this.container.style.width = '100%';
-      this.container.style.height = '100%';
-      this.container.style.pointerEvents = 'none';
-      this.container.style.zIndex = '99999';
-      
-      document.body.appendChild(this.container);
-
-      this.root = createRoot(this.container);
-
-      document.addEventListener('mousedown', this.handleOutsideClick);
-      document.addEventListener('keydown', this.handleEscapeKey);
-    }
+    this.ensureContainer();
 
     if (this.root) {
       this.root.render(
@@ -261,6 +293,29 @@ export class ReferencesPanelController {
     } else {
       log.error('Root is null, cannot render');
     }
+  }
+
+  private ensureContainer(): void {
+    if (this.container) {
+      return;
+    }
+
+    this.container = document.createElement('div');
+    this.container.className = CONTAINER_CLASS;
+    Object.assign(this.container.style, {
+      position: 'fixed',
+      top: '0',
+      left: '0',
+      width: '100%',
+      height: '100%',
+      pointerEvents: 'none',
+      zIndex: '99999',
+    });
+
+    document.body.appendChild(this.container);
+    this.root = createRoot(this.container);
+    document.addEventListener('mousedown', this.handleOutsideClick);
+    document.addEventListener('keydown', this.handleEscapeKey);
   }
 
   /**
