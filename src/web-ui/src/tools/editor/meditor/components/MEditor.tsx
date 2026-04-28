@@ -5,7 +5,7 @@ import { useEditor } from '../hooks/useEditor'
 import { EditArea } from './EditArea'
 import { TiptapEditor, TiptapEditorHandle } from './TiptapEditor'
 import { Preview } from './Preview'
-import type { EditorOptions, EditorInstance } from '../types'
+import type { EditorMode, EditorOptions, EditorInstance } from '../types'
 import { useI18n } from '@/infrastructure/i18n'
 import { analyzeMarkdownEditability } from '../utils/tiptapMarkdown'
 import './MEditor.scss'
@@ -14,10 +14,17 @@ void createLogger('MEditor')
 let markdownTextareaTargetCounter = 0
 
 export type MEditorProps = EditorOptions;
+type TextareaAction = 'undo' | 'redo' | 'cut' | 'copy' | 'paste' | 'selectAll'
+
+interface TextareaTargetBindingOptions {
+  targetId: string
+  containerRef: React.RefObject<HTMLDivElement>
+  textareaRef: React.RefObject<HTMLTextAreaElement>
+}
 
 function executeTextareaAction(
   textarea: HTMLTextAreaElement | null,
-  action: 'undo' | 'redo' | 'cut' | 'copy' | 'paste' | 'selectAll',
+  action: TextareaAction,
 ): boolean {
   if (!textarea || textarea.disabled) {
     return false
@@ -35,6 +42,91 @@ function executeTextareaAction(
   }
 
   return document.execCommand(action)
+}
+
+function isTextareaMode(mode: EditorMode): boolean {
+  return mode === 'edit' || mode === 'split'
+}
+
+function resolveEffectiveMode(
+  mode: EditorMode,
+  containsRenderOnlyBlocks: boolean,
+  readonly: boolean,
+): EditorMode {
+  if (mode !== 'ir' || !containsRenderOnlyBlocks) {
+    return mode
+  }
+
+  return readonly ? 'preview' : 'split'
+}
+
+function toCssSize(value: string | number): string | number {
+  return typeof value === 'number' ? `${value}px` : value
+}
+
+function buildContainerStyle(
+  style: React.CSSProperties,
+  height: string | number,
+  width: string | number,
+): React.CSSProperties {
+  return {
+    ...style,
+    height: toCssSize(height),
+    width: toCssSize(width)
+  }
+}
+
+function buildEditorClassName(theme: 'light' | 'dark', mode: EditorMode, className: string): string {
+  const themeClass = theme === 'dark' ? 'm-editor-dark' : 'm-editor-light'
+  return `m-editor ${themeClass} m-editor-mode-${mode} ${className}`
+}
+
+function isSaveShortcut(e: React.KeyboardEvent<HTMLDivElement>): boolean {
+  return (e.ctrlKey || e.metaKey) && e.key === 's'
+}
+
+function bindTextareaEditTarget({
+  targetId,
+  containerRef,
+  textareaRef
+}: TextareaTargetBindingOptions) {
+  return activeEditTargetService.bindTarget({
+    id: targetId,
+    kind: 'markdown-textarea',
+    focus: () => {
+      textareaRef.current?.focus()
+    },
+    hasTextFocus: () => {
+      const textarea = textareaRef.current
+      const activeElement = typeof document !== 'undefined' ? document.activeElement : null
+      return !!textarea && activeElement === textarea
+    },
+    undo: () => executeTextareaAction(textareaRef.current, 'undo'),
+    redo: () => executeTextareaAction(textareaRef.current, 'redo'),
+    cut: () => executeTextareaAction(textareaRef.current, 'cut'),
+    copy: () => executeTextareaAction(textareaRef.current, 'copy'),
+    paste: () => executeTextareaAction(textareaRef.current, 'paste'),
+    selectAll: () => executeTextareaAction(textareaRef.current, 'selectAll'),
+    containsElement: (element) => {
+      const root = containerRef.current
+      return !!root && !!element && root.contains(element)
+    }
+  })
+}
+
+function clearTextareaTargetAfterBlur(
+  targetId: string,
+  containerRef: React.RefObject<HTMLDivElement>,
+) {
+  window.setTimeout(() => {
+    const root = containerRef.current
+    const activeElement = typeof document !== 'undefined' ? document.activeElement : null
+    if (root && activeElement && root.contains(activeElement)) {
+      return
+    }
+
+    activeEditTargetService.clearActiveTarget(targetId)
+  }, 0)
 }
 
 export const MEditor = forwardRef<EditorInstance, MEditorProps>((props, ref) => {
@@ -81,42 +173,21 @@ export const MEditor = forwardRef<EditorInstance, MEditorProps>((props, ref) => 
 
   const tiptapEditorRef = useRef<TiptapEditorHandle>(null)
   const editability = useMemo(() => analyzeMarkdownEditability(value), [value])
-  const effectiveMode = mode === 'ir' && editability.containsRenderOnlyBlocks
-    ? (readonly ? 'preview' : 'split')
-    : mode
+  const effectiveMode = resolveEffectiveMode(mode, editability.containsRenderOnlyBlocks, readonly)
 
   useEffect(() => {
     currentValueRef.current = value
   }, [value])
 
   useEffect(() => {
-    if (effectiveMode === 'ir' || effectiveMode === 'preview') {
+    if (!isTextareaMode(effectiveMode)) {
       return
     }
 
-    const targetId = textareaTargetIdRef.current
-
-    return activeEditTargetService.bindTarget({
-      id: targetId,
-      kind: 'markdown-textarea',
-      focus: () => {
-        textareaRef.current?.focus()
-      },
-      hasTextFocus: () => {
-        const textarea = textareaRef.current
-        const activeElement = typeof document !== 'undefined' ? document.activeElement : null
-        return !!textarea && activeElement === textarea
-      },
-      undo: () => executeTextareaAction(textareaRef.current, 'undo'),
-      redo: () => executeTextareaAction(textareaRef.current, 'redo'),
-      cut: () => executeTextareaAction(textareaRef.current, 'cut'),
-      copy: () => executeTextareaAction(textareaRef.current, 'copy'),
-      paste: () => executeTextareaAction(textareaRef.current, 'paste'),
-      selectAll: () => executeTextareaAction(textareaRef.current, 'selectAll'),
-      containsElement: (element) => {
-        const root = containerRef.current
-        return !!root && !!element && root.contains(element)
-      }
+    return bindTextareaEditTarget({
+      targetId: textareaTargetIdRef.current,
+      containerRef,
+      textareaRef
     })
   }, [effectiveMode, textareaRef])
 
@@ -157,7 +228,7 @@ export const MEditor = forwardRef<EditorInstance, MEditorProps>((props, ref) => 
       if (effectiveMode === 'ir' && tiptapEditorRef.current) {
         return tiptapEditorRef.current.undo()
       }
-      if (effectiveMode === 'edit' || effectiveMode === 'split') {
+      if (isTextareaMode(effectiveMode)) {
         return executeTextareaAction(textareaRef.current, 'undo')
       }
       return false
@@ -166,7 +237,7 @@ export const MEditor = forwardRef<EditorInstance, MEditorProps>((props, ref) => 
       if (effectiveMode === 'ir' && tiptapEditorRef.current) {
         return tiptapEditorRef.current.redo()
       }
-      if (effectiveMode === 'edit' || effectiveMode === 'split') {
+      if (isTextareaMode(effectiveMode)) {
         return executeTextareaAction(textareaRef.current, 'redo')
       }
       return false
@@ -212,7 +283,7 @@ export const MEditor = forwardRef<EditorInstance, MEditorProps>((props, ref) => 
   }), [editorInstance, effectiveMode, onDirtyChange, textareaRef])
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
-    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+    if (isSaveShortcut(e)) {
       e.preventDefault()
       e.stopPropagation()  // Prevent event bubbling; avoids other listeners handling it.
       onSave?.(value)
@@ -220,7 +291,7 @@ export const MEditor = forwardRef<EditorInstance, MEditorProps>((props, ref) => 
   }, [value, onSave])
 
   const handleFocusCapture = useCallback(() => {
-    if (effectiveMode === 'ir' || effectiveMode === 'preview') {
+    if (!isTextareaMode(effectiveMode)) {
       return
     }
 
@@ -228,34 +299,20 @@ export const MEditor = forwardRef<EditorInstance, MEditorProps>((props, ref) => 
   }, [effectiveMode])
 
   const handleBlurCapture = useCallback(() => {
-    if (effectiveMode === 'ir' || effectiveMode === 'preview') {
+    if (!isTextareaMode(effectiveMode)) {
       return
     }
 
-    window.setTimeout(() => {
-      const root = containerRef.current
-      const activeElement = typeof document !== 'undefined' ? document.activeElement : null
-      if (root && activeElement && root.contains(activeElement)) {
-        return
-      }
-
-      activeEditTargetService.clearActiveTarget(textareaTargetIdRef.current)
-    }, 0)
+    clearTextareaTargetAfterBlur(textareaTargetIdRef.current, containerRef)
   }, [effectiveMode])
 
-  const containerStyle: React.CSSProperties = {
-    ...style,
-    height: typeof height === 'number' ? `${height}px` : height,
-    width: typeof width === 'number' ? `${width}px` : width
-  }
-
-  const themeClass = theme === 'dark' ? 'm-editor-dark' : 'm-editor-light'
-  const modeClass = `m-editor-mode-${effectiveMode}`
+  const containerStyle = buildContainerStyle(style, height, width)
+  const editorClassName = buildEditorClassName(theme, effectiveMode, className)
 
   return (
     <div
       ref={containerRef}
-      className={`m-editor ${themeClass} ${modeClass} ${className}`}
+      className={editorClassName}
       style={containerStyle}
       onKeyDown={handleKeyDown}
       onFocusCapture={handleFocusCapture}
