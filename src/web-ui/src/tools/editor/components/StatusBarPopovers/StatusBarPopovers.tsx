@@ -29,6 +29,25 @@ export interface AnchorRect {
   height: number;
 }
 
+const POPOVER_TOP_OFFSET = 4;
+const POPOVER_MIN_LEFT = 8;
+
+const popoverPosition = (anchorRect: AnchorRect, width: number) => ({
+  top: anchorRect.top - POPOVER_TOP_OFFSET,
+  left: Math.max(POPOVER_MIN_LEFT, Math.min(anchorRect.right - width, anchorRect.left)),
+});
+
+const parseLineColumn = (value: string) => {
+  const [linePart, columnPart] = value.trim().split(':');
+  return {
+    line: Math.max(1, parseInt(linePart, 10) || 1),
+    column: columnPart !== undefined ? Math.max(1, parseInt(columnPart, 10) || 1) : 1,
+  };
+};
+
+const itemClassName = (active: boolean) =>
+  `status-bar-popover__item ${active ? 'status-bar-popover__item--active' : ''}`;
+
 export interface GoToLinePopoverProps {
   anchorRect: AnchorRect;
   currentLine: number;
@@ -63,21 +82,17 @@ export const GoToLinePopover: React.FC<GoToLinePopoverProps> = ({
     }
     if (e.key === 'Enter') {
       e.preventDefault();
-      const trimmed = value.trim();
-      if (!trimmed) {
+      if (!value.trim()) {
         onClose();
         return;
       }
-      const part = trimmed.split(':');
-      const line = Math.max(1, parseInt(part[0], 10) || 1);
-      const column = part[1] !== undefined ? Math.max(1, parseInt(part[1], 10) || 1) : 1;
+      const { line, column } = parseLineColumn(value);
       onConfirm(line, column);
       onClose();
     }
   };
 
-  const top = anchorRect.top - 4;
-  const left = Math.max(8, Math.min(anchorRect.right - 200, anchorRect.left));
+  const { top, left } = popoverPosition(anchorRect, 200);
 
   return createPortal(
     <div
@@ -146,8 +161,7 @@ export const IndentPopover: React.FC<IndentPopoverProps> = ({
     [onConfirm, onClose]
   );
 
-  const top = anchorRect.top - 4;
-  const left = Math.max(8, Math.min(anchorRect.right - 160, anchorRect.left));
+  const { top, left } = popoverPosition(anchorRect, 160);
 
   return createPortal(
     <div
@@ -165,11 +179,7 @@ export const IndentPopover: React.FC<IndentPopoverProps> = ({
           return (
             <Button
               key={`${opt.insertSpaces ? 's' : 't'}-${opt.tabSize}`}
-              className={`status-bar-popover__item ${
-                opt.tabSize === currentTabSize && opt.insertSpaces === currentInsertSpaces
-                  ? 'status-bar-popover__item--active'
-                  : ''
-              }`}
+              className={itemClassName(opt.tabSize === currentTabSize && opt.insertSpaces === currentInsertSpaces)}
               variant="ghost"
               size="small"
               type="button"
@@ -214,8 +224,7 @@ export const EncodingPopover: React.FC<EncodingPopoverProps> = ({
   onClose,
 }) => {
   const { t } = useI18n('tools');
-  const top = anchorRect.top - 4;
-  const left = Math.max(8, Math.min(anchorRect.right - 160, anchorRect.left));
+  const { top, left } = popoverPosition(anchorRect, 160);
 
   return createPortal(
     <div
@@ -229,9 +238,7 @@ export const EncodingPopover: React.FC<EncodingPopoverProps> = ({
         {ENCODING_OPTIONS.map((enc) => (
           <Button
             key={enc}
-            className={`status-bar-popover__item ${
-              enc === currentEncoding ? 'status-bar-popover__item--active' : ''
-            }`}
+            className={itemClassName(enc === currentEncoding)}
             variant="ghost"
             size="small"
             type="button"
@@ -255,43 +262,43 @@ export const EncodingPopover: React.FC<EncodingPopoverProps> = ({
 };
 
 // Language mode (with Cursor-style small icons)
-const getLanguageDisplayName = (id: string, aliases?: string[]): string => {
-  const map: Record<string, string> = {
-    typescript: 'TypeScript',
-    javascript: 'JavaScript',
-    typescriptreact: 'TypeScript React',
-    javascriptreact: 'JavaScript React',
-    python: 'Python',
-    rust: 'Rust',
-    go: 'Go',
-    java: 'Java',
-    csharp: 'C#',
-    cpp: 'C++',
-    c: 'C',
-    html: 'HTML',
-    css: 'CSS',
-    scss: 'SCSS',
-    less: 'Less',
-    json: 'JSON',
-    yaml: 'YAML',
-    xml: 'XML',
-    markdown: 'Markdown',
-    sql: 'SQL',
-    shell: 'Shell',
-    bash: 'Bash',
-    plaintext: 'Plain Text',
-    toml: 'TOML',
-    vue: 'Vue',
-    svelte: 'Svelte',
-    graphql: 'GraphQL',
-    php: 'PHP',
-    ruby: 'Ruby',
-    swift: 'Swift',
-    kotlin: 'Kotlin',
-    lua: 'Lua',
-  };
-  return map[id.toLowerCase()] || (aliases?.[0] ?? id);
+const LANGUAGE_DISPLAY_NAMES: Record<string, string> = {
+  typescript: 'TypeScript',
+  javascript: 'JavaScript',
+  typescriptreact: 'TypeScript React',
+  javascriptreact: 'JavaScript React',
+  python: 'Python',
+  rust: 'Rust',
+  go: 'Go',
+  java: 'Java',
+  csharp: 'C#',
+  cpp: 'C++',
+  c: 'C',
+  html: 'HTML',
+  css: 'CSS',
+  scss: 'SCSS',
+  less: 'Less',
+  json: 'JSON',
+  yaml: 'YAML',
+  xml: 'XML',
+  markdown: 'Markdown',
+  sql: 'SQL',
+  shell: 'Shell',
+  bash: 'Bash',
+  plaintext: 'Plain Text',
+  toml: 'TOML',
+  vue: 'Vue',
+  svelte: 'Svelte',
+  graphql: 'GraphQL',
+  php: 'PHP',
+  ruby: 'Ruby',
+  swift: 'Swift',
+  kotlin: 'Kotlin',
+  lua: 'Lua',
 };
+
+const getLanguageDisplayName = (id: string, aliases?: string[]): string =>
+  LANGUAGE_DISPLAY_NAMES[id.toLowerCase()] || (aliases?.[0] ?? id);
 
 const getLanguageIcon = (id: string): LucideIcon => {
   const key = id.toLowerCase();
