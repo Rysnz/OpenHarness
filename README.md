@@ -1,161 +1,114 @@
-[中文](./README.zh-CN.md) | **English**
-
 <div align="center">
 
-![OpenHarness](./png/OpenHarness_title.png)
+<img src="./png/OpenHarness-Logo.png" alt="OpenHarness" width="120" />
 
-[![GitHub release](https://img.shields.io/github/v/release/GCWing/OpenHarness?style=flat-square&color=blue)](https://github.com/GCWing/OpenHarness/releases)
-[![Website](https://img.shields.io/badge/Website-openopenharness.com-6f42c1?style=flat-square)](https://openopenharness.com/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](./LICENSE)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square)](https://github.com/GCWing/OpenHarness)
+# OpenHarness
+
+**把 AI Agent 放进真正的开发工作台里。**
+
+一个桌面优先的 Agent 工作空间：能聊天，能读项目，能改文件，能开终端，能看 Git，能运行工具，也能通过移动端远程唤起。
+
+![OpenHarness 欢迎页](./png/screenshot-welcome.jpg)
 
 </div>
 
-## OpenHarness
+## OpenHarness 是什么
 
-OpenHarness is a desktop home for AI agents.
+OpenHarness 不是一个孤立的聊天窗口，而是一个为 AI Agent 准备的本地工作台。
 
-It is designed for people who want more than a chat box: a workspace where agents can think, act, run tools, edit code, work through files, stay in context, and keep going across sessions.
+它把项目、会话、文件、终端、Git、技能、智能体和可扩展工具放在同一个桌面界面里。你不需要在多个工具之间反复复制上下文，也不需要让 Agent 每次从零理解你的项目。它更像一个可以长期留在桌面上的协作空间：想法、代码、文件和任务都在这里继续生长。
 
-It aims to feel less like "asking an assistant for one answer" and more like living beside an evolving system that can help with real work every day.
+## 它适合做什么
 
-![OpenHarness Screenshot](./png/first_screen_screenshot.png)
+- 和 Agent 一起理解项目、拆解任务、修改代码。
+- 在对话、文件、终端、Git 和浏览器之间顺畅切换。
+- 管理不同用途的智能体，让它们服务于编码、办公、调试、规划等场景。
+- 安装和沉淀技能，把可复用能力变成稳定工作流。
+- 通过移动端、远程连接或中继服务继续触达桌面 Agent。
 
-## What It Feels Like
+## 一个真正的工作台
 
-- A companion when you want continuity, memory, and style
-- An execution-first agent when you want something done
-- A desktop control center for code, documents, terminals, and tools
-- A remotely reachable system you can wake up from your phone
+OpenHarness 的核心不是“问一句，答一句”，而是让 Agent 进入真实工作环境。它可以围绕当前工作区持续协作，也可以配合终端、文件系统、代码编辑器、Git 状态和项目上下文推进任务。
 
-## Core Experience
+欢迎页、任务列表和工作区入口让你可以快速回到之前的上下文。每个会话都不只是聊天记录，更像一次可以继续推进的工作现场。
 
-### Agentic Desktop
+## 伙伴：让协作有持续性
 
-OpenHarness centers the experience around a desktop app, not a browser tab you forget to come back to. The desktop becomes the place where agents can actually work with context, files, tools, and runtime state.
+伙伴页面用于管理可以长期陪伴工作的 Agent 实例。你可以从模板孵化新的伙伴，并为不同任务保留不同配置。
 
-### Dual Working Modes
+![OpenHarness 伙伴](./png/screenshot-partner.jpg)
 
-- **Assistant Mode**: warmer, longer-memory, preference-aware, better for ongoing collaboration
-- **Professional Mode**: cleaner, leaner, more execution-focused, better for immediate tasks
+这类体验更适合长期任务、个人偏好、固定工作流和“下次继续”的场景。它让 Agent 不只是一次性助手，而是一个可以逐步调校的协作者。
 
-### Remote Control
+## 专业智能体：把能力拆成角色
 
-Pair a phone by scanning a QR code and use it as a command center for the desktop agent. OpenHarness also supports remote command flows through channels such as Telegram, Feishu, and WeChat bots.
+OpenHarness 内置专业智能体管理。不同智能体可以面向不同工作方式：有的负责完整编码任务，有的负责协作办公，有的负责规划、调试、审查或更细分的流程。
 
-### Real Tools, Not Just Text
+![OpenHarness 专业智能体](./png/screenshot-agents.jpg)
 
-OpenHarness is built around the idea that useful agents need more than words. It brings together terminals, editors, Git workflows, files, structured tools, and an agent runtime that can coordinate them.
+这种设计让复杂工作不必只依赖一个泛用助手。你可以把不同模式、工具和技能组合成适合自己的 Agent 阵列。
 
-## Agent Lineup
+## 技能：把经验变成可复用能力
 
-| Agent | Role | What It Is Good At |
-| --- | --- | --- |
-| Personal Assistant | Your long-term companion | Memory, personal preferences, ongoing collaboration, orchestration |
-| Code Agent | Engineering work | Planning, editing, debugging, reviewing, running tools and verification |
-| Cowork Agent | Knowledge work | Documents, office files, structured workflows, expandable capabilities |
-| Custom Agent | Specialist roles | Domain-specific behavior defined around your own needs |
+技能页面用于管理已安装技能，也可以从技能市场发现新的能力。技能让 Agent 拥有更明确的工作方法，例如浏览器自动化、文档处理、计划执行、代码审查、PDF/PPTX/XLSX 工作流等。
 
-## Ecosystem
+![OpenHarness 技能](./png/screenshot-skills.jpg)
 
-OpenHarness is meant to grow.
+当某类任务反复出现时，它就不该永远停留在临时提示词里。OpenHarness 希望把这些方法沉淀成可以安装、管理、复用和扩展的能力。
 
-It supports:
+## 能力一览
 
-- Skills
-- MCP and MCP-based app integrations
-- Custom agents
-- Mini apps generated from requirements into runnable interfaces
+| 场景 | OpenHarness 提供什么 |
+| --- | --- |
+| 会话协作 | 多会话、任务列表、工作区上下文、可继续的 Agent 对话 |
+| 项目工作 | 文件浏览、代码编辑、终端、Git、项目洞察 |
+| 智能体管理 | 专业智能体、伙伴实例、自定义 Agent 与 Sub-Agent |
+| 技能扩展 | 技能安装、技能市场、工具链能力沉淀 |
+| 可视化工作 | Mermaid、MiniApp、面板视图、浏览器场景 |
+| 远程入口 | 移动端 Web、SSH、局域网/中继配对、二维码连接 |
+| 桌面集成 | Tauri 桌面能力、系统通知、文件权限、剪贴板、截图/OCR |
 
-The goal is not only to ship one agent, but to support an environment where many kinds of agents and capabilities can live together.
+## 快速体验
 
-## Platform Support
-
-OpenHarness is built for:
-
-- Windows
-- macOS
-- Linux
-
-The main experience is desktop-first, with mobile web used for pairing and remote control.
-
-## Getting OpenHarness
-
-### Windows
-
-- Download the latest Windows release from [Releases](https://github.com/GCWing/OpenHarness/releases)
-- Or build locally:
+准备环境：
 
 ```bash
 pnpm install
-pnpm run desktop:build:exe
 ```
 
-- Installer build:
+启动桌面开发版：
 
 ```bash
-pnpm run desktop:build:nsis
-```
-
-### macOS
-
-- Download the latest macOS release from [Releases](https://github.com/GCWing/OpenHarness/releases)
-- Or build locally on macOS:
-
-```bash
-pnpm install
-pnpm run desktop:build:arm64
-```
-
-For Intel Macs:
-
-```bash
-pnpm run desktop:build:x86_64
-```
-
-### Linux
-
-- Download the latest Linux release from [Releases](https://github.com/GCWing/OpenHarness/releases)
-- Or build locally on Linux:
-
-```bash
-pnpm install
-pnpm run desktop:build:linux
-```
-
-Package-specific builds:
-
-```bash
-pnpm run desktop:build:linux:deb
-pnpm run desktop:build:linux:rpm
-pnpm run desktop:build:linux:appimage
-```
-
-## For Developers
-
-If you want to run the project in development mode:
-
-```bash
-pnpm install
 pnpm run desktop:dev
 ```
 
-Requirements:
+只启动 Web UI：
 
-- Node.js 18+
-- `pnpm`
-- Rust stable
-- Tauri prerequisites for your platform
+```bash
+pnpm run dev:web
+```
 
-## Contributing
+运行 CLI：
 
-If you want to contribute, start here:
+```bash
+pnpm run cli:dev -- chat --workspace .
+```
 
-- [CONTRIBUTING.md](./CONTRIBUTING.md)
-- [CONTRIBUTING_CN.md](./CONTRIBUTING_CN.md)
+构建桌面应用：
 
-Good contributions are not limited to code. Product ideas, interaction design, workflow improvements, agent capabilities, and ecosystem extensions all matter here.
+```bash
+pnpm run desktop:build
+```
 
-## License
+## 项目入口
 
-OpenHarness is released under the [MIT License](./LICENSE).
+- 主界面：`src/web-ui`
+- 桌面端：`src/apps/desktop`
+- 核心能力：`src/crates/core`
+- CLI：`src/apps/cli`
+- 中继服务：`src/apps/relay-server`
+- MiniApp：`MiniApp`
+
+## 许可
+
+MIT License。详见 `LICENSE`。
