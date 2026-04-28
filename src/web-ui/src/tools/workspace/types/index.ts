@@ -1,8 +1,15 @@
 /**
- * Workspace management feature types.
+ * Workspace management feature contracts.
  */
 
-// Workspace models
+import type React from 'react';
+
+export type WorkspaceLineEnding = 'auto' | 'lf' | 'crlf';
+export type FileSystemItemType = 'file' | 'directory';
+export type FileWatchEventType = 'created' | 'modified' | 'deleted' | 'renamed';
+export type WorkspaceSortField = 'name' | 'type' | 'size' | 'modified';
+export type SortOrder = 'asc' | 'desc';
+
 export interface Workspace {
   id: string;
   name: string;
@@ -18,7 +25,7 @@ export interface WorkspaceSettings {
   watchIgnore: string[];
   maxFileSize: number;
   encoding: string;
-  lineEnding: 'auto' | 'lf' | 'crlf';
+  lineEnding: WorkspaceLineEnding;
   trimTrailingWhitespace: boolean;
   insertFinalNewline: boolean;
   autoSave: boolean;
@@ -48,12 +55,17 @@ export interface GitRepositoryInfo {
   hasUnpushedCommits: boolean;
 }
 
-// File system models
+export interface FilePermissions {
+  readable: boolean;
+  writable: boolean;
+  executable: boolean;
+}
+
 export interface FileSystemItem {
   id: string;
   name: string;
   path: string;
-  type: 'file' | 'directory';
+  type: FileSystemItemType;
   size?: number;
   lastModified: Date;
   isHidden: boolean;
@@ -64,13 +76,6 @@ export interface FileSystemItem {
   permissions?: FilePermissions;
 }
 
-export interface FilePermissions {
-  readable: boolean;
-  writable: boolean;
-  executable: boolean;
-}
-
-// Workspace state
 export interface WorkspaceState {
   currentWorkspace: Workspace | null;
   recentWorkspaces: Workspace[];
@@ -84,22 +89,28 @@ export interface WorkspaceState {
   isSearching: boolean;
 }
 
-// Workspace events
-export type WorkspaceEvent = 
-  | { type: 'workspace:opened'; payload: Workspace }
-  | { type: 'workspace:closed'; payload: { workspaceId: string } }
-  | { type: 'workspace:changed'; payload: Workspace }
-  | { type: 'file:created'; payload: FileSystemItem }
-  | { type: 'file:deleted'; payload: { path: string } }
-  | { type: 'file:renamed'; payload: { oldPath: string; newPath: string } }
-  | { type: 'file:modified'; payload: FileSystemItem }
-  | { type: 'directory:created'; payload: FileSystemItem }
-  | { type: 'directory:deleted'; payload: { path: string } }
-  | { type: 'search:started'; payload: { query: string } }
-  | { type: 'search:completed'; payload: { query: string; results: FileSystemItem[] } }
-  | { type: 'error:occurred'; payload: { error: string } };
+interface WorkspaceEventPayloads {
+  'workspace:opened': Workspace;
+  'workspace:closed': { workspaceId: string };
+  'workspace:changed': Workspace;
+  'file:created': FileSystemItem;
+  'file:deleted': { path: string };
+  'file:renamed': { oldPath: string; newPath: string };
+  'file:modified': FileSystemItem;
+  'directory:created': FileSystemItem;
+  'directory:deleted': { path: string };
+  'search:started': { query: string };
+  'search:completed': { query: string; results: FileSystemItem[] };
+  'error:occurred': { error: string };
+}
 
-// File operations and search options
+export type WorkspaceEvent = {
+  [Type in keyof WorkspaceEventPayloads]: {
+    type: Type;
+    payload: WorkspaceEventPayloads[Type];
+  };
+}[keyof WorkspaceEventPayloads];
+
 export interface FileOperationOptions {
   overwrite?: boolean;
   recursive?: boolean;
@@ -124,15 +135,12 @@ export interface FileWatchOptions {
   debounceDelay?: number;
 }
 
-// Workspace manager interface
 export interface IWorkspaceManager {
-  // Workspace operations
   openWorkspace(path: string): Promise<Workspace>;
   closeWorkspace(): Promise<void>;
   getCurrentWorkspace(): Workspace | null;
   getRecentWorkspaces(): Workspace[];
-  
-  // File system operations
+
   getFileTree(path?: string): Promise<FileSystemItem[]>;
   readFile(path: string): Promise<string>;
   writeFile(path: string, content: string, options?: FileOperationOptions): Promise<void>;
@@ -140,37 +148,30 @@ export interface IWorkspaceManager {
   deleteFile(path: string): Promise<void>;
   renameFile(oldPath: string, newPath: string): Promise<void>;
   copyFile(sourcePath: string, destPath: string, options?: FileOperationOptions): Promise<void>;
-  
-  // Directory operations
+
   createDirectory(path: string): Promise<FileSystemItem>;
   deleteDirectory(path: string, recursive?: boolean): Promise<void>;
   listDirectory(path: string): Promise<FileSystemItem[]>;
-  
-  // Search
+
   searchFiles(query: string, options?: WorkspaceSearchOptions): Promise<FileSystemItem[]>;
   searchInFiles(query: string, options?: WorkspaceSearchOptions): Promise<SearchInFilesResult[]>;
-  
-  // Watchers
+
   watchFile(path: string, callback: (event: FileWatchEvent) => void, options?: FileWatchOptions): () => void;
   watchDirectory(path: string, callback: (event: FileWatchEvent) => void, options?: FileWatchOptions): () => void;
-  
-  // Settings
+
   getWorkspaceSettings(): WorkspaceSettings;
   updateWorkspaceSettings(settings: Partial<WorkspaceSettings>): Promise<void>;
-  
-  // Events
+
   addEventListener(listener: (event: WorkspaceEvent) => void): () => void;
 }
 
-// Watch events
 export interface FileWatchEvent {
-  type: 'created' | 'modified' | 'deleted' | 'renamed';
+  type: FileWatchEventType;
   path: string;
-  newPath?: string; // Used for rename events.
+  newPath?: string;
   timestamp: Date;
 }
 
-// Search results
 export interface SearchInFilesResult {
   file: FileSystemItem;
   matches: SearchMatch[];
@@ -185,15 +186,14 @@ export interface SearchMatch {
   context: string;
 }
 
-// UI contracts
 export interface WorkspaceExplorerProps {
   onFileSelect?: (file: FileSystemItem) => void;
   onDirectorySelect?: (directory: FileSystemItem) => void;
   onFileOpen?: (file: FileSystemItem) => void;
   onFileContextMenu?: (file: FileSystemItem, event: React.MouseEvent) => void;
   showHidden?: boolean;
-  sortBy?: 'name' | 'type' | 'size' | 'modified';
-  sortOrder?: 'asc' | 'desc';
+  sortBy?: WorkspaceSortField;
+  sortOrder?: SortOrder;
   className?: string;
 }
 
@@ -208,18 +208,17 @@ export interface FileTreeProps {
   className?: string;
 }
 
-export interface UseWorkspaceReturn {
-  // State
-  currentWorkspace: Workspace | null;
-  recentWorkspaces: Workspace[];
-  fileTree: FileSystemItem[];
-  selectedItems: string[];
-  loading: boolean;
-  error: string | null;
-  searchResults: FileSystemItem[];
-  isSearching: boolean;
-  
-  // Actions
+export interface UseWorkspaceReturn extends Pick<
+  WorkspaceState,
+  | 'currentWorkspace'
+  | 'recentWorkspaces'
+  | 'fileTree'
+  | 'selectedItems'
+  | 'loading'
+  | 'error'
+  | 'searchResults'
+  | 'isSearching'
+> {
   openWorkspace: (path: string) => Promise<Workspace>;
   closeWorkspace: () => Promise<void>;
   refreshFileTree: () => Promise<void>;
@@ -233,7 +232,6 @@ export interface UseWorkspaceReturn {
   clearError: () => void;
 }
 
-// Context menu
 export interface FileContextMenuItem {
   id: string;
   label: string;
@@ -245,7 +243,6 @@ export interface FileContextMenuItem {
   submenu?: FileContextMenuItem[];
 }
 
-// Workspace config
 export interface WorkspaceConfig {
   maxFileSize: number;
   maxSearchResults: number;
@@ -253,11 +250,10 @@ export interface WorkspaceConfig {
   autoRefreshInterval: number;
   enableFileWatcher: boolean;
   showHiddenFiles: boolean;
-  sortFilesBy: 'name' | 'type' | 'size' | 'modified';
-  sortOrder: 'asc' | 'desc';
+  sortFilesBy: WorkspaceSortField;
+  sortOrder: SortOrder;
 }
 
-// Workspace stats
 export interface WorkspaceStats {
   totalFiles: number;
   totalDirectories: number;
