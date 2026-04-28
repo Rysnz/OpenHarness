@@ -10,6 +10,17 @@ import { globalEventBus } from '../../../infrastructure/event-bus';
 import { createLogger } from '@/shared/utils/logger';
 
 const log = createLogger('ContextMenuManager');
+const DEFAULT_CONTEXT_MENU_OPTIONS: MenuOptions = {
+  showIcons: true,
+  showShortcuts: true,
+  enableSearch: false,
+  autoAdjustPosition: true,
+  closeDelay: 0,
+  submenuOpenDelay: 200,
+  minWidth: 180,
+};
+
+type MenuPosition = { x: number; y: number };
 
  
 export interface ContextMenuManagerConfig {
@@ -45,13 +56,7 @@ export class ContextMenuManager {
     this.registry = config.registry || new ContextMenuRegistry();
     this.builder = config.builder || new MenuBuilder();
     this.options = {
-      showIcons: true,
-      showShortcuts: true,
-      enableSearch: false,
-      autoAdjustPosition: true,
-      closeDelay: 0,
-      submenuOpenDelay: 200,
-      minWidth: 180,
+      ...DEFAULT_CONTEXT_MENU_OPTIONS,
       ...config.options
     };
     this.events = config.events || {};
@@ -69,22 +74,14 @@ export class ContextMenuManager {
 
    
   private init(): void {
-    
     this.bindGlobalEvents();
   }
 
    
   private bindGlobalEvents(): void {
-    
     document.addEventListener('contextmenu', this.handleContextMenu);
-
-    
     document.addEventListener('click', this.handleDocumentClick);
-
-    
     document.addEventListener('keydown', this.handleKeyDown);
-
-    
     window.addEventListener('resize', this.handleResize);
   }
 
@@ -117,48 +114,16 @@ export class ContextMenuManager {
     this.isShowing = true;
 
     try {
-      
-      const context = this.resolver.resolve(event);
-      this.currentContext = context;
-
-      
-      if (this.events.onBeforeShow) {
-        await this.events.onBeforeShow(context);
-      }
-
-      
-      globalEventBus.emit('contextmenu:before-show', { context });
-
-      
-      const providers = this.registry.findMatchingProviders(context);
-
-      if (providers.length === 0) {
-        this.isShowing = false;
-        return;
-      }
-
-      
-      const items = await this.builder.build(providers, context);
+      const context = await this.prepareShowContext(event);
+      const items = await this.buildMenuItems(context);
 
       if (items.length === 0) {
         this.isShowing = false;
         return;
       }
 
-      
       const position = this.calculatePosition(event, items);
-
-      
-      const store = useContextMenuStore.getState();
-      store.showMenu(position, items, context);
-
-      
-      if (this.events.onAfterShow) {
-        this.events.onAfterShow(context);
-      }
-
-      
-      globalEventBus.emit('contextmenu:show', { context, items, position });
+      this.presentMenu(position, items, context);
 
     } catch (error) {
       log.error('Error in show menu', error as Error);
@@ -172,12 +137,10 @@ export class ContextMenuManager {
       return;
     }
 
-    
     if (this.events.onBeforeHide) {
       await this.events.onBeforeHide();
     }
 
-    
     globalEventBus.emit('contextmenu:before-hide', { context: this.currentContext });
 
     const store = useContextMenuStore.getState();
@@ -186,22 +149,50 @@ export class ContextMenuManager {
     this.isShowing = false;
     this.currentContext = null;
 
-    
     if (this.events.onAfterHide) {
       this.events.onAfterHide();
     }
 
-    
     globalEventBus.emit('contextmenu:hide', {});
+  }
+
+  private async prepareShowContext(event: MouseEvent | React.MouseEvent): Promise<MenuContext> {
+    const context = this.resolver.resolve(event);
+    this.currentContext = context;
+
+    if (this.events.onBeforeShow) {
+      await this.events.onBeforeShow(context);
+    }
+
+    globalEventBus.emit('contextmenu:before-show', { context });
+    return context;
+  }
+
+  private async buildMenuItems(context: MenuContext): Promise<MenuItem[]> {
+    const providers = this.registry.findMatchingProviders(context);
+    if (providers.length === 0) {
+      return [];
+    }
+
+    return this.builder.build(providers, context);
+  }
+
+  private presentMenu(position: MenuPosition, items: MenuItem[], context: MenuContext): void {
+    useContextMenuStore.getState().showMenu(position, items, context);
+
+    if (this.events.onAfterShow) {
+      this.events.onAfterShow(context);
+    }
+
+    globalEventBus.emit('contextmenu:show', { context, items, position });
   }
 
    
   private handleDocumentClick = (event: MouseEvent): void => {
     if (this.isShowing) {
-      
       const target = event.target as HTMLElement;
       const menuElement = target.closest('.context-menu');
-      
+
       if (!menuElement) {
         this.hide();
       }
@@ -219,8 +210,6 @@ export class ContextMenuManager {
         event.preventDefault();
         this.hide();
         break;
-      
-      
     }
   };
 
@@ -235,7 +224,7 @@ export class ContextMenuManager {
   private calculatePosition(
     event: MouseEvent | React.MouseEvent,
     items: MenuItem[]
-  ): { x: number; y: number } {
+  ): MenuPosition {
     const nativeEvent = 'nativeEvent' in event ? event.nativeEvent : event;
     let { clientX: x, clientY: y } = nativeEvent;
 
@@ -243,26 +232,21 @@ export class ContextMenuManager {
       return { x, y };
     }
 
-    
     const menuWidth = this.options.minWidth || 180;
     const itemHeight = 32; 
     const menuHeight = Math.min(items.length * itemHeight, 400); 
 
-    
     const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
 
-    
     if (x + menuWidth > viewportWidth) {
       x = viewportWidth - menuWidth - 10;
     }
 
-    
     if (y + menuHeight > viewportHeight) {
       y = viewportHeight - menuHeight - 10;
     }
 
-    
     x = Math.max(10, x);
     y = Math.max(10, y);
 
@@ -271,13 +255,10 @@ export class ContextMenuManager {
 
    
   private shouldUseNativeMenu(target: HTMLElement): boolean {
-    
     const tagName = target.tagName.toLowerCase();
     if (tagName === 'input' || tagName === 'textarea') {
       const selection = window.getSelection()?.toString();
       if (!selection) {
-        
-        
         return false;
       }
     }
@@ -287,11 +268,10 @@ export class ContextMenuManager {
 
    
   async showMenu(
-    position: { x: number; y: number },
+    position: MenuPosition,
     items: MenuItem[],
     context?: Partial<MenuContext>
   ): Promise<void> {
-    
     const fakeEvent = new MouseEvent('contextmenu', {
       clientX: position.x,
       clientY: position.y,
@@ -300,13 +280,10 @@ export class ContextMenuManager {
     });
 
     if (context) {
-      
       this.currentContext = context as MenuContext;
-      const store = useContextMenuStore.getState();
-      store.showMenu(position, items, this.currentContext);
+      useContextMenuStore.getState().showMenu(position, items, this.currentContext);
       this.isShowing = true;
     } else {
-      
       await this.show(fakeEvent);
     }
   }
