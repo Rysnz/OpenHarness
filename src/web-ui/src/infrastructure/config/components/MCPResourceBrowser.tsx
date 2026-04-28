@@ -1,6 +1,6 @@
  
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { FileText, FileImage, FileJson, FileCode, File, Search as SearchIcon, ArrowLeft } from 'lucide-react';
 import MCPAPI, { MCPResource } from '../../api/service-api/MCPAPI';
@@ -15,20 +15,64 @@ interface MCPResourceBrowserProps {
   onClose?: () => void;
 }
 
+function resourceMatchesQuery(resource: MCPResource, query: string): boolean {
+  const normalizedQuery = query.trim().toLowerCase();
+
+  if (!normalizedQuery) {
+    return true;
+  }
+
+  return [resource.name, resource.uri, resource.description]
+    .filter(Boolean)
+    .some(value => value!.toLowerCase().includes(normalizedQuery));
+}
+
+function MimeTypeIcon({ mimeType }: { mimeType?: string }) {
+  if (!mimeType) return <File size={16} />;
+  if (mimeType.startsWith('text/')) return <FileText size={16} />;
+  if (mimeType.startsWith('image/')) return <FileImage size={16} />;
+  if (mimeType.includes('json')) return <FileJson size={16} />;
+  if (mimeType.includes('html')) return <FileCode size={16} />;
+  if (mimeType.includes('pdf')) return <FileText size={16} />;
+  return <File size={16} />;
+}
+
 export const MCPResourceBrowser: React.FC<MCPResourceBrowserProps> = ({ serverId, onClose }) => {
   const { t } = useTranslation('settings/mcp');
   const [resources, setResources] = useState<MCPResource[]>([]);
-  const [filteredResources, setFilteredResources] = useState<MCPResource[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedResource, setSelectedResource] = useState<MCPResource | null>(null);
   const [resourceContent, setResourceContent] = useState<string | null>(null);
   const [loadingContent, setLoadingContent] = useState(false);
 
+  const filteredResources = useMemo(() => {
+    return resources.filter(resource => resourceMatchesQuery(resource, searchQuery));
+  }, [resources, searchQuery]);
+
+  const renderResourceContents = useCallback((response: Awaited<ReturnType<typeof MCPAPI.readResource>>) => {
+    return response.contents
+      .map((content, index) => {
+        const header = response.contents.length > 1
+          ? `#${index + 1} ${content.uri}${content.mimeType ? ` (${content.mimeType})` : ''}`
+          : `${content.mimeType ? `[${content.mimeType}]` : ''}`;
+
+        if (typeof content.content === 'string' && content.content.length > 0) {
+          return header ? `${header}\n\n${content.content}` : content.content;
+        }
+
+        if (content.blob) {
+          return `${header}\n\n${t('resourceBrowser.errors.binaryContent')}`;
+        }
+
+        return `${header}\n\n${t('resourceBrowser.errors.loadContentFailed')}`;
+      })
+      .join('\n\n---\n\n');
+  }, [t]);
+
   const loadResources = useCallback(async () => {
     if (!serverId) {
       setResources([]);
-      setFilteredResources([]);
       setSelectedResource(null);
       setResourceContent(null);
       return;
@@ -49,28 +93,9 @@ export const MCPResourceBrowser: React.FC<MCPResourceBrowserProps> = ({ serverId
     }
   }, [serverId]);
 
-  const filterResources = useCallback(() => {
-    if (!searchQuery.trim()) {
-      setFilteredResources(resources);
-      return;
-    }
-
-    const query = searchQuery.toLowerCase();
-    const filtered = resources.filter(resource =>
-      resource.name.toLowerCase().includes(query) ||
-      resource.uri.toLowerCase().includes(query) ||
-      (resource.description && resource.description.toLowerCase().includes(query))
-    );
-    setFilteredResources(filtered);
-  }, [resources, searchQuery]);
-
   useEffect(() => {
     loadResources();
   }, [serverId, loadResources]);
-
-  useEffect(() => {
-    filterResources();
-  }, [filterResources]);
 
   const loadResourceContent = async (resource: MCPResource) => {
     if (!serverId) {
@@ -87,24 +112,7 @@ export const MCPResourceBrowser: React.FC<MCPResourceBrowserProps> = ({ serverId
         resourceUri: resource.uri,
       });
 
-      const renderedContent = response.contents
-        .map((content, index) => {
-          const header = response.contents.length > 1
-            ? `#${index + 1} ${content.uri}${content.mimeType ? ` (${content.mimeType})` : ''}`
-            : `${content.mimeType ? `[${content.mimeType}]` : ''}`;
-
-          if (typeof content.content === 'string' && content.content.length > 0) {
-            return header ? `${header}\n\n${content.content}` : content.content;
-          }
-
-          if (content.blob) {
-            return `${header}\n\n${t('resourceBrowser.errors.binaryContent')}`;
-          }
-
-          return `${header}\n\n${t('resourceBrowser.errors.loadContentFailed')}`;
-        })
-        .join('\n\n---\n\n');
-
+      const renderedContent = renderResourceContents(response);
       setResourceContent(renderedContent || t('resourceBrowser.empty.noResources'));
     } catch (error) {
       log.error('Failed to load resource content', { resourceUri: resource.uri, error });
@@ -112,16 +120,6 @@ export const MCPResourceBrowser: React.FC<MCPResourceBrowserProps> = ({ serverId
     } finally {
       setLoadingContent(false);
     }
-  };
-
-  const getMimeTypeIcon = (mimeType?: string): React.ReactNode => {
-    if (!mimeType) return <File size={16} />;
-    if (mimeType.startsWith('text/')) return <FileText size={16} />;
-    if (mimeType.startsWith('image/')) return <FileImage size={16} />;
-    if (mimeType.includes('json')) return <FileJson size={16} />;
-    if (mimeType.includes('html')) return <FileCode size={16} />;
-    if (mimeType.includes('pdf')) return <FileText size={16} />;
-    return <File size={16} />;
   };
 
   return (
@@ -176,7 +174,7 @@ export const MCPResourceBrowser: React.FC<MCPResourceBrowserProps> = ({ serverId
                 className={`resource-item ${selectedResource?.uri === resource.uri ? 'selected' : ''}`}
                 onClick={() => loadResourceContent(resource)}
               >
-                <div className="resource-icon">{getMimeTypeIcon(resource.mimeType)}</div>
+                <div className="resource-icon"><MimeTypeIcon mimeType={resource.mimeType} /></div>
                 <div className="resource-info">
                   <div className="resource-name">{resource.name}</div>
                   {resource.description && (
@@ -194,7 +192,7 @@ export const MCPResourceBrowser: React.FC<MCPResourceBrowserProps> = ({ serverId
             <>
               <div className="viewer-header">
                 <div className="viewer-title">
-                  <span className="viewer-icon">{getMimeTypeIcon(selectedResource.mimeType)}</span>
+                  <span className="viewer-icon"><MimeTypeIcon mimeType={selectedResource.mimeType} /></span>
                   <span className="viewer-name">{selectedResource.title || selectedResource.name}</span>
                 </div>
                 {selectedResource.mimeType && (
