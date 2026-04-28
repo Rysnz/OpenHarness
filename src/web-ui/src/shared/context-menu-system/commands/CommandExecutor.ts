@@ -16,6 +16,8 @@ import { createLogger } from '@/shared/utils/logger';
 
 const log = createLogger('CommandExecutor');
 
+type InterceptorStage = 'before' | 'after' | 'error';
+
  
 export class CommandExecutor {
   private registry: CommandRegistry;
@@ -34,7 +36,16 @@ export class CommandExecutor {
     };
   }
 
-   
+  private emitCommandEvent(name: string, payload: Record<string, unknown>): void {
+    globalEventBus.emit(`command:${name}`, payload);
+  }
+
+  private debug(message: string, payload: Record<string, unknown>): void {
+    if (this.config.debug) {
+      log.debug(message, payload);
+    }
+  }
+
   async execute(
     commandId: CommandId,
     context: MenuContext,
@@ -53,47 +64,35 @@ export class CommandExecutor {
       params
     };
 
-    if (this.config.debug) {
-      log.debug('Executing command', { commandId, context: executionContext });
-    }
+    this.debug('Executing command', { commandId, context: executionContext });
 
-    
-    globalEventBus.emit('command:before-execute', { commandId, context: executionContext });
+    this.emitCommandEvent('before-execute', { commandId, context: executionContext });
 
     try {
-      
       const canProceed = await this.runBeforeInterceptors(executionContext);
       if (!canProceed) {
         return this.createFailureResult('Command execution was intercepted');
       }
 
-      
       const canExecute = await command.canExecute(context);
       if (!canExecute) {
         return this.createFailureResult('Command cannot be executed in current context');
       }
 
-      
       const result = await this.executeWithTimeout(command, context);
 
-      
       await this.runAfterInterceptors(executionContext, result);
 
-      
       if (this.config.enableHistory && result.success) {
         this.recordHistory(executionContext, result, !!command.undo);
       }
 
-      
-      if (result.success) {
-        globalEventBus.emit('command:success', { commandId, context: executionContext, result });
-      } else {
-        globalEventBus.emit('command:failure', { commandId, context: executionContext, result });
-      }
-
-      if (this.config.debug) {
-        log.debug('Command result', { commandId, result });
-      }
+      this.emitCommandEvent(result.success ? 'success' : 'failure', {
+        commandId,
+        context: executionContext,
+        result
+      });
+      this.debug('Command result', { commandId, result });
 
       return result;
 
@@ -101,11 +100,9 @@ export class CommandExecutor {
       const err = error as Error;
       log.error('Command execution failed', err);
 
-      
       await this.runErrorInterceptors(executionContext, err);
 
-      
-      globalEventBus.emit('command:error', { commandId, context: executionContext, error: err });
+      this.emitCommandEvent('error', { commandId, context: executionContext, error: err });
 
       return this.createFailureResult(`Command execution failed: ${err.message}`, err);
     }
@@ -133,7 +130,7 @@ export class CommandExecutor {
       const result = await command.undo(record.context);
       
       if (result.success) {
-        globalEventBus.emit('command:undo', { commandId: record.commandId, context: record.context });
+        this.emitCommandEvent('undo', { commandId: record.commandId, context: record.context });
       }
 
       return result;
@@ -175,7 +172,10 @@ export class CommandExecutor {
     return false;
   }
 
-   
+  private logInterceptorFailure(stage: InterceptorStage, interceptor: CommandInterceptor, error: unknown): void {
+    log.error(`Interceptor ${stage} hook failed`, { interceptor: interceptor.name, error });
+  }
+
   private async runBeforeInterceptors(context: CommandExecutionContext): Promise<boolean> {
     for (const interceptor of this.interceptors) {
       if (interceptor.before) {
@@ -185,7 +185,7 @@ export class CommandExecutor {
             return false;
           }
         } catch (error) {
-          log.error('Interceptor before hook failed', { interceptor: interceptor.name, error });
+          this.logInterceptorFailure('before', interceptor, error);
           return false;
         }
       }
@@ -193,7 +193,6 @@ export class CommandExecutor {
     return true;
   }
 
-   
   private async runAfterInterceptors(
     context: CommandExecutionContext,
     result: CommandResult
@@ -203,13 +202,12 @@ export class CommandExecutor {
         try {
           await interceptor.after(context, result);
         } catch (error) {
-          log.error('Interceptor after hook failed', { interceptor: interceptor.name, error });
+          this.logInterceptorFailure('after', interceptor, error);
         }
       }
     }
   }
 
-   
   private async runErrorInterceptors(
     context: CommandExecutionContext,
     error: Error
@@ -219,7 +217,7 @@ export class CommandExecutor {
         try {
           await interceptor.error(context, error);
         } catch (err) {
-          log.error('Interceptor error handler failed', { interceptor: interceptor.name, error: err });
+          this.logInterceptorFailure('error', interceptor, err);
         }
       }
     }
