@@ -5,7 +5,12 @@
  */
 
 import type * as monaco from 'monaco-editor';
-import type { EditorConfig, EditorConfigPartial, EditorPresetName, EditorPresetConfig } from '../config/types';
+import type {
+  EditorConfig,
+  EditorConfigPartial,
+  EditorPresetConfig,
+  EditorPresetName,
+} from '../config/types';
 import { DEFAULT_EDITOR_CONFIG, mergeConfig } from '../config/defaults';
 import { getPreset } from '../config/presets';
 import { themeManager } from './ThemeManager';
@@ -35,46 +40,45 @@ export interface EditorOptionsOverrides {
 export function buildEditorOptions(
   input: EditorOptionsInput = {}
 ): monaco.editor.IStandaloneEditorConstructionOptions {
-  const { config, preset, overrides } = input;
-  
-  const presetConfig: EditorPresetConfig = preset ? getPreset(preset) : {};
-  
-  const mergedConfig = mergeConfig(
+  const presetConfig = resolvePreset(input.preset);
+  const mergedConfig = mergeEditorConfig(presetConfig, input.config);
+  const finalConfig = applyOverrides(mergedConfig, input.overrides);
+
+  return convertToMonacoOptions(finalConfig, presetConfig);
+}
+
+function resolvePreset(preset?: EditorPresetName): EditorPresetConfig {
+  return preset ? getPreset(preset) : {};
+}
+
+function mergeEditorConfig(
+  presetConfig: EditorPresetConfig,
+  config?: EditorConfigPartial
+): EditorConfig {
+  return mergeConfig(
     mergeConfig(DEFAULT_EDITOR_CONFIG, presetConfig as EditorConfigPartial),
     config
   );
-  
-  const finalConfig = applyOverrides(mergedConfig, presetConfig, overrides);
-  
-  return convertToMonacoOptions(finalConfig, presetConfig);
 }
 
 function applyOverrides(
   config: EditorConfig,
-  _presetConfig: EditorPresetConfig,
   overrides?: EditorOptionsOverrides
 ): EditorConfig {
   if (!overrides) {
     return config;
   }
-  
+
   const result = { ...config };
-  
-  if (overrides.lineNumbers !== undefined) {
-    if (typeof overrides.lineNumbers === 'boolean') {
-      result.lineNumbers = overrides.lineNumbers ? 'on' : 'off';
-    } else {
-      result.lineNumbers = overrides.lineNumbers;
-    }
-  }
-  
+  applyLineNumberOverride(result, overrides.lineNumbers);
+
   if (overrides.minimap !== undefined) {
     result.minimap = {
       ...result.minimap,
       enabled: overrides.minimap,
     };
   }
-  
+
   if (overrides.fontSize !== undefined) {
     result.fontSize = overrides.fontSize;
   }
@@ -87,74 +91,103 @@ function applyOverrides(
   if (overrides.theme !== undefined) {
     result.theme = overrides.theme;
   }
-  
+
   return result;
 }
 
-function convertToMonacoOptions(
+function applyLineNumberOverride(
   config: EditorConfig,
-  presetConfig: EditorPresetConfig
+  lineNumbers: EditorOptionsOverrides['lineNumbers']
+): void {
+  if (lineNumbers === undefined) {
+    return;
+  }
+
+  config.lineNumbers =
+    typeof lineNumbers === 'boolean' ? (lineNumbers ? 'on' : 'off') : lineNumbers;
+}
+
+function calculateLineHeight(config: EditorConfig): number {
+  return config.lineHeight ? Math.round(config.fontSize * config.lineHeight) : 0;
+}
+
+function buildTypographyOptions(
+  config: EditorConfig
 ): monaco.editor.IStandaloneEditorConstructionOptions {
-  // lineHeight: Monaco uses pixels (0 = default)
-  const lineHeight = config.lineHeight 
-    ? Math.round(config.fontSize * config.lineHeight)
-    : 0;
-  
-  const themeId = config.theme || themeManager.getCurrentThemeId();
-  
-  const options: monaco.editor.IStandaloneEditorConstructionOptions = {
-    theme: themeId,
-    automaticLayout: true,
-    
+  return {
     fontSize: config.fontSize,
     fontFamily: config.fontFamily,
     fontWeight: config.fontWeight,
-    lineHeight,
+    lineHeight: calculateLineHeight(config),
     cursorStyle: config.cursorStyle,
     cursorBlinking: config.cursorBlinking,
     renderWhitespace: config.renderWhitespace,
     renderLineHighlight: config.renderLineHighlight,
-    
+  };
+}
+
+function buildEditingOptions(
+  config: EditorConfig,
+  presetConfig: EditorPresetConfig
+): monaco.editor.IStandaloneEditorConstructionOptions {
+  return {
+    readOnly: presetConfig.readOnly ?? false,
     tabSize: config.tabSize,
     insertSpaces: config.insertSpaces,
     wordWrap: config.wordWrap,
     scrollBeyondLastLine: config.scrollBeyondLastLine,
     smoothScrolling: config.smoothScrolling,
-    
-    readOnly: presetConfig.readOnly ?? false,
     lineNumbers: config.lineNumbers,
     lineNumbersMinChars: 3,
     lineDecorationsWidth: 0,
     glyphMargin: false,
     showFoldingControls: 'never',
-    minimap: {
-      enabled: config.minimap.enabled,
-      side: config.minimap.side,
-      size: config.minimap.size,
-    },
-    
+  };
+}
+
+function buildFeatureOptions(
+  config: EditorConfig,
+  presetConfig: EditorPresetConfig
+): monaco.editor.IStandaloneEditorConstructionOptions {
+  return {
     contextmenu: presetConfig.contextmenu ?? true,
     links: presetConfig.links ?? true,
     folding: presetConfig.folding ?? true,
     codeLens: presetConfig.codeLens ?? true,
-    
     'semanticHighlighting.enabled': config.semanticHighlighting,
     bracketPairColorization: {
       enabled: config.bracketPairColorization,
       independentColorPoolPerBracketType: true,
     },
-    
     guides: {
       indentation: config.guides.indentation,
       bracketPairs: config.guides.bracketPairs,
-      // Monaco expects boolean | 'active', convert our string values
-      bracketPairsHorizontal: config.guides.bracketPairsHorizontal === 'active' 
-        ? 'active' 
-        : config.guides.bracketPairsHorizontal === 'true',
+      bracketPairsHorizontal: normalizeBracketPairHorizontal(
+        config.guides.bracketPairsHorizontal
+      ),
       highlightActiveBracketPair: config.guides.highlightActiveBracketPair,
       highlightActiveIndentation: config.guides.highlightActiveIndentation,
     },
-    
+  };
+}
+
+function normalizeBracketPairHorizontal(value: string): boolean | 'active' {
+  if (value === 'active') {
+    return 'active';
+  }
+
+  return value === 'true';
+}
+
+function buildChromeOptions(
+  config: EditorConfig
+): monaco.editor.IStandaloneEditorConstructionOptions {
+  return {
+    minimap: {
+      enabled: config.minimap.enabled,
+      side: config.minimap.side,
+      size: config.minimap.size,
+    },
     scrollbar: {
       vertical: config.scrollbar.vertical,
       horizontal: config.scrollbar.horizontal,
@@ -162,34 +195,36 @@ function convertToMonacoOptions(
       horizontalScrollbarSize: config.scrollbar.horizontalScrollbarSize,
       useShadows: config.scrollbar.useShadows,
     },
-    
     hover: {
       enabled: config.hover.enabled,
       delay: config.hover.delay,
       sticky: config.hover.sticky,
       above: config.hover.above,
     },
-    
+  };
+}
+
+function buildIntelligenceOptions(
+  config: EditorConfig
+): monaco.editor.IStandaloneEditorConstructionOptions {
+  return {
     suggest: {
       showKeywords: config.suggest.showKeywords,
       showSnippets: config.suggest.showSnippets,
       preview: config.suggest.preview,
       showInlineDetails: config.suggest.showInlineDetails,
     },
-    
     quickSuggestions: {
       other: config.quickSuggestions.other,
       comments: config.quickSuggestions.comments,
       strings: config.quickSuggestions.strings,
     },
-    
     inlayHints: {
       enabled: config.inlayHints.enabled,
       fontSize: config.inlayHints.fontSize,
       fontFamily: config.inlayHints.fontFamily,
       padding: config.inlayHints.padding,
     },
-    
     gotoLocation: {
       multipleDefinitions: 'goto',
       multipleTypeDefinitions: 'goto',
@@ -197,39 +232,51 @@ function convertToMonacoOptions(
       multipleImplementations: 'goto',
       multipleReferences: 'goto',
     },
-    
+  };
+}
+
+function buildRenderingGuards(): monaco.editor.IStandaloneEditorConstructionOptions {
+  return {
     multiCursorModifier: 'alt',
     definitionLinkOpensInPeek: false,
-    
     renderControlCharacters: false,
     renderValidationDecorations: 'on',
     renderFinalNewline: 'on',
-    
-    // Ensure selection background covers all characters
     roundedSelection: false,
-    // Force per-character width measurement (fixes high-DPI issues)
     disableMonospaceOptimizations: true,
     fontLigatures: false,
-    // Don't truncate long lines
     stopRenderingLineAfter: -1,
   };
-  
-  return options;
+}
+
+function convertToMonacoOptions(
+  config: EditorConfig,
+  presetConfig: EditorPresetConfig
+): monaco.editor.IStandaloneEditorConstructionOptions {
+  const themeId = config.theme || themeManager.getCurrentThemeId();
+
+  return {
+    theme: themeId,
+    automaticLayout: true,
+    ...buildTypographyOptions(config),
+    ...buildEditingOptions(config, presetConfig),
+    ...buildChromeOptions(config),
+    ...buildFeatureOptions(config, presetConfig),
+    ...buildIntelligenceOptions(config),
+    ...buildRenderingGuards(),
+  };
 }
 
 export function buildDiffEditorOptions(
   input: EditorOptionsInput = {}
 ): monaco.editor.IStandaloneDiffEditorConstructionOptions {
-  const baseInput: EditorOptionsInput = {
+  const baseOptions = buildEditorOptions({
     ...input,
     preset: input.preset || 'diff',
-  };
-  
-  const baseOptions = buildEditorOptions(baseInput);
-  
-  const diffOptions: monaco.editor.IStandaloneDiffEditorConstructionOptions = {
-    ...baseOptions,
+  });
 
+  return {
+    ...baseOptions,
     renderSideBySide: true,
     renderOverviewRuler: false,
     renderIndicators: true,
@@ -240,8 +287,6 @@ export function buildDiffEditorOptions(
     diffWordWrap: baseOptions.wordWrap as any,
     diffAlgorithm: 'advanced',
     enableSplitViewResizing: true,
-
-    // Collapse unchanged regions for large file readability
     hideUnchangedRegions: {
       enabled: true,
       contextLineCount: 3,
@@ -249,8 +294,6 @@ export function buildDiffEditorOptions(
       revealLineCount: 20,
     },
   };
-  
-  return diffOptions;
 }
 
 /** Build partial options for dynamic editor updates. */
@@ -258,7 +301,7 @@ export function buildUpdateOptions(
   config: EditorConfigPartial
 ): monaco.editor.IEditorOptions {
   const options: monaco.editor.IEditorOptions = {};
-  
+
   if (config.fontSize !== undefined) {
     options.fontSize = config.fontSize;
   }
@@ -286,6 +329,6 @@ export function buildUpdateOptions(
   if (config.renderLineHighlight !== undefined) {
     options.renderLineHighlight = config.renderLineHighlight;
   }
-  
+
   return options;
 }
