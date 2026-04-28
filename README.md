@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="./png/OpenHarness-Logo.png" alt="OpenHarness" width="120" />
+<img src="./src/apps/desktop/icons/icon.png" alt="OpenHarness" width="120" />
 
 # OpenHarness
 
