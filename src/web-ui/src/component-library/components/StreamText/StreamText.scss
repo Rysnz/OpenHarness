@@ -1,4 +1,27 @@
 /* Streaming text output styles */
+$stream-blue-strong: rgba(59, 130, 246, 0.8);
+$stream-blue-soft: rgba(59, 130, 246, 0.6);
+$stream-blue-solid: rgba(59, 130, 246, 1);
+
+@mixin stream-char-animation($name, $duration, $timing: ease-out) {
+  animation: $name $duration $timing;
+}
+
+@mixin stream-gradient-text($duration: 3s) {
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: gradient-flow $duration linear infinite;
+}
+
+@mixin stream-cursor-shape($width, $height, $background, $animation: cursor-blink 1s step-end infinite) {
+  width: $width;
+  height: $height;
+  background: $background;
+  animation: $animation;
+}
+
 .stream-text {
   display: inline;
   font-family: var(--font-family-sans, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
@@ -20,7 +43,7 @@
 
 
 .stream-text__char--new {
-  animation: char-appear 0.3s ease-out;
+  @include stream-char-animation(char-appear, 0.3s);
 }
 
 @keyframes char-appear {
@@ -36,7 +59,7 @@
 
 
 .stream-text--smooth .stream-text__char--smooth {
-  animation: smooth-appear 0.2s ease-out;
+  @include stream-char-animation(smooth-appear, 0.2s);
 }
 
 @keyframes smooth-appear {
@@ -64,7 +87,7 @@
 
 
 .stream-text--wave .stream-text__char--wave {
-  animation: wave-appear 0.6s ease-in-out;
+  @include stream-char-animation(wave-appear, 0.6s, ease-in-out);
   transform-origin: bottom;
 }
 
@@ -84,7 +107,7 @@
 
 
 .stream-text--fade .stream-text__char--fade {
-  animation: fade-appear 0.8s ease-in-out;
+  @include stream-char-animation(fade-appear, 0.8s, ease-in-out);
 }
 
 @keyframes fade-appear {
@@ -100,11 +123,11 @@
 
 
 .stream-text--glitch .stream-text__char--glitch {
-  animation: glitch-appear 0.4s ease-out;
+  @include stream-char-animation(glitch-appear, 0.4s);
 }
 
 .stream-text--glitch .stream-text__char--new {
-  animation: glitch-flash 0.3s ease-out;
+  @include stream-char-animation(glitch-flash, 0.3s);
 }
 
 @keyframes glitch-appear {
@@ -154,7 +177,7 @@
 }
 
 .stream-text--neon .stream-text__char--neon {
-  animation: neon-appear 0.5s ease-out;
+  @include stream-char-animation(neon-appear, 0.5s);
 }
 
 @keyframes neon-appear {
@@ -187,7 +210,7 @@
 }
 
 .stream-text--matrix .stream-text__char--matrix {
-  animation: matrix-appear 0.4s ease-out;
+  @include stream-char-animation(matrix-appear, 0.4s);
 }
 
 @keyframes matrix-appear {
@@ -221,15 +244,11 @@
     #9370db,
     #ff1493
   );
-  background-size: 200% auto;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: gradient-flow 3s linear infinite;
+  @include stream-gradient-text(3s);
 }
 
 .stream-text--gradient .stream-text__char--gradient {
-  animation: gradient-appear 0.6s ease-out;
+  @include stream-char-animation(gradient-appear, 0.6s);
 }
 
 @keyframes gradient-appear {
@@ -254,7 +273,7 @@
 
 
 .stream-text--pulse .stream-text__char--pulse {
-  animation: pulse-appear 0.8s ease-out;
+  @include stream-char-animation(pulse-appear, 0.8s);
 }
 
 @keyframes pulse-appear {
@@ -274,7 +293,7 @@
 
 
 .stream-text--blur .stream-text__char--blur {
-  animation: blur-appear 0.8s ease-out;
+  @include stream-char-animation(blur-appear, 0.8s);
 }
 
 @keyframes blur-appear {
@@ -344,37 +363,28 @@
 
 
 .stream-cursor--line {
-  width: 2px;
-  height: 1em;
-  background: rgba(59, 130, 246, 0.8);
-  animation: cursor-blink 1s step-end infinite;
+  @include stream-cursor-shape(2px, 1em, $stream-blue-strong);
 }
 
 .stream-cursor--line.stream-cursor--active {
-  animation: cursor-pulse 0.8s ease-in-out infinite;
+  @include stream-char-animation(cursor-pulse, 0.8s, ease-in-out infinite);
 }
 
 
 .stream-cursor--block {
-  width: 0.6em;
-  height: 1em;
-  background: rgba(59, 130, 246, 0.6);
-  animation: cursor-blink 1s step-end infinite;
+  @include stream-cursor-shape(0.6em, 1em, $stream-blue-soft);
 }
 
 
 .stream-cursor--underline {
-  width: 0.6em;
-  height: 2px;
-  background: rgba(59, 130, 246, 0.8);
-  animation: cursor-blink 1s step-end infinite;
+  @include stream-cursor-shape(0.6em, 2px, $stream-blue-strong);
 }
 
 
 .stream-cursor--glow {
   width: 2px;
   height: 1em;
-  background: rgba(59, 130, 246, 1);
+  background: $stream-blue-solid;
   box-shadow:
     0 0 10px rgba(59, 130, 246, 0.8),
     0 0 20px rgba(59, 130, 246, 0.6),
@@ -481,11 +491,7 @@
     #9370db 80%,
     #ff1493 100%
   );
-  background-size: 200% auto;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: gradient-flow 3s linear infinite;
+  @include stream-gradient-text(3s);
 }
 
 
@@ -498,11 +504,7 @@
     #ff8800,
     #ff0000
   );
-  background-size: 200% auto;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: gradient-flow 2s linear infinite;
+  @include stream-gradient-text(2s);
 }
 
 
@@ -515,11 +517,7 @@
     #00b4d8,
     #0077be
   );
-  background-size: 200% auto;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: gradient-flow 3s linear infinite;
+  @include stream-gradient-text(3s);
 }
 
 
@@ -532,11 +530,7 @@
     #ffd93d,
     #ff6b6b
   );
-  background-size: 200% auto;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: gradient-flow 2.5s linear infinite;
+  @include stream-gradient-text(2.5s);
 }
 
 
