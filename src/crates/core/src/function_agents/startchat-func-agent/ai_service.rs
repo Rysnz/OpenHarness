@@ -11,9 +11,127 @@ use std::sync::Arc;
 
 /// Prompt template constants (embedded at compile time)
 const WORK_STATE_ANALYSIS_PROMPT: &str = include_str!("prompts/work_state_analysis.md");
+const MAX_DIFF_LENGTH: usize = 8000;
+const TARGET_PREDICTED_ACTIONS: usize = 3;
+const MAX_QUICK_ACTIONS: usize = 6;
+const DEFAULT_ANALYSIS_SUMMARY: &str =
+    "You were working on development, with multiple files modified.";
 
 pub struct AIWorkStateService {
     ai_client: Arc<AIClient>,
+}
+
+fn language_instruction(language: &Language) -> &'static str {
+    match language {
+        Language::Chinese => "Please respond in Chinese.",
+        Language::English => "Please respond in English.",
+    }
+}
+
+fn build_git_state_section(git_state: &Option<GitWorkState>) -> String {
+    let Some(git) = git_state else {
+        return String::new();
+    };
+
+    let mut section = format!(
+        "## Git Status\n\n- Current branch: {}\n- Unstaged files: {}\n- Staged files: {}\n- Unpushed commits: {}\n",
+        git.current_branch, git.unstaged_files, git.staged_files, git.unpushed_commits
+    );
+
+    if !git.modified_files.is_empty() {
+        section.push_str("\nModified files:\n");
+        for file in git.modified_files.iter().take(10) {
+            section.push_str(&format!("  - {} ({:?})\n", file.path, file.change_type));
+        }
+    }
+
+    section
+}
+
+fn build_git_diff_section(git_diff: &str) -> String {
+    if git_diff.is_empty() {
+        return String::new();
+    }
+
+    if git_diff.len() > MAX_DIFF_LENGTH {
+        let truncated_diff = truncate_for_prompt(git_diff, MAX_DIFF_LENGTH);
+        return format!(
+            "## Code Changes (Git Diff)\n\n{}\n\n... (diff content too long, truncated, total length: {} characters)\n",
+            truncated_diff,
+            git_diff.len()
+        );
+    }
+
+    format!("## Code Changes (Git Diff)\n\n{}", git_diff)
+}
+
+fn truncate_for_prompt(content: &str, max_len: usize) -> String {
+    content
+        .char_indices()
+        .take_while(|(idx, _)| *idx < max_len)
+        .map(|(_, c)| c)
+        .collect()
+}
+
+fn default_predicted_action() -> PredictedAction {
+    PredictedAction {
+        description: "Continue current development".to_string(),
+        priority: ActionPriority::Medium,
+        icon: String::new(),
+        is_reminder: false,
+    }
+}
+
+fn normalize_predicted_actions(actions: &mut Vec<PredictedAction>) {
+    if actions.len() < TARGET_PREDICTED_ACTIONS {
+        warn!(
+            "AI generated insufficient predicted actions ({}), adding defaults",
+            actions.len()
+        );
+        while actions.len() < TARGET_PREDICTED_ACTIONS {
+            actions.push(default_predicted_action());
+        }
+    } else if actions.len() > TARGET_PREDICTED_ACTIONS {
+        warn!(
+            "AI generated too many predicted actions ({}), truncating to 3",
+            actions.len()
+        );
+        actions.truncate(TARGET_PREDICTED_ACTIONS);
+    }
+}
+
+fn normalize_quick_actions(actions: &mut Vec<QuickAction>) {
+    if actions.len() < MAX_QUICK_ACTIONS {
+        // Don't fill defaults here, frontend has its own defaultActions with i18n support
+        warn!(
+            "AI generated insufficient quick actions ({}), frontend will use defaults",
+            actions.len()
+        );
+    } else if actions.len() > MAX_QUICK_ACTIONS {
+        warn!(
+            "AI generated too many quick actions ({}), truncating to 6",
+            actions.len()
+        );
+        actions.truncate(MAX_QUICK_ACTIONS);
+    }
+}
+
+fn action_priority_from_str(priority: &str) -> ActionPriority {
+    match priority {
+        "High" => ActionPriority::High,
+        "Low" => ActionPriority::Low,
+        _ => ActionPriority::Medium,
+    }
+}
+
+fn quick_action_type_from_str(action_type: &str) -> QuickActionType {
+    match action_type {
+        "Continue" => QuickActionType::Continue,
+        "ViewStatus" => QuickActionType::ViewStatus,
+        "Commit" => QuickActionType::Commit,
+        "Visualize" => QuickActionType::Visualize,
+        _ => QuickActionType::Custom,
+    }
 }
 
 impl AIWorkStateService {
@@ -88,48 +206,13 @@ impl AIWorkStateService {
         language: &Language,
     ) -> String {
         // AI instruction for response language (not user-facing)
-        let lang_instruction = match language {
-            Language::Chinese => "Please respond in Chinese.",
-            Language::English => "Please respond in English.",
-        };
+        let lang_instruction = language_instruction(language);
 
         // Build Git state section
-        let git_state_section = if let Some(git) = git_state {
-            let mut section = format!(
-                "## Git Status\n\n- Current branch: {}\n- Unstaged files: {}\n- Staged files: {}\n- Unpushed commits: {}\n",
-                git.current_branch, git.unstaged_files, git.staged_files, git.unpushed_commits
-            );
-
-            if !git.modified_files.is_empty() {
-                section.push_str("\nModified files:\n");
-                for file in git.modified_files.iter().take(10) {
-                    section.push_str(&format!("  - {} ({:?})\n", file.path, file.change_type));
-                }
-            }
-            section
-        } else {
-            String::new()
-        };
+        let git_state_section = build_git_state_section(git_state);
 
         // Build Git diff section
-        let git_diff_section = if !git_diff.is_empty() {
-            let max_diff_length = 8000;
-            if git_diff.len() > max_diff_length {
-                let truncated_diff = git_diff
-                    .char_indices()
-                    .take_while(|(idx, _)| *idx < max_diff_length)
-                    .map(|(_, c)| c)
-                    .collect::<String>();
-                format!(
-                    "## Code Changes (Git Diff)\n\n{}\n\n... (diff content too long, truncated, total length: {} characters)\n",
-                    truncated_diff, git_diff.len()
-                )
-            } else {
-                format!("## Code Changes (Git Diff)\n\n{}", git_diff)
-            }
-        } else {
-            String::new()
-        };
+        let git_diff_section = build_git_diff_section(git_diff);
 
         // Use template replacement
         WORK_STATE_ANALYSIS_PROMPT
@@ -159,7 +242,7 @@ impl AIWorkStateService {
 
         let summary = parsed["summary"]
             .as_str()
-            .unwrap_or("You were working on development, with multiple files modified.")
+            .unwrap_or(DEFAULT_ANALYSIS_SUMMARY)
             .to_string();
 
         let ongoing_work = Vec::new();
@@ -171,26 +254,7 @@ impl AIWorkStateService {
                 Vec::new()
             };
 
-        if predicted_actions.len() < 3 {
-            warn!(
-                "AI generated insufficient predicted actions ({}), adding defaults",
-                predicted_actions.len()
-            );
-            while predicted_actions.len() < 3 {
-                predicted_actions.push(PredictedAction {
-                    description: "Continue current development".to_string(),
-                    priority: ActionPriority::Medium,
-                    icon: String::new(),
-                    is_reminder: false,
-                });
-            }
-        } else if predicted_actions.len() > 3 {
-            warn!(
-                "AI generated too many predicted actions ({}), truncating to 3",
-                predicted_actions.len()
-            );
-            predicted_actions.truncate(3);
-        }
+        normalize_predicted_actions(&mut predicted_actions);
 
         let mut quick_actions = if let Some(actions_array) = parsed["quick_actions"].as_array() {
             self.parse_quick_actions_from_value(actions_array)?
@@ -198,19 +262,7 @@ impl AIWorkStateService {
             Vec::new()
         };
 
-        if quick_actions.len() < 6 {
-            // Don't fill defaults here, frontend has its own defaultActions with i18n support
-            warn!(
-                "AI generated insufficient quick actions ({}), frontend will use defaults",
-                quick_actions.len()
-            );
-        } else if quick_actions.len() > 6 {
-            warn!(
-                "AI generated too many quick actions ({}), truncating to 6",
-                quick_actions.len()
-            );
-            quick_actions.truncate(6);
-        }
+        normalize_quick_actions(&mut quick_actions);
 
         debug!(
             "Parsing completed: predicted_actions={}, quick_actions={}",
@@ -238,13 +290,8 @@ impl AIWorkStateService {
                 .unwrap_or("Continue current work")
                 .to_string();
 
-            let priority_str = action_value["priority"].as_str().unwrap_or("Medium");
-
-            let priority = match priority_str {
-                "High" => ActionPriority::High,
-                "Low" => ActionPriority::Low,
-                _ => ActionPriority::Medium,
-            };
+            let priority =
+                action_priority_from_str(action_value["priority"].as_str().unwrap_or("Medium"));
 
             let icon = action_value["icon"].as_str().unwrap_or("").to_string();
 
@@ -277,15 +324,9 @@ impl AIWorkStateService {
 
             let icon = action_value["icon"].as_str().unwrap_or("").to_string();
 
-            let action_type_str = action_value["action_type"].as_str().unwrap_or("Custom");
-
-            let action_type = match action_type_str {
-                "Continue" => QuickActionType::Continue,
-                "ViewStatus" => QuickActionType::ViewStatus,
-                "Commit" => QuickActionType::Commit,
-                "Visualize" => QuickActionType::Visualize,
-                _ => QuickActionType::Custom,
-            };
+            let action_type = quick_action_type_from_str(
+                action_value["action_type"].as_str().unwrap_or("Custom"),
+            );
 
             quick_actions.push(QuickAction {
                 title,
