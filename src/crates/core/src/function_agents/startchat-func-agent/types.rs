@@ -6,6 +6,16 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+macro_rules! display_debug_name {
+    ($type_name:ty) => {
+        impl fmt::Display for $type_name {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write!(f, "{:?}", self)
+            }
+        }
+    };
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkStateOptions {
@@ -33,10 +43,10 @@ fn default_language() -> Language {
 impl Default for WorkStateOptions {
     fn default() -> Self {
         Self {
-            analyze_git: true,
-            predict_next_actions: true,
-            include_quick_actions: true,
-            language: Language::English,
+            analyze_git: default_true(),
+            predict_next_actions: default_true(),
+            include_quick_actions: default_true(),
+            language: default_language(),
         }
     }
 }
@@ -127,18 +137,7 @@ pub enum FileChangeType {
     Untracked,
 }
 
-impl fmt::Display for FileChangeType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = match self {
-            FileChangeType::Added => "Added",
-            FileChangeType::Modified => "Modified",
-            FileChangeType::Deleted => "Deleted",
-            FileChangeType::Renamed => "Renamed",
-            FileChangeType::Untracked => "Untracked",
-        };
-        write!(f, "{}", s)
-    }
-}
+display_debug_name!(FileChangeType);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -166,21 +165,7 @@ pub enum WorkCategory {
     Other,
 }
 
-impl fmt::Display for WorkCategory {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = match self {
-            WorkCategory::Backend => "Backend",
-            WorkCategory::Frontend => "Frontend",
-            WorkCategory::API => "API",
-            WorkCategory::Database => "Database",
-            WorkCategory::Infrastructure => "Infrastructure",
-            WorkCategory::Testing => "Testing",
-            WorkCategory::Documentation => "Documentation",
-            WorkCategory::Other => "Other",
-        };
-        write!(f, "{}", s)
-    }
-}
+display_debug_name!(WorkCategory);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -203,17 +188,7 @@ pub enum TimeOfDay {
     Night,
 }
 
-impl fmt::Display for TimeOfDay {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = match self {
-            TimeOfDay::Morning => "Morning",
-            TimeOfDay::Afternoon => "Afternoon",
-            TimeOfDay::Evening => "Evening",
-            TimeOfDay::Night => "Night",
-        };
-        write!(f, "{}", s)
-    }
-}
+display_debug_name!(TimeOfDay);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -234,16 +209,7 @@ pub enum ActionPriority {
     Low,
 }
 
-impl fmt::Display for ActionPriority {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = match self {
-            ActionPriority::High => "High",
-            ActionPriority::Medium => "Medium",
-            ActionPriority::Low => "Low",
-        };
-        write!(f, "{}", s)
-    }
-}
+display_debug_name!(ActionPriority);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -302,32 +268,27 @@ impl fmt::Display for AgentError {
 impl std::error::Error for AgentError {}
 
 impl AgentError {
-    pub fn git_error(msg: impl Into<String>) -> Self {
+    fn new(error_type: AgentErrorType, msg: impl Into<String>) -> Self {
         Self {
             message: msg.into(),
-            error_type: AgentErrorType::GitError,
+            error_type,
         }
+    }
+
+    pub fn git_error(msg: impl Into<String>) -> Self {
+        Self::new(AgentErrorType::GitError, msg)
     }
 
     pub fn analysis_error(msg: impl Into<String>) -> Self {
-        Self {
-            message: msg.into(),
-            error_type: AgentErrorType::AnalysisError,
-        }
+        Self::new(AgentErrorType::AnalysisError, msg)
     }
 
     pub fn invalid_input(msg: impl Into<String>) -> Self {
-        Self {
-            message: msg.into(),
-            error_type: AgentErrorType::InvalidInput,
-        }
+        Self::new(AgentErrorType::InvalidInput, msg)
     }
 
     pub fn internal_error(msg: impl Into<String>) -> Self {
-        Self {
-            message: msg.into(),
-            error_type: AgentErrorType::InternalError,
-        }
+        Self::new(AgentErrorType::InternalError, msg)
     }
 }
 
