@@ -19,6 +19,56 @@ type SelectableBranch = GitBranchType & {
   hasWorktree?: boolean;
 };
 
+const focusInputDelayMs = 100;
+
+const sortBranchesByAvailability = (
+  branches: GitBranchType[],
+  searchTerm: string,
+  currentBranch?: string,
+  existingWorktreeBranches: string[] = []
+): SelectableBranch[] => {
+  const lowerSearch = searchTerm.trim().toLowerCase();
+  const matchingBranches = lowerSearch
+    ? branches.filter((branch) => branch.name.toLowerCase().includes(lowerSearch))
+    : branches;
+  const existingWorktreeSet = new Set(existingWorktreeBranches);
+  const availableBranches: SelectableBranch[] = [];
+  const unavailableBranches: SelectableBranch[] = [];
+
+  for (const branch of matchingBranches) {
+    const isCurrent = branch.name === currentBranch;
+    const hasWorktree = existingWorktreeSet.has(branch.name);
+
+    if (isCurrent || hasWorktree) {
+      unavailableBranches.push({ ...branch, isCurrent, hasWorktree });
+    } else {
+      availableBranches.push(branch);
+    }
+  }
+
+  return [...availableBranches, ...unavailableBranches];
+};
+
+const branchCanBeCreated = (branches: GitBranchType[], searchTerm: string) => {
+  const trimmed = searchTerm.trim();
+  if (!trimmed) return false;
+
+  return !branches.some((branch) => branch.name.toLowerCase() === trimmed.toLowerCase());
+};
+
+const createSelectionResult = (
+  branch: string,
+  isNew: boolean,
+  openAfterCreate: boolean
+): BranchSelectResult => ({
+  branch,
+  isNew,
+  openAfterCreate,
+});
+
+const branchItemClassName = (parts: Array<string | false | undefined>) =>
+  parts.filter(Boolean).join(' ');
+
 export interface BranchSelectResult {
   branch: string;
   isNew: boolean;
@@ -71,7 +121,7 @@ export const BranchSelectModal: React.FC<BranchSelectModalProps> = ({
     } else {
       setTimeout(() => {
         inputRef.current?.focus();
-      }, 100);
+      }, focusInputDelayMs);
     }
   }, [defaultOpenAfterCreate, isOpen]);
 
@@ -106,39 +156,11 @@ export const BranchSelectModal: React.FC<BranchSelectModalProps> = ({
   }, [isOpen, loadBranches, repositoryPath]);
 
   const filteredBranches = useMemo<SelectableBranch[]>(() => {
-    let result = branches;
-
-    if (searchTerm.trim()) {
-      const lowerSearch = searchTerm.toLowerCase();
-      result = result.filter(branch =>
-        branch.name.toLowerCase().includes(lowerSearch)
-      );
-    }
-
-    const availableBranches: SelectableBranch[] = [];
-    const unavailableBranches: SelectableBranch[] = [];
-    const existingWorktreeSet = new Set(existingWorktreeBranches);
-
-    result.forEach(branch => {
-      const isCurrent = branch.name === currentBranch;
-      const hasWorktree = existingWorktreeSet.has(branch.name);
-
-      if (isCurrent || hasWorktree) {
-        unavailableBranches.push({ ...branch, isCurrent, hasWorktree });
-      } else {
-        availableBranches.push(branch);
-      }
-    });
-
-    return [...availableBranches, ...unavailableBranches];
+    return sortBranchesByAvailability(branches, searchTerm, currentBranch, existingWorktreeBranches);
   }, [branches, searchTerm, currentBranch, existingWorktreeBranches]);
 
   const canCreateNewBranch = useMemo(() => {
-    if (!searchTerm.trim()) return false;
-    const exists = branches.some(
-      branch => branch.name.toLowerCase() === searchTerm.toLowerCase()
-    );
-    return !exists;
+    return branchCanBeCreated(branches, searchTerm);
   }, [branches, searchTerm]);
 
   const handleSelectBranch = useCallback((branchName: string, isNew: boolean) => {
@@ -148,21 +170,13 @@ export const BranchSelectModal: React.FC<BranchSelectModalProps> = ({
 
   const handleConfirm = useCallback(() => {
     if (selectedBranch) {
-      onSelect({
-        branch: selectedBranch,
-        isNew: isNewBranch,
-        openAfterCreate,
-      });
+      onSelect(createSelectionResult(selectedBranch, isNewBranch, openAfterCreate));
       onClose();
     }
   }, [selectedBranch, isNewBranch, onClose, onSelect, openAfterCreate]);
 
   const handleDoubleClick = useCallback((branchName: string, isNew: boolean) => {
-    onSelect({
-      branch: branchName,
-      isNew: isNew,
-      openAfterCreate,
-    });
+    onSelect(createSelectionResult(branchName, isNew, openAfterCreate));
     onClose();
   }, [onClose, onSelect, openAfterCreate]);
 
@@ -217,9 +231,11 @@ export const BranchSelectModal: React.FC<BranchSelectModalProps> = ({
               <>
                 {canCreateNewBranch && (
                   <div
-                    className={`branch-select-dialog__item branch-select-dialog__item--new ${
+                    className={branchItemClassName([
+                      'branch-select-dialog__item',
+                      'branch-select-dialog__item--new',
                       selectedBranch === searchTerm && isNewBranch ? 'selected' : ''
-                    }`}
+                    ])}
                     onClick={() => handleSelectBranch(searchTerm.trim(), true)}
                     onDoubleClick={() => handleDoubleClick(searchTerm.trim(), true)}
                   >
@@ -237,9 +253,12 @@ export const BranchSelectModal: React.FC<BranchSelectModalProps> = ({
                   return (
                     <div
                       key={branch.name}
-                      className={`branch-select-dialog__item ${
-                        selectedBranch === branch.name && !isNewBranch ? 'selected' : ''
-                      } ${branch.current ? 'current' : ''} ${isDisabled ? 'disabled' : ''}`}
+                      className={branchItemClassName([
+                        'branch-select-dialog__item',
+                        selectedBranch === branch.name && !isNewBranch ? 'selected' : '',
+                        branch.current ? 'current' : '',
+                        isDisabled ? 'disabled' : '',
+                      ])}
                       onClick={() => !isDisabled && handleSelectBranch(branch.name, false)}
                       onDoubleClick={() => !isDisabled && handleDoubleClick(branch.name, false)}
                     >
