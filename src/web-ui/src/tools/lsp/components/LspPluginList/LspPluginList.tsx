@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-use-before-define */
 /**
  * LSP plugin list UI.
  */
@@ -12,6 +11,9 @@ import type { LspPlugin } from '../../types';
 import { useNotification } from '@/shared/notification-system';
 import './LspPluginList.scss';
 
+const VISIBLE_LANGUAGE_BADGES = 2;
+const CAPABILITY_KEYS = ['completion', 'hover', 'definition', 'references', 'formatting'] as const;
+
 export interface LspPluginListProps {
   className?: string;
   onInitialize?: () => void;
@@ -21,6 +23,99 @@ export interface LspPluginListProps {
   /** Passes the internal reload function to the parent after mount. */
   onMountReload?: (reload: () => void) => void;
 }
+
+interface PluginItemProps {
+  plugin: LspPlugin;
+  isExpanded: boolean;
+  onToggle: () => void;
+  onUninstall: () => void;
+  t: (key: string) => string;
+}
+
+function ListFrame({ className, children }: { className?: string; children: React.ReactNode }) {
+  return <div className={`lsp-plugin-list ${className || ''}`}>{children}</div>;
+}
+
+const PluginItem: React.FC<PluginItemProps> = ({ plugin, isExpanded, onToggle, onUninstall, t }) => {
+  const visibleLanguages = plugin.languages.slice(0, VISIBLE_LANGUAGE_BADGES);
+  const hiddenLanguageCount = plugin.languages.length - visibleLanguages.length;
+
+  return (
+    <Card variant="default" padding="none" className={`lsp-plugin-item ${isExpanded ? 'is-expanded' : ''}`}>
+      <div className="lsp-plugin-item__header" onClick={onToggle}>
+        <div className="lsp-plugin-item__toggle">
+          {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+        </div>
+
+        <div className="lsp-plugin-item__icon">
+          <Package size={16} />
+        </div>
+
+        <div className="lsp-plugin-item__main">
+          <span className="lsp-plugin-item__name">{plugin.name}</span>
+          <span className="lsp-plugin-item__version">v{plugin.version}</span>
+        </div>
+
+        <div className="lsp-plugin-item__badges">
+          {visibleLanguages.map(lang => (
+            <span key={lang} className="lsp-plugin-item__badge">{lang}</span>
+          ))}
+          {hiddenLanguageCount > 0 && (
+            <span className="lsp-plugin-item__badge-more">+{hiddenLanguageCount}</span>
+          )}
+        </div>
+      </div>
+
+      {isExpanded && (
+        <CardBody className="lsp-plugin-item__details">
+          <div className="lsp-plugin-item__section">
+            <p className="lsp-plugin-item__description">{plugin.description}</p>
+          </div>
+
+          <div className="lsp-plugin-item__section">
+            <div className="lsp-plugin-item__label">{t('pluginList.details.author')}</div>
+            <div className="lsp-plugin-item__value">{plugin.author}</div>
+          </div>
+
+          <div className="lsp-plugin-item__section">
+            <div className="lsp-plugin-item__label">{t('pluginList.details.languages')}</div>
+            <div className="lsp-plugin-item__tags">
+              {plugin.languages.map(lang => (
+                <span key={lang} className="lsp-plugin-item__tag">{lang}</span>
+              ))}
+            </div>
+          </div>
+
+          <div className="lsp-plugin-item__section">
+            <div className="lsp-plugin-item__label">{t('pluginList.details.capabilities')}</div>
+            <div className="lsp-plugin-item__capabilities">
+              {CAPABILITY_KEYS.filter(key => plugin.capabilities[key]).map(key => (
+                <span key={key} className="lsp-plugin-item__capability">
+                  <CheckCircle size={12} />
+                  {t(`pluginList.details.${key}`)}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <div className="lsp-plugin-item__actions">
+            <Button
+              variant="danger"
+              size="small"
+              onClick={(e) => {
+                e.stopPropagation();
+                onUninstall();
+              }}
+            >
+              <Trash2 size={14} />
+              {t('pluginList.uninstall')}
+            </Button>
+          </div>
+        </CardBody>
+      )}
+    </Card>
+  );
+};
 
 export const LspPluginList: React.FC<LspPluginListProps> = ({
   className,
@@ -64,18 +159,18 @@ export const LspPluginList: React.FC<LspPluginListProps> = ({
 
   if (loading) {
     return (
-      <div className={`lsp-plugin-list ${className || ''}`}>
+      <ListFrame className={className}>
         <div className="lsp-plugin-list__loading">
           <div className="spinner"></div>
           <p>{t('pluginList.loading')}</p>
         </div>
-      </div>
+      </ListFrame>
     );
   }
 
   if (error) {
     return (
-      <div className={`lsp-plugin-list ${className || ''}`}>
+      <ListFrame className={className}>
         <div className="lsp-plugin-list__error">
           <AlertCircle size={32} />
           <p>{error}</p>
@@ -83,13 +178,13 @@ export const LspPluginList: React.FC<LspPluginListProps> = ({
             {t('pluginList.retry')}
           </Button>
         </div>
-      </div>
+      </ListFrame>
     );
   }
 
   if (plugins.length === 0) {
     return (
-      <div className={`lsp-plugin-list ${className || ''}`}>
+      <ListFrame className={className}>
         <div className="lsp-plugin-list__empty">
           <Package size={64} />
           {onInstallPlugin && (
@@ -104,12 +199,12 @@ export const LspPluginList: React.FC<LspPluginListProps> = ({
             </Button>
           )}
         </div>
-      </div>
+      </ListFrame>
     );
   }
 
   return (
-    <div className={`lsp-plugin-list ${className || ''}`}>
+    <ListFrame className={className}>
       <div className="lsp-plugin-list__items">
         {plugins.map(plugin => (
           <PluginItem
@@ -122,115 +217,6 @@ export const LspPluginList: React.FC<LspPluginListProps> = ({
           />
         ))}
       </div>
-    </div>
-  );
-};
-interface PluginItemProps {
-  plugin: LspPlugin;
-  isExpanded: boolean;
-  onToggle: () => void;
-  onUninstall: () => void;
-  t: (key: string) => string;
-}
-
-const PluginItem: React.FC<PluginItemProps> = ({ plugin, isExpanded, onToggle, onUninstall, t }) => {
-  return (
-    <Card variant="default" padding="none" className={`lsp-plugin-item ${isExpanded ? 'is-expanded' : ''}`}>
-      <div className="lsp-plugin-item__header" onClick={onToggle}>
-        <div className="lsp-plugin-item__toggle">
-          {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-        </div>
-        
-        <div className="lsp-plugin-item__icon">
-          <Package size={16} />
-        </div>
-        
-        <div className="lsp-plugin-item__main">
-          <span className="lsp-plugin-item__name">{plugin.name}</span>
-          <span className="lsp-plugin-item__version">v{plugin.version}</span>
-        </div>
-
-        <div className="lsp-plugin-item__badges">
-          {plugin.languages.slice(0, 2).map(lang => (
-            <span key={lang} className="lsp-plugin-item__badge">{lang}</span>
-          ))}
-          {plugin.languages.length > 2 && (
-            <span className="lsp-plugin-item__badge-more">+{plugin.languages.length - 2}</span>
-          )}
-        </div>
-      </div>
-
-      {isExpanded && (
-        <CardBody className="lsp-plugin-item__details">
-          <div className="lsp-plugin-item__section">
-            <p className="lsp-plugin-item__description">{plugin.description}</p>
-          </div>
-
-          <div className="lsp-plugin-item__section">
-            <div className="lsp-plugin-item__label">{t('pluginList.details.author')}</div>
-            <div className="lsp-plugin-item__value">{plugin.author}</div>
-          </div>
-
-          <div className="lsp-plugin-item__section">
-            <div className="lsp-plugin-item__label">{t('pluginList.details.languages')}</div>
-            <div className="lsp-plugin-item__tags">
-              {plugin.languages.map(lang => (
-                <span key={lang} className="lsp-plugin-item__tag">{lang}</span>
-              ))}
-            </div>
-          </div>
-
-          <div className="lsp-plugin-item__section">
-            <div className="lsp-plugin-item__label">{t('pluginList.details.capabilities')}</div>
-            <div className="lsp-plugin-item__capabilities">
-              {plugin.capabilities.completion && (
-                <span className="lsp-plugin-item__capability">
-                  <CheckCircle size={12} />
-                  {t('pluginList.details.completion')}
-                </span>
-              )}
-              {plugin.capabilities.hover && (
-                <span className="lsp-plugin-item__capability">
-                  <CheckCircle size={12} />
-                  {t('pluginList.details.hover')}
-                </span>
-              )}
-              {plugin.capabilities.definition && (
-                <span className="lsp-plugin-item__capability">
-                  <CheckCircle size={12} />
-                  {t('pluginList.details.definition')}
-                </span>
-              )}
-              {plugin.capabilities.references && (
-                <span className="lsp-plugin-item__capability">
-                  <CheckCircle size={12} />
-                  {t('pluginList.details.references')}
-                </span>
-              )}
-              {plugin.capabilities.formatting && (
-                <span className="lsp-plugin-item__capability">
-                  <CheckCircle size={12} />
-                  {t('pluginList.details.formatting')}
-                </span>
-              )}
-            </div>
-          </div>
-
-          <div className="lsp-plugin-item__actions">
-            <Button
-              variant="danger"
-              size="small"
-              onClick={(e) => {
-                e.stopPropagation();
-                onUninstall();
-              }}
-            >
-              <Trash2 size={14} />
-              {t('pluginList.uninstall')}
-            </Button>
-          </div>
-        </CardBody>
-      )}
-    </Card>
+    </ListFrame>
   );
 };
