@@ -8,6 +8,8 @@ import { createLogger } from '@/shared/utils/logger';
 
 const log = createLogger('useSnapshotState');
 
+type SnapshotActionKind = 'accept' | 'reject';
+
 interface UseSnapshotStateReturn {
   sessionState: SessionState | null;
   files: SnapshotFile[];
@@ -28,6 +30,18 @@ interface UseSnapshotStateReturn {
   clearError: () => void;
 }
 
+function mergeFileState(files: SnapshotFile[], file: SnapshotFile): SnapshotFile[] {
+  const index = files.findIndex(candidate => candidate.filePath === file.filePath);
+
+  if (index < 0) {
+    return [...files, file];
+  }
+
+  const nextFiles = [...files];
+  nextFiles[index] = file;
+  return nextFiles;
+}
+
 export const useSnapshotState = (sessionId?: string): UseSnapshotStateReturn => {
   const { t } = useTranslation('flow-chat');
   const [sessionState, setSessionState] = useState<SessionState | null>(null);
@@ -42,6 +56,75 @@ export const useSnapshotState = (sessionId?: string): UseSnapshotStateReturn => 
   const eventBus = SnapshotEventBus.getInstance();
   const diffEngine = useMemo(() => new DiffDisplayEngine(), []);
 
+  const applySessionState = useCallback(() => {
+    if (!sessionId) {
+      return;
+    }
+
+    setSessionState(stateManager.getSessionState(sessionId));
+    setFiles(stateManager.getSessionFiles(sessionId));
+  }, [sessionId, stateManager]);
+
+  const runSnapshotAction = useCallback(async (
+    eventType: string,
+    payload: Record<string, unknown>,
+    execute: () => Promise<void>,
+    logMessage: string,
+    errorKey: string,
+    filePath?: string
+  ) => {
+    if (!sessionId) {
+      return;
+    }
+
+    try {
+      setError(null);
+      await SnapshotLazyLoader.ensureInitialized();
+      eventBus.emit(eventType, payload, sessionId, filePath);
+      await execute();
+    } catch (err) {
+      log.error(logMessage, { sessionId, filePath, error: err, payload });
+      setError(t(errorKey));
+      throw err;
+    }
+  }, [eventBus, sessionId, t]);
+
+  const handleFileAction = useCallback(async (filePath: string, action: SnapshotActionKind) => {
+    await runSnapshotAction(
+      action === 'accept' ? SNAPSHOT_EVENTS.USER_ACCEPT_FILE : SNAPSHOT_EVENTS.USER_REJECT_FILE,
+      { filePath },
+      () => stateManager.handleUserFileAction(sessionId!, filePath, action),
+      `Failed to ${action} file`,
+      `snapshotSystem.errors.${action}FileFailed`,
+      filePath
+    );
+  }, [runSnapshotAction, sessionId, stateManager]);
+
+  const handleSessionAction = useCallback(async (action: SnapshotActionKind) => {
+    await runSnapshotAction(
+      action === 'accept' ? SNAPSHOT_EVENTS.USER_ACCEPT_SESSION : SNAPSHOT_EVENTS.USER_REJECT_SESSION,
+      {},
+      () => stateManager.handleUserSessionAction(sessionId!, action),
+      `Failed to ${action} session`,
+      `snapshotSystem.errors.${action}SessionFailed`
+    );
+  }, [runSnapshotAction, sessionId, stateManager]);
+
+  const handleBlockAction = useCallback(async (
+    filePath: string,
+    blockId: string,
+    action: SnapshotActionKind
+  ) => {
+    await runSnapshotAction(
+      action === 'accept' ? SNAPSHOT_EVENTS.USER_ACCEPT_BLOCK : SNAPSHOT_EVENTS.USER_REJECT_BLOCK,
+      { filePath, blockId },
+      () => stateManager.handleUserBlockAction(sessionId!, filePath, blockId, action),
+      `Failed to ${action} block`,
+      `snapshotSystem.errors.${action}BlockFailed`,
+      filePath
+    );
+  }, [runSnapshotAction, sessionId, stateManager]);
+
   const refreshSession = useCallback(async () => {
     if (!sessionId) return;
 
@@ -52,118 +135,38 @@ export const useSnapshotState = (sessionId?: string): UseSnapshotStateReturn => 
       await SnapshotLazyLoader.ensureInitialized();
       
       await stateManager.refreshSessionState(sessionId);
-      const newSessionState = stateManager.getSessionState(sessionId);
-      const newFiles = stateManager.getSessionFiles(sessionId);
-      
-      setSessionState(newSessionState);
-      setFiles(newFiles);
+      applySessionState();
     } catch (err) {
       log.error('Failed to refresh session state', { sessionId, error: err });
       setError(t('snapshotSystem.errors.refreshSessionFailed'));
     } finally {
       setLoading(false);
     }
-  }, [sessionId, stateManager, t]);
+  }, [applySessionState, sessionId, stateManager, t]);
 
   const acceptFile = useCallback(async (filePath: string) => {
-    if (!sessionId) return;
-
-    try {
-      setError(null);
-      
-      await SnapshotLazyLoader.ensureInitialized();
-      
-      eventBus.emit(SNAPSHOT_EVENTS.USER_ACCEPT_FILE, { filePath }, sessionId, filePath);
-      
-      await stateManager.handleUserFileAction(sessionId, filePath, 'accept');
-      
-    } catch (err) {
-      log.error('Failed to accept file', { sessionId, filePath, error: err });
-      setError(t('snapshotSystem.errors.acceptFileFailed'));
-      throw err;
-    }
-  }, [sessionId, eventBus, stateManager, t]);
+    await handleFileAction(filePath, 'accept');
+  }, [handleFileAction]);
 
   const rejectFile = useCallback(async (filePath: string) => {
-    if (!sessionId) return;
-
-    try {
-      setError(null);
-      
-      eventBus.emit(SNAPSHOT_EVENTS.USER_REJECT_FILE, { filePath }, sessionId, filePath);
-      
-      await stateManager.handleUserFileAction(sessionId, filePath, 'reject');
-      
-    } catch (err) {
-      log.error('Failed to reject file', { sessionId, filePath, error: err });
-      setError(t('snapshotSystem.errors.rejectFileFailed'));
-      throw err;
-    }
-  }, [sessionId, eventBus, stateManager, t]);
+    await handleFileAction(filePath, 'reject');
+  }, [handleFileAction]);
 
   const acceptSession = useCallback(async () => {
-    if (!sessionId) return;
-
-    try {
-      setError(null);
-      
-      eventBus.emit(SNAPSHOT_EVENTS.USER_ACCEPT_SESSION, {}, sessionId);
-      await stateManager.handleUserSessionAction(sessionId, 'accept');
-      
-    } catch (err) {
-      log.error('Failed to accept session', { sessionId, error: err });
-      setError(t('snapshotSystem.errors.acceptSessionFailed'));
-      throw err;
-    }
-  }, [sessionId, eventBus, stateManager, t]);
+    await handleSessionAction('accept');
+  }, [handleSessionAction]);
 
   const rejectSession = useCallback(async () => {
-    if (!sessionId) return;
-
-    try {
-      setError(null);
-      
-      eventBus.emit(SNAPSHOT_EVENTS.USER_REJECT_SESSION, {}, sessionId);
-      await stateManager.handleUserSessionAction(sessionId, 'reject');
-      
-    } catch (err) {
-      log.error('Failed to reject session', { sessionId, error: err });
-      setError(t('snapshotSystem.errors.rejectSessionFailed'));
-      throw err;
-    }
-  }, [sessionId, eventBus, stateManager, t]);
+    await handleSessionAction('reject');
+  }, [handleSessionAction]);
 
   const acceptBlock = useCallback(async (filePath: string, blockId: string) => {
-    if (!sessionId) return;
-
-    try {
-      setError(null);
-      
-      eventBus.emit(SNAPSHOT_EVENTS.USER_ACCEPT_BLOCK, { filePath, blockId }, sessionId, filePath);
-      await stateManager.handleUserBlockAction(sessionId, filePath, blockId, 'accept');
-      
-    } catch (err) {
-      log.error('Failed to accept block', { sessionId, filePath, blockId, error: err });
-      setError(t('snapshotSystem.errors.acceptBlockFailed'));
-      throw err;
-    }
-  }, [sessionId, eventBus, stateManager, t]);
+    await handleBlockAction(filePath, blockId, 'accept');
+  }, [handleBlockAction]);
 
   const rejectBlock = useCallback(async (filePath: string, blockId: string) => {
-    if (!sessionId) return;
-
-    try {
-      setError(null);
-      
-      eventBus.emit(SNAPSHOT_EVENTS.USER_REJECT_BLOCK, { filePath, blockId }, sessionId, filePath);
-      await stateManager.handleUserBlockAction(sessionId, filePath, blockId, 'reject');
-      
-    } catch (err) {
-      log.error('Failed to reject block', { sessionId, filePath, blockId, error: err });
-      setError(t('snapshotSystem.errors.rejectBlockFailed'));
-      throw err;
-    }
-  }, [sessionId, eventBus, stateManager, t]);
+    await handleBlockAction(filePath, blockId, 'reject');
+  }, [handleBlockAction]);
 
   const getCompactDiff = useCallback((filePath: string): CompactDiffResult | null => {
     const file = stateManager.getFileState(filePath);
@@ -206,16 +209,7 @@ export const useSnapshotState = (sessionId?: string): UseSnapshotStateReturn => 
 
     const unsubscribeFile = stateManager.onFileStateChange((file) => {
       if (file.sessionId === activeSessionIdRef.current) {
-        setFiles(prev => {
-          const newFiles = [...prev];
-          const index = newFiles.findIndex(f => f.filePath === file.filePath);
-          if (index >= 0) {
-            newFiles[index] = file;
-          } else {
-            newFiles.push(file);
-          }
-          return newFiles;
-        });
+        setFiles(prev => mergeFileState(prev, file));
       } else {
         log.debug('Ignoring file event for different session', { eventSessionId: file.sessionId, currentSessionId: activeSessionIdRef.current });
       }
