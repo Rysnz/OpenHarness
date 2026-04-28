@@ -2,6 +2,60 @@
 
 @use '../../../component-library/styles/tokens.scss' as *;
 
+@mixin model-config-stack($gap: null) {
+  display: flex;
+  flex-direction: column;
+
+  @if $gap != null {
+    gap: $gap;
+  }
+}
+
+@mixin model-config-row($gap: null, $justify: null) {
+  display: flex;
+  align-items: center;
+
+  @if $justify != null {
+    justify-content: $justify;
+  }
+
+  @if $gap != null {
+    gap: $gap;
+  }
+}
+
+@mixin model-config-inline-row($gap: null) {
+  display: inline-flex;
+  align-items: center;
+
+  @if $gap != null {
+    gap: $gap;
+  }
+}
+
+@mixin model-config-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@mixin model-config-fade-in {
+  animation: default-model-fade-in 0.2s ease;
+}
+
+@mixin model-config-last-flush {
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
+@mixin model-config-single-line {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .default-model-config {
   padding: 0;
 
@@ -16,20 +70,13 @@
   
   
   &__section {
-    display: flex;
-    flex-direction: column;
-    gap: $size-gap-3;
+    @include model-config-stack($size-gap-3);
     margin-bottom: $size-gap-6;
-    
-    &:last-child {
-      margin-bottom: 0;
-    }
+    @include model-config-last-flush;
   }
   
   &__section-toggle {
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    @include model-config-center;
     width: 24px;
     height: 24px;
     color: var(--color-text-muted);
@@ -38,7 +85,7 @@
   
   &__section-content {
     padding-left: $size-gap-1;
-    animation: default-model-fade-in 0.2s ease;
+    @include model-config-fade-in;
   }
   
   
@@ -55,10 +102,7 @@
   }
   
   &__expand-trigger {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
+    @include model-config-row(8px, center);
     padding: 6px 0;
     cursor: pointer;
     user-select: none;
@@ -100,31 +144,23 @@
   }
   
   &__expand-content {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
+    @include model-config-stack(6px);
     margin-top: 8px;
-    animation: default-model-fade-in 0.2s ease;
+    @include model-config-fade-in;
   }
   
   
   
   &__core-section {
-    display: flex;
-    flex-direction: column;
-    gap: $size-gap-5;
+    @include model-config-stack($size-gap-5);
   }
   
   &__model-slot {
-    display: flex;
-    flex-direction: column;
-    gap: $size-gap-2;
+    @include model-config-stack($size-gap-2);
   }
   
   &__slot-header {
-    display: flex;
-    align-items: center;
-    gap: $size-gap-2;
+    @include model-config-row($size-gap-2);
   }
   
   &__slot-label {
@@ -134,8 +170,7 @@
   }
   
   &__slot-badge {
-    display: inline-flex;
-    align-items: center;
+    @include model-config-inline-row;
     padding: 2px 8px;
     font-size: var(--font-size-xs);
     font-weight: $font-weight-medium;
@@ -197,26 +232,20 @@
 
   &__model-value-text,
   &__model-option {
-    display: flex;
-    flex-direction: column;
+    @include model-config-stack;
     min-width: 0;
     width: 100%;
   }
 
   &__model-value-title,
   &__model-option-title {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
+    @include model-config-inline-row(4px);
     min-width: 0;
   }
 
   &__model-value-name,
   &__model-option-name {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    @include model-config-single-line;
     color: var(--color-text-primary);
     font-size: 10px;
     font-weight: $font-weight-medium;
@@ -224,11 +253,8 @@
 
   &__model-value-meta,
   &__model-option-meta {
-    min-width: 0;
+    @include model-config-single-line;
     margin-top: 2px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
     color: var(--color-text-muted);
     font-size: 8px;
     line-height: 1.4;
@@ -250,9 +276,7 @@
   }
   
   &__capability-item {
-    display: flex;
-    flex-direction: column;
-    gap: $size-gap-2;
+    @include model-config-stack($size-gap-2);
     padding: $size-gap-2 0;
     background: transparent;
     border: none;
@@ -267,16 +291,11 @@
   }
   
   &__capability-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: $size-gap-2;
+    @include model-config-row($size-gap-2, space-between);
   }
   
   &__capability-label {
-    display: flex;
-    align-items: center;
-    gap: $size-gap-2;
+    @include model-config-row($size-gap-2);
     font-size: var(--font-size-sm);
     font-weight: $font-weight-semibold;
     color: var(--color-text-primary);
@@ -288,11 +307,9 @@
   }
   
   &__capability-status {
+    @include model-config-single-line;
     font-size: var(--font-size-xs);
     color: var(--color-text-muted);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
     max-width: 120px;
   }
   
@@ -312,9 +329,7 @@
   }
   
   &__advanced-toggle {
-    display: flex;
-    align-items: center;
-    gap: $size-gap-2;
+    @include model-config-row($size-gap-2);
     padding: $size-gap-2 $size-gap-3;
     background: transparent;
     border: none;
@@ -340,20 +355,15 @@
   }
   
   &__advanced-content {
-    display: flex;
-    flex-direction: column;
-    gap: $size-gap-4;
+    @include model-config-stack($size-gap-4);
     margin-top: $size-gap-3;
     padding-left: $size-gap-2;
-    animation: default-model-fade-in 0.2s ease;
+    @include model-config-fade-in;
   }
   
   &__override-section {
     margin-bottom: $size-gap-5;
-    
-    &:last-child {
-      margin-bottom: 0;
-    }
+    @include model-config-last-flush;
   }
   
   &__override-title {
@@ -370,25 +380,19 @@
   }
   
   &__override-list {
-    display: flex;
-    flex-direction: column;
-    gap: $size-gap-2;
+    @include model-config-stack($size-gap-2);
   }
   
   &__override-row {
-    display: flex;
-    align-items: center;
-    gap: $size-gap-4;
+    @include model-config-row($size-gap-4);
   }
   
   &__override-name {
+    @include model-config-single-line;
     flex: 0 0 140px;
     font-size: var(--font-size-sm);
     font-weight: $font-weight-medium;
     color: var(--color-text-primary);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
   
   &__override-selector {
@@ -399,8 +403,7 @@
   
   
   &__empty {
-    display: flex;
-    flex-direction: column;
+    @include model-config-stack;
     align-items: center;
     justify-content: center;
     padding: $size-gap-10 $size-gap-5;
@@ -423,8 +426,7 @@
   
   
   &__loading {
-    display: flex;
-    flex-direction: column;
+    @include model-config-stack;
     align-items: center;
     justify-content: center;
     padding: $size-gap-12 $size-gap-5;
