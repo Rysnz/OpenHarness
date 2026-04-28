@@ -9,8 +9,11 @@ import { useI18n } from '@/infrastructure/i18n';
 import { BaseToolCard, BaseToolCardProps } from '../BaseToolCard';
 import './SnapshotCard.scss';
 
+type SnapshotOperationType = 'write' | 'edit' | 'delete' | 'multi-edit';
+type SnapshotStatus = 'pending' | 'accepted' | 'rejected' | 'conflict';
+
 export interface SnapshotCardProps extends Omit<BaseToolCardProps, 'toolName' | 'displayName'> {
-  operationType?: 'write' | 'edit' | 'delete' | 'multi-edit';
+  operationType?: SnapshotOperationType;
   filePath?: string;
   diffStats?: {
     additions: number;
@@ -21,7 +24,52 @@ export interface SnapshotCardProps extends Omit<BaseToolCardProps, 'toolName' | 
   onReject?: () => void;
   onViewDetails?: () => void;
   loading?: boolean;
-  snapshotStatus?: 'pending' | 'accepted' | 'rejected' | 'conflict';
+  snapshotStatus?: SnapshotStatus;
+}
+
+const OPERATION_COLORS: Record<SnapshotOperationType, string> = {
+  write: '#22c55e',
+  edit: '#f59e0b',
+  delete: '#ef4444',
+  'multi-edit': '#f59e0b',
+};
+
+const OPERATION_LABEL_KEYS: Record<SnapshotOperationType, string> = {
+  write: 'flowChatCards.snapshotCard.writeFile',
+  edit: 'flowChatCards.snapshotCard.editFile',
+  delete: 'flowChatCards.snapshotCard.deleteFile',
+  'multi-edit': 'flowChatCards.snapshotCard.multiEdit',
+};
+
+function StatusIcon({ status }: { status: SnapshotCardProps['status'] }) {
+  if (status === 'running' || status === 'streaming') {
+    return <Loader2 className="snapshot-card__status-spinner" size={12} />;
+  }
+  if (status === 'completed') {
+    return <CheckCircle className="snapshot-card__status-success" size={12} />;
+  }
+  if (status === 'error') {
+    return <XCircle className="snapshot-card__status-error" size={12} />;
+  }
+  return <Clock className="snapshot-card__status-pending" size={12} />;
+}
+
+function CompactStats({
+  stats,
+  filesLabel,
+}: {
+  stats: NonNullable<SnapshotCardProps['diffStats']>;
+  filesLabel: string;
+}) {
+  return (
+    <span className="snapshot-card__stats">
+      {stats.filesCount && stats.filesCount > 1 && (
+        <span className="file-count">{filesLabel}</span>
+      )}
+      {stats.additions > 0 && <span className="additions">+{stats.additions}</span>}
+      {stats.deletions > 0 && <span className="deletions">-{stats.deletions}</span>}
+    </span>
+  );
 }
 
 export const SnapshotCard: React.FC<SnapshotCardProps> = ({
@@ -42,38 +90,16 @@ export const SnapshotCard: React.FC<SnapshotCardProps> = ({
   const { t } = useI18n('components');
   const resolvedFilePath = filePath || input?.file_path || input?.target_file || input?.path || t('flowChatCards.snapshotCard.unspecifiedFile');
   const fileName = resolvedFilePath.split(/[/\\]/).pop() || t('flowChatCards.snapshotCard.file');
-
-  const getOperationInfo = () => {
-    const operationMap = {
-      'write': { name: t('flowChatCards.snapshotCard.writeFile'), color: '#22c55e' },
-      'edit': { name: t('flowChatCards.snapshotCard.editFile'), color: '#f59e0b' },
-      'delete': { name: t('flowChatCards.snapshotCard.deleteFile'), color: '#ef4444' },
-      'multi-edit': { name: t('flowChatCards.snapshotCard.multiEdit'), color: '#f59e0b' }
-    };
-    return operationMap[operationType] || operationMap['edit'];
+  const operationInfo = {
+    name: t(OPERATION_LABEL_KEYS[operationType]),
+    color: OPERATION_COLORS[operationType],
   };
-
-  const operationInfo = getOperationInfo();
-
   const stats = diffStats || {
     additions: 0,
     deletions: 0,
     filesCount: result?.filesCount || 1
   };
-
-  const getStatusIcon = () => {
-    switch (status) {
-      case 'running':
-      case 'streaming':
-        return <Loader2 className="snapshot-card__status-spinner" size={12} />;
-      case 'completed':
-        return <CheckCircle className="snapshot-card__status-success" size={12} />;
-      case 'error':
-        return <XCircle className="snapshot-card__status-error" size={12} />;
-      default:
-        return <Clock className="snapshot-card__status-pending" size={12} />;
-    }
-  };
+  const canResolve = !loading && status === 'completed';
 
   if (displayMode === 'compact') {
     return (
@@ -87,28 +113,20 @@ export const SnapshotCard: React.FC<SnapshotCardProps> = ({
         <span className="snapshot-card__filename" title={resolvedFilePath}>
           {fileName}
         </span>
-        
-        {stats.filesCount && stats.filesCount > 1 ? (
-          <span className="snapshot-card__stats">
-            <span className="file-count">{t('flowChatCards.snapshotCard.filesCount', { count: stats.filesCount })}</span>
-            {stats.additions > 0 && <span className="additions">+{stats.additions}</span>}
-            {stats.deletions > 0 && <span className="deletions">-{stats.deletions}</span>}
-          </span>
-        ) : (
-          <span className="snapshot-card__stats">
-            {stats.additions > 0 && <span className="additions">+{stats.additions}</span>}
-            {stats.deletions > 0 && <span className="deletions">-{stats.deletions}</span>}
-          </span>
-        )}
 
-        <span className="snapshot-card__status">{getStatusIcon()}</span>
+        <CompactStats
+          stats={stats}
+          filesLabel={t('flowChatCards.snapshotCard.filesCount', { count: stats.filesCount })}
+        />
+
+        <span className="snapshot-card__status"><StatusIcon status={status} /></span>
         
         <div className="snapshot-card__actions" onClick={(e) => e.stopPropagation()}>
           <button
             className="snapshot-card__action-btn snapshot-card__action-btn--accept"
             onClick={onAccept}
             title={t('flowChatCards.snapshotCard.accept')}
-            disabled={loading || status !== 'completed'}
+            disabled={!canResolve}
           >
             <CheckCircle size={12} />
           </button>
@@ -116,7 +134,7 @@ export const SnapshotCard: React.FC<SnapshotCardProps> = ({
             className="snapshot-card__action-btn snapshot-card__action-btn--reject"
             onClick={onReject}
             title={t('flowChatCards.snapshotCard.reject')}
-            disabled={loading || status !== 'completed'}
+            disabled={!canResolve}
           >
             <XCircle size={12} />
           </button>
