@@ -13,6 +13,13 @@ const log = createLogger('TerminalActionManager');
 
 /** Line threshold for multi-line paste confirmation. */
 const MULTILINE_PASTE_THRESHOLD = 1;
+const PASTE_PREVIEW_LINE_LIMIT = 10;
+
+const TERMINAL_SHORTCUTS: Record<string, TerminalShortcutAction> = {
+  a: 'select-all',
+  c: 'copy',
+  v: 'paste',
+};
 
 export interface TerminalActionHandler {
   getTerminal: () => XTerm | null;
@@ -23,6 +30,14 @@ export interface TerminalActionHandler {
 }
 
 type TerminalShortcutAction = 'copy' | 'paste' | 'select-all';
+type TerminalActionPayload = { terminalId: string };
+type TerminalCopyPayload = TerminalActionPayload & { selectedText?: string };
+type TerminalEventName = 'terminal:copy' | 'terminal:paste' | 'terminal:select-all' | 'terminal:clear';
+
+type TerminalEventSubscription = {
+  event: TerminalEventName;
+  handler: (payload: any) => void | Promise<void>;
+};
 
 class TerminalActionManager {
   private static instance: TerminalActionManager;
@@ -50,15 +65,9 @@ class TerminalActionManager {
       return;
     }
 
-    const unsubCopy = globalEventBus.on('terminal:copy', this.handleCopy);
-    
-    const unsubPaste = globalEventBus.on('terminal:paste', this.handlePaste);
-    
-    const unsubSelectAll = globalEventBus.on('terminal:select-all', this.handleSelectAll);
-    
-    const unsubClear = globalEventBus.on('terminal:clear', this.handleClear);
-
-    this.unsubscribers = [unsubCopy, unsubPaste, unsubSelectAll, unsubClear];
+    this.unsubscribers = this.eventSubscriptions().map(({ event, handler }) =>
+      globalEventBus.on(event, handler)
+    );
     this.attachKeyboardListener();
     this.initialized = true;
   }
@@ -109,6 +118,15 @@ class TerminalActionManager {
     this.keyboardListenerAttached = false;
   }
 
+  private eventSubscriptions(): TerminalEventSubscription[] {
+    return [
+      { event: 'terminal:copy', handler: this.handleCopy },
+      { event: 'terminal:paste', handler: this.handlePaste },
+      { event: 'terminal:select-all', handler: this.handleSelectAll },
+      { event: 'terminal:clear', handler: this.handleClear },
+    ];
+  }
+
   private handleKeyDown = (event: KeyboardEvent): void => {
     const shortcutAction = this.getShortcutAction(event);
     if (!shortcutAction) {
@@ -120,12 +138,12 @@ class TerminalActionManager {
       return;
     }
 
-    const handler = this.handlers.get(terminalId);
+    const handler = this.findHandler(terminalId);
     if (!handler) {
       return;
     }
 
-    if (shortcutAction === 'paste' && (handler.isReadOnly || !handler.write)) {
+    if (shortcutAction === 'paste' && !this.canWrite(handler)) {
       return;
     }
 
@@ -148,28 +166,15 @@ class TerminalActionManager {
   };
 
   private getShortcutAction(event: KeyboardEvent): TerminalShortcutAction | null {
-    if (event.type !== 'keydown') {
+    if (event.type !== 'keydown' || !this.isTerminalShortcutChord(event)) {
       return null;
     }
 
-    if (!event.ctrlKey || !event.shiftKey || event.altKey || event.metaKey) {
-      return null;
-    }
+    return TERMINAL_SHORTCUTS[event.key.toLowerCase()] ?? null;
+  }
 
-    const key = event.key.toLowerCase();
-    if (key === 'c') {
-      return 'copy';
-    }
-
-    if (key === 'v') {
-      return 'paste';
-    }
-
-    if (key === 'a') {
-      return 'select-all';
-    }
-
-    return null;
+  private isTerminalShortcutChord(event: KeyboardEvent): boolean {
+    return event.ctrlKey && event.shiftKey && !event.altKey && !event.metaKey;
   }
 
   private stopKeyboardEvent(event: KeyboardEvent): void {
@@ -179,13 +184,7 @@ class TerminalActionManager {
   }
 
   private resolveTerminalIdForEvent(event: KeyboardEvent): string | null {
-    const candidates: Array<Element | null> = [
-      event.target instanceof Element ? event.target : null,
-      typeof document !== 'undefined' && document.activeElement instanceof Element ? document.activeElement : null,
-      this.getSelectionElement(),
-    ];
-
-    for (const candidate of candidates) {
+    for (const candidate of this.eventElementCandidates(event)) {
       const terminalId = this.getTerminalIdFromElement(candidate);
       if (terminalId) {
         return terminalId;
@@ -207,6 +206,16 @@ class TerminalActionManager {
     }
 
     return matchedTerminalId;
+  }
+
+  private eventElementCandidates(event: KeyboardEvent): Array<Element | null> {
+    return [
+      event.target instanceof Element ? event.target : null,
+      typeof document !== 'undefined' && document.activeElement instanceof Element
+        ? document.activeElement
+        : null,
+      this.getSelectionElement(),
+    ];
   }
 
   private getSelectionElement(): Element | null {
@@ -235,8 +244,16 @@ class TerminalActionManager {
     return handler.getTerminal()?.getSelection() || '';
   }
 
-  private handleCopy = async (data: { terminalId: string; selectedText?: string }): Promise<void> => {
-    const handler = this.handlers.get(data.terminalId);
+  private findHandler(terminalId: string): TerminalActionHandler | null {
+    return this.handlers.get(terminalId) ?? null;
+  }
+
+  private canWrite(handler: TerminalActionHandler): boolean {
+    return !handler.isReadOnly && Boolean(handler.write);
+  }
+
+  private handleCopy = async (data: TerminalCopyPayload): Promise<void> => {
+    const handler = this.findHandler(data.terminalId);
     if (!handler) {
       return;
     }
@@ -259,15 +276,12 @@ class TerminalActionManager {
   /**
    * Paste handler with multi-line confirmation.
    */
-  private handlePaste = async (data: { terminalId: string }): Promise<void> => {
-    const handler = this.handlers.get(data.terminalId);
-    if (!handler) {
+  private handlePaste = async (data: TerminalActionPayload): Promise<void> => {
+    const handler = this.findHandler(data.terminalId);
+    if (!handler || !this.canWrite(handler)) {
       return;
     }
-
-    if (handler.isReadOnly || !handler.write) {
-      return;
-    }
+    const write = handler.write!;
 
     try {
       const text = await navigator.clipboard.readText();
@@ -275,42 +289,54 @@ class TerminalActionManager {
         return;
       }
 
-      const lines = text.split('\n');
-      const lineCount = lines.length;
-      
-      if (lineCount > MULTILINE_PASTE_THRESHOLD) {
-        const maxPreviewLines = 10;
-        const previewLines = lines.slice(0, maxPreviewLines);
-        let preview = previewLines.join('\n');
-        if (lineCount > maxPreviewLines) {
-          preview += `\n... (${lineCount} lines total)`;
-        }
-        
-        const confirmed = await confirmWarning(
-          'Paste multiple lines',
-          `The clipboard contains ${lineCount} lines. Pasting multiple lines in a terminal may execute multiple commands.`,
-          {
-            confirmText: 'Paste',
-            cancelText: 'Cancel',
-            preview,
-            previewMaxHeight: 150,
-          }
-        );
-
-        if (!confirmed) {
-          return;
-        }
+      const pastePreview = this.buildPastePreview(text);
+      if (pastePreview && !(await this.confirmMultilinePaste(pastePreview))) {
+        return;
       }
 
-      await handler.write(text);
+      await write(text);
       
     } catch (err) {
       log.error('Paste failed', { terminalId: data.terminalId, error: err });
     }
   };
 
-  private handleSelectAll = (data: { terminalId: string }): void => {
-    const handler = this.handlers.get(data.terminalId);
+  private buildPastePreview(text: string): { lineCount: number; preview: string } | null {
+    const lines = text.split('\n');
+    const lineCount = lines.length;
+
+    if (lineCount <= MULTILINE_PASTE_THRESHOLD) {
+      return null;
+    }
+
+    const previewLines = lines.slice(0, PASTE_PREVIEW_LINE_LIMIT);
+    const suffix =
+      lineCount > PASTE_PREVIEW_LINE_LIMIT ? `\n... (${lineCount} lines total)` : '';
+
+    return {
+      lineCount,
+      preview: `${previewLines.join('\n')}${suffix}`,
+    };
+  }
+
+  private async confirmMultilinePaste(details: {
+    lineCount: number;
+    preview: string;
+  }): Promise<boolean> {
+    return confirmWarning(
+      'Paste multiple lines',
+      `The clipboard contains ${details.lineCount} lines. Pasting multiple lines in a terminal may execute multiple commands.`,
+      {
+        confirmText: 'Paste',
+        cancelText: 'Cancel',
+        preview: details.preview,
+        previewMaxHeight: 150,
+      }
+    );
+  }
+
+  private handleSelectAll = (data: TerminalActionPayload): void => {
+    const handler = this.findHandler(data.terminalId);
     if (!handler) {
       return;
     }
@@ -321,8 +347,8 @@ class TerminalActionManager {
     }
   };
 
-  private handleClear = (data: { terminalId: string }): void => {
-    const handler = this.handlers.get(data.terminalId);
+  private handleClear = (data: TerminalActionPayload): void => {
+    const handler = this.findHandler(data.terminalId);
     if (!handler) {
       return;
     }
