@@ -13,6 +13,82 @@ import { useTranslation } from 'react-i18next';
 import { Tooltip } from '@/component-library';
 import type { CanvasTab } from '../types';
 import './TabOverflowMenu.scss';
+
+const OVERFLOW_MENU_WIDTH = 240;
+const OVERFLOW_MENU_EDGE_GAP = 8;
+const OVERFLOW_MENU_VERTICAL_OFFSET = 4;
+
+type Translate = ReturnType<typeof useTranslation>['t'];
+type MenuPosition = { top: number; left: number };
+
+function resolveOverflowMenuPosition(wrapper: HTMLDivElement): MenuPosition {
+  const rect = wrapper.getBoundingClientRect();
+  let left = rect.left;
+
+  if (left + OVERFLOW_MENU_WIDTH > window.innerWidth) {
+    left = rect.right - OVERFLOW_MENU_WIDTH;
+  }
+
+  return {
+    top: rect.bottom + OVERFLOW_MENU_VERTICAL_OFFSET,
+    left: Math.max(OVERFLOW_MENU_EDGE_GAP, left),
+  };
+}
+
+function buildTooltipContent(
+  hasOverflow: boolean,
+  hasMissionControl: boolean,
+  overflowCount: number,
+  t: Translate
+): string {
+  if (!hasOverflow) {
+    return hasMissionControl ? t('tabs.missionControl') : '';
+  }
+
+  const hiddenTabs = t('tabs.hiddenTabsCount', { count: overflowCount });
+  return hasMissionControl ? `${t('tabs.missionControl')} · ${hiddenTabs}` : hiddenTabs;
+}
+
+function panoramaButtonClass(
+  hasOverflow: boolean,
+  isOpen: boolean,
+  hasMissionControl: boolean
+): string {
+  return [
+    'canvas-tab-panorama-btn',
+    hasOverflow ? 'has-overflow' : '',
+    isOpen ? 'is-open' : '',
+    !hasMissionControl ? 'overflow-only' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
+function overflowItemClass(tab: CanvasTab, activeTabId: string | null): string {
+  return [
+    'canvas-tab-overflow-menu__item',
+    activeTabId === tab.id ? 'is-active' : '',
+    tab.isDirty ? 'is-dirty' : '',
+    tab.fileDeletedFromDisk ? 'is-file-deleted' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
+function tabTitleWithState(tab: CanvasTab, t: Translate): string {
+  const deletedSuffix = tab.fileDeletedFromDisk ? ` - ${t('tabs.fileDeleted')}` : '';
+  return `${tab.title}${deletedSuffix}`;
+}
+
+function isCloseButtonEvent(event: React.MouseEvent): boolean {
+  return Boolean(
+    (event.target as HTMLElement).closest('.canvas-tab-overflow-menu__item-close')
+  );
+}
+
+function shouldHandleMiddleClose(event: React.MouseEvent, tab: CanvasTab): boolean {
+  return event.button === 1 && tab.state !== 'pinned' && !isCloseButtonEvent(event);
+}
 export interface TabOverflowMenuProps {
   /** Overflow tabs */
   overflowTabs: CanvasTab[];
@@ -48,19 +124,7 @@ export const TabOverflowMenu: React.FC<TabOverflowMenuProps> = ({
   // Update menu position
   const updateMenuPosition = useCallback(() => {
     if (wrapperRef.current) {
-      const rect = wrapperRef.current.getBoundingClientRect();
-      const menuWidth = 240;
-      
-      // Compute left to keep menu within right boundary
-      let left = rect.left;
-      if (left + menuWidth > window.innerWidth) {
-        left = rect.right - menuWidth;
-      }
-      
-      setMenuPosition({
-        top: rect.bottom + 4,
-        left: Math.max(8, left),
-      });
+      setMenuPosition(resolveOverflowMenuPosition(wrapperRef.current));
     }
   }, []);
 
@@ -125,19 +189,13 @@ export const TabOverflowMenu: React.FC<TabOverflowMenuProps> = ({
   }, [onTabClose]);
 
   const handleItemMiddleMouseDown = useCallback((e: React.MouseEvent, tab: CanvasTab) => {
-    if (e.button !== 1) return;
-    if (tab.state === 'pinned') return;
-    const target = e.target as HTMLElement;
-    if (target.closest('.canvas-tab-overflow-menu__item-close')) return;
+    if (!shouldHandleMiddleClose(e, tab)) return;
     e.preventDefault();
   }, []);
 
   const handleItemAuxClick = useCallback(
     async (e: React.MouseEvent, tab: CanvasTab) => {
-      if (e.button !== 1) return;
-      if (tab.state === 'pinned') return;
-      const target = e.target as HTMLElement;
-      if (target.closest('.canvas-tab-overflow-menu__item-close')) return;
+      if (!shouldHandleMiddleClose(e, tab)) return;
       e.preventDefault();
       e.stopPropagation();
       await onTabClose(tab.id);
@@ -154,19 +212,18 @@ export const TabOverflowMenu: React.FC<TabOverflowMenuProps> = ({
     return null;
   }
 
-  const tooltipContent = hasOverflow 
-    ? hasMissionControl
-      ? `${t('tabs.missionControl')} · ${t('tabs.hiddenTabsCount', { count: overflowTabs.length })}`
-      : t('tabs.hiddenTabsCount', { count: overflowTabs.length })
-    : hasMissionControl
-      ? t('tabs.missionControl')
-      : '';
+  const tooltipContent = buildTooltipContent(
+    hasOverflow,
+    hasMissionControl,
+    overflowTabs.length,
+    t
+  );
 
   return (
     <div ref={wrapperRef} className="canvas-tab-panorama-wrapper">
       <Tooltip content={tooltipContent} placement="bottom">
         <button
-          className={`canvas-tab-panorama-btn ${hasOverflow ? 'has-overflow' : ''} ${isOpen ? 'is-open' : ''} ${!hasMissionControl ? 'overflow-only' : ''}`}
+          className={panoramaButtonClass(hasOverflow, isOpen, hasMissionControl)}
           onClick={handleButtonClick}
         >
           {hasMissionControl ? (
@@ -212,14 +269,11 @@ export const TabOverflowMenu: React.FC<TabOverflowMenuProps> = ({
           {/* Overflow tab list */}
           <div className="canvas-tab-overflow-menu__list">
             {overflowTabs.map((tab) => {
-              const deletedSuffix = tab.fileDeletedFromDisk ? ` - ${t('tabs.fileDeleted')}` : '';
-              const titleWithDeleted = `${tab.title}${deletedSuffix}`;
+              const titleWithDeleted = tabTitleWithState(tab, t);
               return (
               <div
                 key={tab.id}
-                className={`canvas-tab-overflow-menu__item ${
-                  activeTabId === tab.id ? 'is-active' : ''
-                } ${tab.isDirty ? 'is-dirty' : ''} ${tab.fileDeletedFromDisk ? 'is-file-deleted' : ''}`}
+                className={overflowItemClass(tab, activeTabId)}
                 onClick={() => handleTabClick(tab.id)}
                 onMouseDown={(e) => handleItemMiddleMouseDown(e, tab)}
                 onAuxClick={(e) => void handleItemAuxClick(e, tab)}
