@@ -1,5 +1,5 @@
 /**
- * Image processing utility functions
+ * Image processing utilities used by chat attachments.
  */
 
 import type { ImageContext } from '@/shared/types/context';
@@ -8,322 +8,275 @@ import { createLogger } from '@/shared/utils/logger';
 
 const log = createLogger('imageUtils');
 
+const MAX_IMAGE_SIZE_BYTES = 20 * 1024 * 1024;
+const DEFAULT_THUMBNAIL_SIZE = 200;
+const SUPPORTED_IMAGE_TYPES = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/jpg',
+  'image/gif',
+  'image/webp',
+]);
+
+const MIME_BY_EXTENSION: Record<string, string> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+};
+
 let clipboardImageCounter = 0;
 
-/**
- * Generate image thumbnail
- * @param file Image file
- * @param maxSize Maximum size (default 200px)
- * @returns Base64 encoded thumbnail
- */
-export async function generateThumbnail(
-  file: File,
-  maxSize: number = 200
-): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    
-    reader.onload = (e) => {
-      const img = new Image();
-      
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        
-        if (!ctx) {
-          reject(new Error('Failed to get canvas context'));
-          return;
-        }
-        
-        let width = img.width;
-        let height = img.height;
-        
-        if (width > height) {
-          if (width > maxSize) {
-            height = (height * maxSize) / width;
-            width = maxSize;
-          }
-        } else {
-          if (height > maxSize) {
-            width = (width * maxSize) / height;
-            height = maxSize;
-          }
-        }
-        
-        canvas.width = width;
-        canvas.height = height;
-        
-        ctx.drawImage(img, 0, 0, width, height);
-        
-        const thumbnailDataUrl = canvas.toDataURL('image/jpeg', 0.8);
-        resolve(thumbnailDataUrl);
-      };
-      
-      img.onerror = () => {
-        reject(new Error('Image loading failed'));
-      };
-      
-      img.src = e.target?.result as string;
-    };
-    
-    reader.onerror = () => {
-      reject(new Error('File reading failed'));
-    };
-    
-    reader.readAsDataURL(file);
-  });
+type ImageDimensions = { width: number; height: number };
+type ImageSource = 'file' | 'clipboard';
+
+interface ImageContextDraft {
+  file: File;
+  source: ImageSource;
+  imagePath?: string;
+  imageName: string;
+  dataUrl?: string;
+  metadata?: ImageContext['metadata'];
 }
 
-/**
- * Generate thumbnail from file path (Tauri environment)
- * @param filePath File path
- * @returns Base64 encoded thumbnail
- */
-export async function generateThumbnailFromPath(
-  filePath: string
-): Promise<string> {
-  // In a Tauri environment, the backend can generate thumbnails.
-  // Here we simplify the process and return the file path directly.
-  // TODO: Implement backend thumbnail generation
-  return `file://${filePath}`;
+function createImageId(source: ImageSource): string {
+  const suffix = Math.random().toString(36).slice(2, 11);
+  return source === 'clipboard'
+    ? `img-clipboard-${Date.now()}-${suffix}`
+    : `img-${Date.now()}-${suffix}`;
 }
 
-/**
- * Validate image file
- * @param file File object
- * @returns Validation result
- */
-export function validateImageFile(file: File): {
-  valid: boolean;
-  error?: string;
-} {
-  const supportedTypes = [
-    'image/png',
-    'image/jpeg',
-    'image/jpg',
-    'image/gif',
-    'image/webp'
-  ];
-  
-  if (!supportedTypes.includes(file.type)) {
-    return {
-      valid: false,
-      error: `Unsupported image format: ${file.type}`
-    };
-  }
-  
-  const maxSize = 20 * 1024 * 1024;
-  if (file.size > maxSize) {
-    return {
-      valid: false,
-      error: `Image too large (${(file.size / 1024 / 1024).toFixed(2)}MB), maximum supported 20MB`
-    };
-  }
-  
-  return { valid: true };
-}
-
-/**
- * Get image dimensions
- * @param file Image file
- * @returns Image width and height
- */
-export async function getImageDimensions(
-  file: File
-): Promise<{ width: number; height: number }> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    
-    reader.onload = (e) => {
-      const img = new Image();
-      
-      img.onload = () => {
-        resolve({
-          width: img.width,
-          height: img.height
-        });
-      };
-      
-      img.onerror = () => {
-        reject(new Error('Failed to get image dimensions'));
-      };
-      
-      img.src = e.target?.result as string;
-    };
-    
-    reader.onerror = () => {
-      reject(new Error('File reading failed'));
-    };
-    
-    reader.readAsDataURL(file);
-  });
-}
-
-/**
- * Get MIME type from filename
- * @param filename Filename
- * @returns MIME type
- */
-export function getMimeTypeFromFilename(filename: string): string {
-  const ext = filename.toLowerCase().split('.').pop();
-  
-  const mimeMap: Record<string, string> = {
-    'png': 'image/png',
-    'jpg': 'image/jpeg',
-    'jpeg': 'image/jpeg',
-    'gif': 'image/gif',
-    'webp': 'image/webp',
-  };
-  
-  return mimeMap[ext || ''] || 'image/jpeg';
-}
-
-/**
- * Create ImageContext from file
- * @param file File object
- * @returns ImageContext
- */
-export async function createImageContextFromFile(
-  file: File
-): Promise<ImageContext> {
-  const validation = validateImageFile(file);
-  if (!validation.valid) {
-    throw new Error(validation.error);
-  }
-  
-  let dimensions = { width: 0, height: 0 };
-  try {
-    dimensions = await getImageDimensions(file);
-  } catch (error) {
-    log.warn('Failed to get image dimensions', { fileName: file.name, error });
-  }
-  
-  let thumbnailUrl: string | undefined;
-  try {
-    thumbnailUrl = await generateThumbnail(file);
-  } catch (error) {
-    log.warn('Failed to generate thumbnail', { fileName: file.name, error });
-  }
-  
-  const imageContext: ImageContext = {
-    id: `img-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-    type: 'image',
-    imagePath: (file as any).path || '', // Electron/Tauri environments may have a path property.
-    imageName: file.name,
-    width: dimensions.width,
-    height: dimensions.height,
-    fileSize: file.size,
-    mimeType: file.type,
-    source: 'file',
-    isLocal: Boolean((file as any).path),
-    timestamp: Date.now(),
-    thumbnailUrl,
-    metadata: {}
-  };
-  
-  // If there is no path (web environment), read as data URL.
-  if (!imageContext.imagePath) {
-    imageContext.dataUrl = await readFileAsDataUrl(file);
-    imageContext.isLocal = false;
-  }
-  
-  return imageContext;
+function getFilePath(file: File): string {
+  return ((file as File & { path?: string }).path || '').trim();
 }
 
 function readFileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    
-    reader.onload = (e) => {
-      resolve(e.target?.result as string);
+
+    reader.onload = event => {
+      resolve(event.target?.result as string);
     };
-    
+
     reader.onerror = () => {
       reject(new Error('File reading failed'));
     };
-    
+
     reader.readAsDataURL(file);
   });
 }
 
-/**
- * Create ImageContext from clipboard
- * @param file File object from clipboard
- * @returns ImageContext
- */
-export async function createImageContextFromClipboard(
-  file: File
-): Promise<ImageContext> {
-  const validation = validateImageFile(file);
-  if (!validation.valid) {
-    throw new Error(validation.error);
+function loadImageFromDataUrl(dataUrl: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('Image loading failed'));
+    image.src = dataUrl;
+  });
+}
+
+function fitWithinBox(width: number, height: number, maxSize: number): ImageDimensions {
+  if (width <= maxSize && height <= maxSize) {
+    return { width, height };
   }
-  
-  let dimensions = { width: 0, height: 0 };
+
+  const scale = maxSize / Math.max(width, height);
+  return {
+    width: width * scale,
+    height: height * scale,
+  };
+}
+
+async function loadImageFromFile(file: File): Promise<HTMLImageElement> {
+  return loadImageFromDataUrl(await readFileAsDataUrl(file));
+}
+
+async function tryReadDimensions(file: File): Promise<ImageDimensions> {
   try {
-    dimensions = await getImageDimensions(file);
+    return await getImageDimensions(file);
   } catch (error) {
     log.warn('Failed to get image dimensions', { fileName: file.name, error });
+    return { width: 0, height: 0 };
   }
-  
-  let thumbnailUrl: string | undefined;
+}
+
+async function tryGenerateThumbnail(file: File): Promise<string | undefined> {
   try {
-    thumbnailUrl = await generateThumbnail(file);
+    return await generateThumbnail(file);
   } catch (error) {
     log.warn('Failed to generate thumbnail', { fileName: file.name, error });
+    return undefined;
   }
-  
-  const dataUrl = await readFileAsDataUrl(file);
-  
-  const imageContext: ImageContext = {
-    id: `img-clipboard-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+}
+
+function getClipboardImageName(file: File): string {
+  const rawName = file.name || '';
+  const extension = file.type.split('/')[1] || 'png';
+
+  if (!rawName || /^image\.\w+$/i.test(rawName)) {
+    clipboardImageCounter += 1;
+    return `image-${clipboardImageCounter}.${extension}`;
+  }
+
+  return rawName;
+}
+
+async function buildImageContext(draft: ImageContextDraft): Promise<ImageContext> {
+  const { file, source } = draft;
+  const dimensions = await tryReadDimensions(file);
+  const thumbnailUrl = await tryGenerateThumbnail(file);
+  const imagePath = draft.imagePath ?? '';
+
+  return {
+    id: createImageId(source),
     type: 'image',
-    imagePath: '', // Clipboard images do not have a path.
-    imageName: (() => {
-      const raw = file.name || '';
-      const ext = file.type.split('/')[1] || 'png';
-      const genericPattern = /^image\.\w+$/i;
-      if (!raw || genericPattern.test(raw)) {
-        clipboardImageCounter++;
-        return `image-${clipboardImageCounter}.${ext}`;
-      }
-      return raw;
-    })(),
+    imagePath,
+    imageName: draft.imageName,
     width: dimensions.width,
     height: dimensions.height,
     fileSize: file.size,
     mimeType: file.type,
-    dataUrl,
-    source: 'clipboard',
-    isLocal: false,
+    dataUrl: draft.dataUrl,
+    source,
+    isLocal: Boolean(imagePath),
     timestamp: Date.now(),
     thumbnailUrl,
-    metadata: {
-      fromClipboard: true
-    }
+    metadata: draft.metadata ?? {},
   };
-  
-  return imageContext;
 }
 
 /**
- * Check if file is an image
- * Use global language detection service
- * @param filename Filename
- * @returns Whether it is an image
+ * Generate image thumbnail.
+ */
+export async function generateThumbnail(
+  file: File,
+  maxSize: number = DEFAULT_THUMBNAIL_SIZE
+): Promise<string> {
+  const image = await loadImageFromFile(file);
+  const { width, height } = fitWithinBox(image.width, image.height, maxSize);
+  const canvas = document.createElement('canvas');
+  const context = canvas.getContext('2d');
+
+  if (!context) {
+    throw new Error('Failed to get canvas context');
+  }
+
+  canvas.width = width;
+  canvas.height = height;
+  context.drawImage(image, 0, 0, width, height);
+
+  return canvas.toDataURL('image/jpeg', 0.8);
+}
+
+/**
+ * Generate thumbnail from file path in a Tauri environment.
+ */
+export async function generateThumbnailFromPath(filePath: string): Promise<string> {
+  return `file://${filePath}`;
+}
+
+/**
+ * Validate image file.
+ */
+export function validateImageFile(file: File): {
+  valid: boolean;
+  error?: string;
+} {
+  if (!SUPPORTED_IMAGE_TYPES.has(file.type)) {
+    return {
+      valid: false,
+      error: `Unsupported image format: ${file.type}`,
+    };
+  }
+
+  if (file.size > MAX_IMAGE_SIZE_BYTES) {
+    return {
+      valid: false,
+      error: `Image too large (${(file.size / 1024 / 1024).toFixed(2)}MB), maximum supported 20MB`,
+    };
+  }
+
+  return { valid: true };
+}
+
+/**
+ * Get image dimensions.
+ */
+export async function getImageDimensions(file: File): Promise<ImageDimensions> {
+  const image = await loadImageFromFile(file);
+
+  return {
+    width: image.width,
+    height: image.height,
+  };
+}
+
+/**
+ * Get MIME type from filename.
+ */
+export function getMimeTypeFromFilename(filename: string): string {
+  const extension = filename.toLowerCase().split('.').pop() || '';
+  return MIME_BY_EXTENSION[extension] || 'image/jpeg';
+}
+
+/**
+ * Create ImageContext from a file.
+ */
+export async function createImageContextFromFile(file: File): Promise<ImageContext> {
+  const validation = validateImageFile(file);
+  if (!validation.valid) {
+    throw new Error(validation.error);
+  }
+
+  const imagePath = getFilePath(file);
+  const dataUrl = imagePath ? undefined : await readFileAsDataUrl(file);
+
+  return buildImageContext({
+    file,
+    source: 'file',
+    imagePath,
+    imageName: file.name,
+    dataUrl,
+  });
+}
+
+/**
+ * Create ImageContext from clipboard.
+ */
+export async function createImageContextFromClipboard(file: File): Promise<ImageContext> {
+  const validation = validateImageFile(file);
+  if (!validation.valid) {
+    throw new Error(validation.error);
+  }
+
+  return buildImageContext({
+    file,
+    source: 'clipboard',
+    imagePath: '',
+    imageName: getClipboardImageName(file),
+    dataUrl: await readFileAsDataUrl(file),
+    metadata: { fromClipboard: true },
+  });
+}
+
+/**
+ * Check whether a filename points to an image.
  */
 export function isImageFile(filename: string): boolean {
   return checkIsImageFile(filename);
 }
 
 /**
- * Format file size
- * @param bytes Bytes
- * @returns Formatted string
+ * Format file size.
  */
 export function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
-
