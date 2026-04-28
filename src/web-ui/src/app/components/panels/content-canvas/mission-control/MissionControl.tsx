@@ -9,8 +9,30 @@ import { useTranslation } from 'react-i18next';
 import { ThumbnailCard } from './ThumbnailCard';
 import { SearchFilter } from './SearchFilter';
 import { useCanvasStore } from '../stores';
-import type { EditorGroupId } from '../types';
+import type { CanvasTab, EditorGroupId, EditorGroupState } from '../types';
 import './MissionControl.scss';
+
+const ALL_GROUP_IDS: EditorGroupId[] = ['primary', 'secondary', 'tertiary'];
+const GROUP_FILTERS: Array<{
+  id: EditorGroupId;
+  labelKey: string;
+  shortLabelKey: string;
+  color: string;
+  colorRgb: string;
+}> = [
+  { id: 'primary', labelKey: 'canvas.groupPrimaryFull', shortLabelKey: 'canvas.groupPrimary', color: '#3b82f6', colorRgb: '59, 130, 246' },
+  { id: 'secondary', labelKey: 'canvas.groupSecondaryFull', shortLabelKey: 'canvas.groupSecondary', color: '#10b981', colorRgb: '16, 185, 129' },
+  { id: 'tertiary', labelKey: 'canvas.groupTertiaryFull', shortLabelKey: 'canvas.groupTertiary', color: '#f59e0b', colorRgb: '245, 158, 11' },
+];
+
+interface MissionTabEntry {
+  tab: CanvasTab;
+  groupId: EditorGroupId;
+}
+
+type OrganizedTabs = Record<EditorGroupId, MissionTabEntry[]> & {
+  all: MissionTabEntry[];
+};
 
 export interface MissionControlProps {
   /** Whether open */
@@ -21,6 +43,90 @@ export interface MissionControlProps {
   handleCloseWithDirtyCheck?: (tabId: string, groupId: EditorGroupId) => Promise<boolean>;
 }
 
+function createDefaultGroupSelection(): Set<EditorGroupId> {
+  return new Set(ALL_GROUP_IDS);
+}
+
+function visibleEntriesForGroup(tabs: CanvasTab[], groupId: EditorGroupId): MissionTabEntry[] {
+  return tabs
+    .filter(tab => !tab.isHidden)
+    .map(tab => ({ tab, groupId }));
+}
+
+function organizeTabsByGroup(
+  primaryTabs: CanvasTab[],
+  secondaryTabs: CanvasTab[],
+  tertiaryTabs: CanvasTab[],
+): OrganizedTabs {
+  const primary = visibleEntriesForGroup(primaryTabs, 'primary');
+  const secondary = visibleEntriesForGroup(secondaryTabs, 'secondary');
+  const tertiary = visibleEntriesForGroup(tertiaryTabs, 'tertiary');
+
+  return {
+    primary,
+    secondary,
+    tertiary,
+    all: [...primary, ...secondary, ...tertiary],
+  };
+}
+
+function tabMatchesSearch(tab: CanvasTab, query: string): boolean {
+  return (
+    tab.title.toLowerCase().includes(query) ||
+    tab.content.data?.filePath?.toLowerCase().includes(query) ||
+    tab.content.type.toLowerCase().includes(query)
+  );
+}
+
+function filterMissionTabs(
+  allTabs: MissionTabEntry[],
+  searchQuery: string,
+  selectedGroups: Set<EditorGroupId>,
+): MissionTabEntry[] {
+  const scopedTabs = selectedGroups.size < ALL_GROUP_IDS.length
+    ? allTabs.filter(({ groupId }) => selectedGroups.has(groupId))
+    : allTabs;
+
+  const query = searchQuery.trim().toLowerCase();
+  return query ? scopedTabs.filter(({ tab }) => tabMatchesSearch(tab, query)) : scopedTabs;
+}
+
+function getActiveTabId(
+  activeGroupId: EditorGroupId,
+  primaryGroup: EditorGroupState,
+  secondaryGroup: EditorGroupState,
+  tertiaryGroup: EditorGroupState,
+): string | null {
+  const group = activeGroupId === 'primary'
+    ? primaryGroup
+    : activeGroupId === 'secondary'
+      ? secondaryGroup
+      : tertiaryGroup;
+
+  return group.activeTabId;
+}
+
+function toggleGroupSelection(
+  selectedGroups: Set<EditorGroupId>,
+  groupId: EditorGroupId,
+): Set<EditorGroupId> {
+  const next = new Set(selectedGroups);
+  if (next.has(groupId)) {
+    next.delete(groupId);
+  } else {
+    next.add(groupId);
+  }
+  return next;
+}
+
+function groupFilterClassName(isActive: boolean): string {
+  return `canvas-mission-control__group-filter ${isActive ? 'is-active' : ''}`;
+}
+
+function shouldShowFilteredEmpty(searchQuery: string, selectedGroups: Set<EditorGroupId>): boolean {
+  return Boolean(searchQuery) || selectedGroups.size < ALL_GROUP_IDS.length;
+}
+
 export const MissionControl: React.FC<MissionControlProps> = ({
   isOpen,
   onClose,
@@ -28,7 +134,7 @@ export const MissionControl: React.FC<MissionControlProps> = ({
 }) => {
   const { t } = useTranslation('components');
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedGroups, setSelectedGroups] = useState<Set<EditorGroupId>>(new Set(['primary', 'secondary', 'tertiary']));
+  const [selectedGroups, setSelectedGroups] = useState<Set<EditorGroupId>>(createDefaultGroupSelection);
   const [, setDraggingTabId] = useState<string | null>(null);
   const {
     primaryGroup,
@@ -43,22 +149,7 @@ export const MissionControl: React.FC<MissionControlProps> = ({
   } = useCanvasStore();
   // Organize tabs by group
   const organizedTabs = useMemo(() => {
-    const primary = primaryGroup.tabs
-      .filter(t => !t.isHidden)
-      .map(t => ({ tab: t, groupId: 'primary' as EditorGroupId }));
-    const secondary = secondaryGroup.tabs
-      .filter(t => !t.isHidden)
-      .map(t => ({ tab: t, groupId: 'secondary' as EditorGroupId }));
-    const tertiary = tertiaryGroup.tabs
-      .filter(t => !t.isHidden)
-      .map(t => ({ tab: t, groupId: 'tertiary' as EditorGroupId }));
-
-    return {
-      primary,
-      secondary,
-      tertiary,
-      all: [...primary, ...secondary, ...tertiary],
-    };
+    return organizeTabsByGroup(primaryGroup.tabs, secondaryGroup.tabs, tertiaryGroup.tabs);
   }, [primaryGroup.tabs, secondaryGroup.tabs, tertiaryGroup.tabs]);
 
   // Aggregate all tabs (for search and stats)
@@ -66,36 +157,12 @@ export const MissionControl: React.FC<MissionControlProps> = ({
 
   // Filter matching tabs (search + group filter)
   const filteredTabs = useMemo(() => {
-    let result = allTabs;
-    
-    // Filter by group first
-    if (selectedGroups.size < 3) {
-      result = result.filter(({ groupId }) => selectedGroups.has(groupId));
-    }
-    
-    // Then filter by search query
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      result = result.filter(({ tab }) => {
-        return (
-          tab.title.toLowerCase().includes(query) ||
-          tab.content.data?.filePath?.toLowerCase().includes(query) ||
-          tab.content.type.toLowerCase().includes(query)
-        );
-      });
-    }
-    
-    return result;
+    return filterMissionTabs(allTabs, searchQuery, selectedGroups);
   }, [allTabs, searchQuery, selectedGroups]);
 
   // Active tab ID
   const activeTabId = useMemo(() => {
-    const group = activeGroupId === 'primary' 
-      ? primaryGroup 
-      : activeGroupId === 'secondary' 
-        ? secondaryGroup 
-        : tertiaryGroup;
-    return group.activeTabId;
+    return getActiveTabId(activeGroupId, primaryGroup, secondaryGroup, tertiaryGroup);
   }, [activeGroupId, primaryGroup, secondaryGroup, tertiaryGroup]);
 
   // Keyboard handling
@@ -154,21 +221,13 @@ export const MissionControl: React.FC<MissionControlProps> = ({
   useEffect(() => {
     if (!isOpen) {
       setSearchQuery('');
-      setSelectedGroups(new Set(['primary', 'secondary', 'tertiary']));
+      setSelectedGroups(createDefaultGroupSelection());
     }
   }, [isOpen]);
 
   // Toggle group filter
   const toggleGroupFilter = useCallback((groupId: EditorGroupId) => {
-    setSelectedGroups(prev => {
-      const next = new Set(prev);
-      if (next.has(groupId)) {
-        next.delete(groupId);
-      } else {
-        next.add(groupId);
-      }
-      return next;
-    });
+    setSelectedGroups(prev => toggleGroupSelection(prev, groupId));
   }, []);
 
   // Check for multiple groups
@@ -230,18 +289,14 @@ export const MissionControl: React.FC<MissionControlProps> = ({
             {/* Group filters - compact icon buttons */}
             {hasMultipleGroups && (
               <div className="canvas-mission-control__group-filters">
-                {[
-                  { id: 'primary' as EditorGroupId, labelKey: 'canvas.groupPrimaryFull', shortLabelKey: 'canvas.groupPrimary', color: '#3b82f6', colorRgb: '59, 130, 246' },
-                  { id: 'secondary' as EditorGroupId, labelKey: 'canvas.groupSecondaryFull', shortLabelKey: 'canvas.groupSecondary', color: '#10b981', colorRgb: '16, 185, 129' },
-                  { id: 'tertiary' as EditorGroupId, labelKey: 'canvas.groupTertiaryFull', shortLabelKey: 'canvas.groupTertiary', color: '#f59e0b', colorRgb: '245, 158, 11' },
-                ].map(({ id, labelKey, shortLabelKey, color, colorRgb }) => {
-                  const hasTabs = organizedTabs[id as keyof typeof organizedTabs].length > 0;
+                {GROUP_FILTERS.map(({ id, labelKey, shortLabelKey, color, colorRgb }) => {
+                  const hasTabs = organizedTabs[id].length > 0;
                   if (!hasTabs) return null;
                   
                   return (
                     <button
                       key={id}
-                      className={`canvas-mission-control__group-filter ${selectedGroups.has(id) ? 'is-active' : ''}`}
+                      className={groupFilterClassName(selectedGroups.has(id))}
                       onClick={() => toggleGroupFilter(id)}
                       title={t(labelKey)}
                       style={{ 
@@ -277,7 +332,7 @@ export const MissionControl: React.FC<MissionControlProps> = ({
             ))
           ) : (
             <div className="canvas-mission-control__empty">
-              {searchQuery || selectedGroups.size < 3 ? (
+              {shouldShowFilteredEmpty(searchQuery, selectedGroups) ? (
                 <span>{t('canvas.noMatchingFiles')}</span>
               ) : (
                 <span>{t('canvas.noOpenFiles')}</span>
