@@ -24,6 +24,80 @@ import type {
 } from '../types';
 
 const log = createLogger('TerminalService');
+const TERMINAL_EVENT_CHANNEL = 'terminal_event';
+const TERMINAL_SESSION_DESTROYED_EVENT = 'terminal-session-destroyed';
+
+type RawTerminalEvent = {
+  type: string;
+  payload?: Record<string, any>;
+};
+
+type NormalizedTerminalEvent = {
+  event?: TerminalEvent;
+  sessionId?: string;
+  isSessionDestroyed?: boolean;
+  ignored?: boolean;
+  unknownType?: string;
+};
+
+const normalizeTerminalEvent = (rawEvent: RawTerminalEvent): NormalizedTerminalEvent => {
+  const eventType = rawEvent.type;
+  const payload = rawEvent.payload || {};
+  const sessionId = payload.session_id;
+
+  switch (eventType) {
+    case 'Data':
+      return { event: { type: 'output', sessionId, data: payload.data }, sessionId };
+    case 'Ready':
+    case 'SessionCreated':
+      return { event: { type: 'ready', sessionId }, sessionId };
+    case 'Exit':
+      return { event: { type: 'exit', sessionId, exitCode: payload.exit_code }, sessionId };
+    case 'SessionDestroyed':
+      return {
+        event: { type: 'exit', sessionId, exitCode: undefined },
+        sessionId,
+        isSessionDestroyed: true,
+      };
+    case 'Error':
+      return { event: { type: 'error', sessionId, message: payload.message || payload.error }, sessionId };
+    case 'CwdChanged':
+      return { event: { type: 'cwd', sessionId, cwd: payload.cwd }, sessionId };
+    case 'TitleChanged':
+      return { event: { type: 'title', sessionId, title: payload.title }, sessionId };
+    case 'Resized':
+      return { event: { type: 'resize', sessionId, cols: payload.cols, rows: payload.rows }, sessionId };
+    case 'CommandStarted':
+    case 'CommandFinished':
+      return { ignored: true };
+    default:
+      return { unknownType: eventType };
+  }
+};
+
+const notifyTerminalCallbacks = (
+  callbacks: Iterable<TerminalEventCallback>,
+  event: TerminalEvent,
+  label: string
+) => {
+  for (const callback of callbacks) {
+    try {
+      callback(event);
+    } catch (error) {
+      log.error(label, error);
+    }
+  }
+};
+
+const dispatchTerminalDestroyed = (sessionId: string) => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  window.dispatchEvent(
+    new CustomEvent(TERMINAL_SESSION_DESTROYED_EVENT, { detail: { sessionId } })
+  );
+};
 
 /**
  * Singleton wrapper for terminal-related Tauri API calls.
@@ -57,7 +131,7 @@ export class TerminalService {
 
     this.connectingPromise = (async () => {
       try {
-        this.unlistenFn = await listen<TerminalEvent>('terminal_event', (event) => {
+        this.unlistenFn = await listen<TerminalEvent>(TERMINAL_EVENT_CHANNEL, (event) => {
           this.handleTerminalEvent(event.payload);
         });
         this.connected = true;
@@ -92,76 +166,26 @@ export class TerminalService {
    * Backend format: { type, payload: { session_id, ... } }
    * Frontend format: { type, sessionId, ... }
    */
-  private handleTerminalEvent(rawEvent: any): void {
-    const eventType = rawEvent.type;
-    const payload = rawEvent.payload || {};
-    const sessionId = payload.session_id;
-    const isSessionDestroyed = eventType === 'SessionDestroyed';
+  private handleTerminalEvent(rawEvent: RawTerminalEvent): void {
+    const normalized = normalizeTerminalEvent(rawEvent);
 
-    let event: TerminalEvent;
-    switch (eventType) {
-      case 'Data':
-        event = { type: 'output', sessionId, data: payload.data };
-        break;
-      case 'Ready':
-        event = { type: 'ready', sessionId };
-        break;
-      case 'SessionCreated':
-        event = { type: 'ready', sessionId };
-        break;
-      case 'Exit':
-        event = { type: 'exit', sessionId, exitCode: payload.exit_code };
-        break;
-      case 'SessionDestroyed':
-        // Backend-initiated terminal removal should both mark the terminal exited
-        // and notify other UI surfaces to close tabs/scenes bound to this session.
-        event = { type: 'exit', sessionId, exitCode: undefined };
-        break;
-      case 'Error':
-        event = { type: 'error', sessionId, message: payload.message || payload.error };
-        break;
-      case 'CwdChanged':
-        event = { type: 'cwd', sessionId, cwd: payload.cwd };
-        break;
-      case 'TitleChanged':
-        event = { type: 'title', sessionId, title: payload.title };
-        break;
-      case 'Resized':
-        event = { type: 'resize', sessionId, cols: payload.cols, rows: payload.rows };
-        break;
-      case 'CommandStarted':
-      case 'CommandFinished':
-        return;
-      default:
-        log.warn('Unknown event type', { eventType });
-        return;
+    if (normalized.ignored) return;
+    if (normalized.unknownType) {
+      log.warn('Unknown event type', { eventType: normalized.unknownType });
+      return;
     }
+    if (!normalized.event) return;
 
-    const sessionListeners = this.eventListeners.get(sessionId);
+    const { event, sessionId, isSessionDestroyed } = normalized;
+    const sessionListeners = sessionId ? this.eventListeners.get(sessionId) : undefined;
     if (sessionListeners) {
-      sessionListeners.forEach(callback => {
-        try {
-          callback(event);
-        } catch (error) {
-          log.error('Event callback error', error);
-        }
-      });
+      notifyTerminalCallbacks(sessionListeners, event, 'Event callback error');
     }
 
-    this.globalListeners.forEach(callback => {
-      try {
-        callback(event);
-      } catch (error) {
-        log.error('Global callback error', error);
-      }
-    });
+    notifyTerminalCallbacks(this.globalListeners, event, 'Global callback error');
 
     if (isSessionDestroyed && sessionId) {
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(
-          new CustomEvent('terminal-session-destroyed', { detail: { sessionId } })
-        );
-      }
+      dispatchTerminalDestroyed(sessionId);
       this.eventListeners.delete(sessionId);
     }
   }
