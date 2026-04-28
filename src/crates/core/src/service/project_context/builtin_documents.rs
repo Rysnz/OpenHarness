@@ -14,6 +14,8 @@ use super::generation_prompt::{
 };
 use super::types::DocumentPriority;
 
+const BUILTIN_CATEGORY_IDS: &[&str] = &["general", "coding", "design", "review"];
+
 /// Built-in document definition (static configuration)
 #[derive(Debug, Clone)]
 pub struct BuiltinDocument {
@@ -43,7 +45,7 @@ pub struct BuiltinDocument {
 
 /// Built-in category ID list
 pub fn get_builtin_categories() -> Vec<&'static str> {
-    vec!["general", "coding", "design", "review"]
+    BUILTIN_CATEGORY_IDS.to_vec()
 }
 
 /// Built-in document list
@@ -303,13 +305,23 @@ pub static BUILTIN_DOCUMENTS: &[BuiltinDocument] = &[
 
 /// Finds a built-in document by ID.
 pub fn find_builtin_document(id: &str) -> Option<&'static BuiltinDocument> {
-    BUILTIN_DOCUMENTS.iter().find(|doc| doc.id == id)
+    BUILTIN_DOCUMENTS
+        .iter()
+        .find(|doc| document_has_id(doc, id))
 }
 
 /// Returns built-in documents for the given category.
 pub fn get_documents_by_category(category_id: &str) -> Vec<&'static BuiltinDocument> {
     BUILTIN_DOCUMENTS
         .iter()
-        .filter(|doc| doc.category_id == category_id)
+        .filter(|doc| document_belongs_to_category(doc, category_id))
         .collect()
+}
+
+fn document_has_id(document: &BuiltinDocument, id: &str) -> bool {
+    document.id == id
+}
+
+fn document_belongs_to_category(document: &BuiltinDocument, category_id: &str) -> bool {
+    document.category_id == category_id
 }
