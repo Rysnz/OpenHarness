@@ -2,6 +2,24 @@
  * FlowTextBlock styles
  */
 
+$_flow-ink-mask-rest: linear-gradient(
+  90deg,
+  #000 0%,
+  #000 50%,
+  rgba(0, 0, 0, 0.7) 70%,
+  rgba(0, 0, 0, 0.4) 85%,
+  rgba(0, 0, 0, 0.15) 100%
+);
+
+$_flow-ink-mask-active: linear-gradient(
+  90deg,
+  #000 0%,
+  #000 55%,
+  rgba(0, 0, 0, 0.75) 75%,
+  rgba(0, 0, 0, 0.5) 90%,
+  rgba(0, 0, 0, 0.25) 100%
+);
+
 .flow-text-block {
   width: 100%;
 
@@ -125,22 +143,8 @@
     
     // Streaming output uses an ink seep effect
     &--streaming {
-      -webkit-mask-image: linear-gradient(
-        90deg,
-        #000 0%,
-        #000 50%,
-        rgba(0, 0, 0, 0.7) 70%,
-        rgba(0, 0, 0, 0.4) 85%,
-        rgba(0, 0, 0, 0.15) 100%
-      );
-      mask-image: linear-gradient(
-        90deg,
-        #000 0%,
-        #000 50%,
-        rgba(0, 0, 0, 0.7) 70%,
-        rgba(0, 0, 0, 0.4) 85%,
-        rgba(0, 0, 0, 0.15) 100%
-      );
+      -webkit-mask-image: $_flow-ink-mask-rest;
+      mask-image: $_flow-ink-mask-rest;
       animation: ink-fade-pulse 2s ease-in-out infinite;
     }
   }
@@ -150,32 +154,24 @@
 }
 
 /* Light theme: copy button icon color (scoped to flow chat). */
-:root[data-theme='light'] .flow-text-block .markdown-renderer .code-block-wrapper .copy-button:hover,
-:root[data-theme-type='light'] .flow-text-block .markdown-renderer .code-block-wrapper .copy-button:hover,
-[data-theme-type='light'] .flow-text-block .markdown-renderer .code-block-wrapper .copy-button:hover,
-.light .flow-text-block .markdown-renderer .code-block-wrapper .copy-button:hover {
+:is(:root[data-theme='light'], :root[data-theme-type='light'], [data-theme-type='light'], .light)
+  .flow-text-block .markdown-renderer .code-block-wrapper .copy-button:hover {
   color: rgba(0, 0, 0, 0.5);
 }
 
-:root[data-theme='light'] .flow-text-block .markdown-renderer .code-block-wrapper .copy-button.copy-success:hover,
-:root[data-theme-type='light'] .flow-text-block .markdown-renderer .code-block-wrapper .copy-button.copy-success:hover,
-[data-theme-type='light'] .flow-text-block .markdown-renderer .code-block-wrapper .copy-button.copy-success:hover,
-.light .flow-text-block .markdown-renderer .code-block-wrapper .copy-button.copy-success:hover {
+:is(:root[data-theme='light'], :root[data-theme-type='light'], [data-theme-type='light'], .light)
+  .flow-text-block .markdown-renderer .code-block-wrapper .copy-button.copy-success:hover {
   color: #1a7f37;
 }
 
-:root[data-theme='light'] .flow-text-block .markdown-renderer .inline-code,
-:root[data-theme-type='light'] .flow-text-block .markdown-renderer .inline-code,
-[data-theme-type='light'] .flow-text-block .markdown-renderer .inline-code,
-.light .flow-text-block .markdown-renderer .inline-code {
+:is(:root[data-theme='light'], :root[data-theme-type='light'], [data-theme-type='light'], .light)
+  .flow-text-block .markdown-renderer .inline-code {
   background: transparent;
   border: none;
 }
 
-:root[data-theme='light'] .flow-text-block .markdown-renderer .inline-code:hover,
-:root[data-theme-type='light'] .flow-text-block .markdown-renderer .inline-code:hover,
-[data-theme-type='light'] .flow-text-block .markdown-renderer .inline-code:hover,
-.light .flow-text-block .markdown-renderer .inline-code:hover {
+:is(:root[data-theme='light'], :root[data-theme-type='light'], [data-theme-type='light'], .light)
+  .flow-text-block .markdown-renderer .inline-code:hover {
   background: transparent;
   border: none;
 }
@@ -191,40 +187,12 @@
 /* Ink seep pulse animation */
 @keyframes ink-fade-pulse {
   0%, 100% {
-    -webkit-mask-image: linear-gradient(
-      90deg,
-      #000 0%,
-      #000 50%,
-      rgba(0, 0, 0, 0.7) 70%,
-      rgba(0, 0, 0, 0.4) 85%,
-      rgba(0, 0, 0, 0.15) 100%
-    );
-    mask-image: linear-gradient(
-      90deg,
-      #000 0%,
-      #000 50%,
-      rgba(0, 0, 0, 0.7) 70%,
-      rgba(0, 0, 0, 0.4) 85%,
-      rgba(0, 0, 0, 0.15) 100%
-    );
+    -webkit-mask-image: $_flow-ink-mask-rest;
+    mask-image: $_flow-ink-mask-rest;
   }
   50% {
-    -webkit-mask-image: linear-gradient(
-      90deg,
-      #000 0%,
-      #000 55%,
-      rgba(0, 0, 0, 0.75) 75%,
-      rgba(0, 0, 0, 0.5) 90%,
-      rgba(0, 0, 0, 0.25) 100%
-    );
-    mask-image: linear-gradient(
-      90deg,
-      #000 0%,
-      #000 55%,
-      rgba(0, 0, 0, 0.75) 75%,
-      rgba(0, 0, 0, 0.5) 90%,
-      rgba(0, 0, 0, 0.25) 100%
-    );
+    -webkit-mask-image: $_flow-ink-mask-active;
+    mask-image: $_flow-ink-mask-active;
   }
 }
 
