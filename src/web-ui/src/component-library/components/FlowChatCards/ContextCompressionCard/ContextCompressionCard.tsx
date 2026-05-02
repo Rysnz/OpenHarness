@@ -1,13 +1,11 @@
-/**
- * ContextCompressionCard - Context Compression Tool Card Component
- * Displays the AI context compression process and results
- */
-
 import React from 'react';
-import { Loader2, CheckCircle, XCircle, Archive } from 'lucide-react';
+import { Archive, CheckCircle, Loader2, XCircle } from 'lucide-react';
 import { useI18n } from '@/infrastructure/i18n';
 import { BaseToolCard, BaseToolCardProps } from '../BaseToolCard';
 import './ContextCompressionCard.scss';
+
+type CompressionStatus = NonNullable<BaseToolCardProps['status']>;
+type Translate = ReturnType<typeof useI18n>['t'];
 
 export interface ContextCompressionCardProps extends Omit<BaseToolCardProps, 'toolName' | 'displayName'> {
   compressionCount?: number;
@@ -25,90 +23,182 @@ export interface ContextCompressionCardProps extends Omit<BaseToolCardProps, 'to
   };
 }
 
-export const ContextCompressionCard: React.FC<ContextCompressionCardProps> = ({
-  compressionCount = 1,
-  tokensBefore,
-  tokensAfter,
-  compressionRatio,
-  duration,
-  trigger = 'manual',
-  input,
-  result,
-  status = 'pending',
-  displayMode = 'standard',
-  ...baseProps
-}) => {
-  const { t } = useI18n('components');
+interface CompressionMetrics {
+  count: number;
+  tokensBefore?: number;
+  tokensAfter?: number;
+  ratio?: number;
+  duration?: number;
+  trigger: string;
+  savedTokens?: number;
+}
 
-  const resolvedCompressionCount = compressionCount || result?.compression_count || 1;
+function resolveCompressionMetrics(props: ContextCompressionCardProps): CompressionMetrics {
+  const { compressionCount = 1, tokensBefore, tokensAfter, compressionRatio, duration, trigger = 'manual' } = props;
+  const { input, result } = props;
   const resolvedTokensBefore = tokensBefore || result?.tokens_before || input?.tokens_before;
   const resolvedTokensAfter = tokensAfter || result?.tokens_after || input?.tokens_after;
-  const resolvedCompressionRatio = compressionRatio || result?.compression_ratio || 
-    (resolvedTokensBefore && resolvedTokensAfter ? (resolvedTokensAfter / resolvedTokensBefore) : undefined);
-  const resolvedDuration = duration || result?.duration;
-  const resolvedTrigger = trigger || result?.trigger || input?.trigger || 'manual';
+  const ratio =
+    compressionRatio ||
+    result?.compression_ratio ||
+    (resolvedTokensBefore && resolvedTokensAfter ? resolvedTokensAfter / resolvedTokensBefore : undefined);
 
-  const getTriggerText = (triggerType: string) => {
-    switch (triggerType) {
-      case 'user_message':
-        return t('flowChatCards.contextCompressionCard.triggerBeforeUserMessage');
-      case 'tool_batch':
-        return t('flowChatCards.contextCompressionCard.triggerAfterToolBatch');
-      case 'ai_response':
-        return t('flowChatCards.contextCompressionCard.triggerAfterAiResponse');
-      case 'manual':
-        return t('flowChatCards.contextCompressionCard.triggerManual');
-      default:
-        return t('flowChatCards.contextCompressionCard.triggerAuto');
-    }
+  return {
+    count: compressionCount || result?.compression_count || 1,
+    tokensBefore: resolvedTokensBefore,
+    tokensAfter: resolvedTokensAfter,
+    ratio,
+    duration: duration || result?.duration,
+    trigger: trigger || result?.trigger || input?.trigger || 'manual',
+    savedTokens:
+      resolvedTokensBefore && resolvedTokensAfter ? resolvedTokensBefore - resolvedTokensAfter : undefined,
+  };
+}
+
+function triggerText(triggerType: string, t: Translate): string {
+  const keyByTrigger: Record<string, string> = {
+    user_message: 'triggerBeforeUserMessage',
+    tool_batch: 'triggerAfterToolBatch',
+    ai_response: 'triggerAfterAiResponse',
+    manual: 'triggerManual',
   };
 
-  const savedTokens = resolvedTokensBefore && resolvedTokensAfter ? 
-    resolvedTokensBefore - resolvedTokensAfter : undefined;
+  return t(`flowChatCards.contextCompressionCard.${keyByTrigger[triggerType] || 'triggerAuto'}`);
+}
 
-  const getStatusIcon = (size: number = 14) => {
-    switch (status) {
-      case 'running':
-      case 'streaming':
-        return <Loader2 className="context-compression-card__status-spinner" size={size} />;
-      case 'completed':
-        return <CheckCircle className="context-compression-card__status-success" size={size} />;
-      case 'error':
-        return <XCircle className="context-compression-card__status-error" size={size} />;
-      default:
-        return <Archive className="context-compression-card__status-pending" size={size} />;
-    }
-  };
+function durationText(duration: number): string {
+  return duration < 1000 ? `${duration}ms` : `${(duration / 1000).toFixed(2)}s`;
+}
 
-  if (displayMode === 'compact') {
+function tokenTransition(metrics: CompressionMetrics): string | null {
+  if (metrics.tokensBefore === undefined || metrics.tokensAfter === undefined) {
+    return null;
+  }
+
+  return `${metrics.tokensBefore.toLocaleString()} -> ${metrics.tokensAfter.toLocaleString()} tokens`;
+}
+
+function savedTokenText(metrics: CompressionMetrics, t: Translate, precision: number): string | null {
+  if (metrics.savedTokens === undefined || metrics.ratio === undefined) {
+    return null;
+  }
+
+  return t('flowChatCards.contextCompressionCard.savedTokens', {
+    count: metrics.savedTokens.toLocaleString(),
+    ratio: (metrics.ratio * 100).toFixed(precision),
+  });
+}
+
+function statusIcon(status: CompressionStatus, size = 14): React.ReactElement {
+  switch (status) {
+    case 'running':
+    case 'streaming':
+      return <Loader2 className="context-compression-card__status-spinner" size={size} />;
+    case 'completed':
+      return <CheckCircle className="context-compression-card__status-success" size={size} />;
+    case 'error':
+      return <XCircle className="context-compression-card__status-error" size={size} />;
+    default:
+      return <Archive className="context-compression-card__status-pending" size={size} />;
+  }
+}
+
+function isProcessing(status: CompressionStatus): boolean {
+  return status === 'running' || status === 'streaming';
+}
+
+interface CompactCompressionCardProps {
+  metrics: CompressionMetrics;
+  status: CompressionStatus;
+  t: Translate;
+}
+
+function CompactCompressionCard({ metrics, status, t }: CompactCompressionCardProps): React.ReactElement {
+  const transition = tokenTransition(metrics);
+  const saved = savedTokenText(metrics, t, 0);
+
+  return (
+    <div className={`context-compression-card context-compression-card--compact status-${status}`}>
+      <span className="context-compression-card__status-icon">{statusIcon(status, 14)}</span>
+      <span className="context-compression-card__action">
+        {isProcessing(status)
+          ? t('flowChatCards.contextCompressionCard.compressing')
+          : t('flowChatCards.contextCompressionCard.title')}
+      </span>
+      {transition && <span className="context-compression-card__tokens">{transition}</span>}
+      {status === 'completed' && saved && <span className="context-compression-card__result">{saved}</span>}
+    </div>
+  );
+}
+
+interface CompressionDetailsProps {
+  metrics: CompressionMetrics;
+  status: CompressionStatus;
+  t: Translate;
+}
+
+function CompressionDetails({ metrics, status, t }: CompressionDetailsProps): React.ReactElement | null {
+  if (isProcessing(status)) {
     return (
-      <div className={`context-compression-card context-compression-card--compact status-${status}`}>
-        <span className="context-compression-card__status-icon">{getStatusIcon(14)}</span>
-        
-        <span className="context-compression-card__action">
-          {status === 'running' || status === 'streaming' ? t('flowChatCards.contextCompressionCard.compressing') : t('flowChatCards.contextCompressionCard.title')}
+      <div className="context-compression-card__processing">
+        <Loader2 className="context-compression-card__processing-icon" size={14} />
+        <span>{t('flowChatCards.contextCompressionCard.analyzing')}</span>
+      </div>
+    );
+  }
+
+  if (status !== 'completed') {
+    return null;
+  }
+
+  const transition = tokenTransition(metrics);
+  const saved = savedTokenText(metrics, t, 1);
+
+  return (
+    <>
+      <div className="context-compression-card__simple-row">
+        <span className="context-compression-card__simple-label">
+          {t('flowChatCards.contextCompressionCard.triggerTime', {
+            trigger: triggerText(metrics.trigger, t),
+            count: metrics.count,
+          })}
         </span>
-        
-        {resolvedTokensBefore !== undefined && resolvedTokensAfter !== undefined && (
-          <span className="context-compression-card__tokens">
-            {resolvedTokensBefore.toLocaleString()} → {resolvedTokensAfter.toLocaleString()} tokens
-          </span>
-        )}
-        
-        {status === 'completed' && savedTokens !== undefined && resolvedCompressionRatio !== undefined && (
-          <span className="context-compression-card__result">
-            {t('flowChatCards.contextCompressionCard.savedTokens', { count: savedTokens.toLocaleString(), ratio: (resolvedCompressionRatio * 100).toFixed(0) })}
+        {metrics.duration !== undefined && (
+          <span className="context-compression-card__simple-duration">
+            {t('flowChatCards.contextCompressionCard.duration')} {durationText(metrics.duration)}
           </span>
         )}
       </div>
-    );
+
+      {transition && (
+        <div className="context-compression-card__simple-row context-compression-card__simple-row--stats">
+          <span className="context-compression-card__simple-tokens">{transition}</span>
+          {saved && <span className="context-compression-card__simple-savings">{saved}</span>}
+        </div>
+      )}
+    </>
+  );
+}
+
+export const ContextCompressionCard: React.FC<ContextCompressionCardProps> = ({
+  status = 'pending',
+  displayMode = 'standard',
+  input,
+  result,
+  ...baseProps
+}) => {
+  const { t } = useI18n('components');
+  const metrics = resolveCompressionMetrics({ ...baseProps, input, result, status, displayMode });
+
+  if (displayMode === 'compact') {
+    return <CompactCompressionCard metrics={metrics} status={status} t={t} />;
   }
 
   return (
     <BaseToolCard
       toolName="ContextCompression"
       displayName={t('flowChatCards.contextCompressionCard.title')}
-      icon={getStatusIcon(16)}
+      icon={statusIcon(status, 16)}
       description={t('flowChatCards.contextCompressionCard.description')}
       status={status}
       displayMode={displayMode}
@@ -118,40 +208,7 @@ export const ContextCompressionCard: React.FC<ContextCompressionCardProps> = ({
       className="context-compression-card"
       {...baseProps}
     >
-      {(status === 'running' || status === 'streaming') && (
-        <div className="context-compression-card__processing">
-          <Loader2 className="context-compression-card__processing-icon" size={14} />
-          <span>{t('flowChatCards.contextCompressionCard.analyzing')}</span>
-        </div>
-      )}
-
-      {status === 'completed' && (
-        <>
-          <div className="context-compression-card__simple-row">
-            <span className="context-compression-card__simple-label">
-              {t('flowChatCards.contextCompressionCard.triggerTime', { trigger: getTriggerText(resolvedTrigger), count: resolvedCompressionCount })}
-            </span>
-            {resolvedDuration !== undefined && (
-              <span className="context-compression-card__simple-duration">
-                {t('flowChatCards.contextCompressionCard.duration')} {resolvedDuration < 1000 ? `${resolvedDuration}ms` : `${(resolvedDuration / 1000).toFixed(2)}s`}
-              </span>
-            )}
-          </div>
-
-          {resolvedTokensBefore !== undefined && resolvedTokensAfter !== undefined && (
-            <div className="context-compression-card__simple-row context-compression-card__simple-row--stats">
-              <span className="context-compression-card__simple-tokens">
-                {resolvedTokensBefore?.toLocaleString()} → {resolvedTokensAfter?.toLocaleString()} tokens
-              </span>
-              {savedTokens !== undefined && resolvedCompressionRatio !== undefined && (
-                <span className="context-compression-card__simple-savings">
-                  {t('flowChatCards.contextCompressionCard.savedTokens', { count: savedTokens.toLocaleString(), ratio: (resolvedCompressionRatio * 100).toFixed(1) })}
-                </span>
-              )}
-            </div>
-          )}
-        </>
-      )}
+      <CompressionDetails metrics={metrics} status={status} t={t} />
     </BaseToolCard>
   );
 };
