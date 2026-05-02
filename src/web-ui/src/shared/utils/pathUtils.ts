@@ -1,89 +1,70 @@
- 
+const slashify = (path: string): string => path.replace(/\\/g, '/');
+const trimTrailingSlashes = (path: string): string => path.replace(/\/+$/, '');
+const lastSeparatorIndex = (path: string): number =>
+  Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
 
- 
 /**
  * Normalize a remote SSH/SFTP path (always POSIX). Safe on Windows clients where
  * UI or path APIs may introduce backslashes or duplicate slashes.
  */
 export function normalizeRemoteWorkspacePath(path: string): string {
   if (typeof path !== 'string') return path;
-  let s = path.replace(/\\/g, '/');
+  let s = slashify(path);
   while (s.includes('//')) {
     s = s.replace('//', '/');
   }
   if (s === '/') return s;
-  return s.replace(/\/+$/, '');
+  return trimTrailingSlashes(s);
 }
 
 export function normalizePath(path: string): string {
   if (typeof path !== 'string') return path;
-  
-  
-  
+
   let normalized = path.replace(/^file:\/+/, '');
-  
-  
-  normalized = normalized.replace(/\\/g, '/');
-  
-  
-  
+  normalized = slashify(normalized);
+
   //   - /D:/code/... -> D:/code/...
   //   - /d:/code/... -> d:/code/...
   //   - //D:/code/... -> D:/code/...
   normalized = normalized.replace(/^\/+([a-zA-Z]:)/, '$1');
-  
-  
   normalized = normalized.replace(/^([a-z]):/, (_match, letter) => letter.toUpperCase() + ':');
-  
-  
   normalized = normalized.replace(/\/+/g, '/');
-  
-  
+
   try {
     const decoded = decodeURIComponent(normalized);
-    
     if (decoded !== normalized) {
       normalized = decoded;
     }
   } catch (_error) {
-    
+    // Keep the original path if it contains invalid percent escapes.
   }
-  
+
   return normalized;
 }
 
- 
 export function isSamePath(path1: string, path2: string): boolean {
   return normalizePath(path1) === normalizePath(path2);
 }
 
- 
 export function uriToPath(uri: string): string {
   return normalizePath(uri);
 }
 
- 
 export function pathToUri(path: string): string {
-  
   const normalized = normalizePath(path);
-  
   return `file:///${normalized}`;
 }
 
- 
 export function joinPath(basePath: string, relativePath: string): string {
-  
-  const normalizedBase = basePath.replace(/\\/g, '/').replace(/\/+$/, '');
-  
-  const normalizedRelative = relativePath.replace(/\\/g, '/').replace(/^\/+/, '');
-  
+  const normalizedBase = trimTrailingSlashes(slashify(basePath));
+  const normalizedRelative = slashify(relativePath).replace(/^\/+/, '');
   return `${normalizedBase}/${normalizedRelative}`;
 }
 
 /** Last path segment (file or folder name). Handles mixed `/` and `\\`. */
 export function basenamePath(fullPath: string): string {
   if (!fullPath || typeof fullPath !== 'string') return '';
-  const i = Math.max(fullPath.lastIndexOf('/'), fullPath.lastIndexOf('\\'));
+  const i = lastSeparatorIndex(fullPath);
   if (i < 0) return fullPath;
   return fullPath.slice(i + 1);
 }
@@ -91,7 +72,7 @@ export function basenamePath(fullPath: string): string {
 /** Parent directory; supports mixed separators and Unix root (`/` parent of `/foo`). */
 export function dirnameAbsolutePath(fullPath: string): string {
   if (!fullPath || typeof fullPath !== 'string') return '';
-  const i = Math.max(fullPath.lastIndexOf('/'), fullPath.lastIndexOf('\\'));
+  const i = lastSeparatorIndex(fullPath);
   if (i < 0) return '';
   if (i === 0) return fullPath[0] === '/' ? '/' : '';
   return fullPath.slice(0, i);
@@ -100,7 +81,7 @@ export function dirnameAbsolutePath(fullPath: string): string {
 /** Replace the final segment; keeps the separator style before the basename. */
 export function replaceBasename(fullPath: string, newName: string): string {
   if (!fullPath || typeof fullPath !== 'string') return newName;
-  const i = Math.max(fullPath.lastIndexOf('/'), fullPath.lastIndexOf('\\'));
+  const i = lastSeparatorIndex(fullPath);
   if (i < 0) return newName;
   return `${fullPath.slice(0, i + 1)}${newName}`;
 }
@@ -121,8 +102,8 @@ export function normalizeLocalPathForRename(path: string): string {
  */
 export function pathsEquivalentFs(a: string, b: string): boolean {
   if (a === b) return true;
-  const ka = a.replace(/\\/g, '/');
-  const kb = b.replace(/\\/g, '/');
+  const ka = slashify(a);
+  const kb = slashify(b);
   if (ka === kb) return true;
   const winLike = /^[a-zA-Z]:/.test(a.trim()) || a.startsWith('\\\\');
   if (winLike) return ka.toLowerCase() === kb.toLowerCase();
