@@ -1,5 +1,30 @@
 @use '../../component-library/styles/_extended-mixins' as mixins;
 
+$turn-history-border: #e5e7eb;
+$turn-history-heading: #111827;
+$turn-history-muted: #6b7280;
+$turn-history-soft: #f3f4f6;
+$turn-history-accent: #3b82f6;
+$turn-history-mono: 'Monaco', 'Consolas', monospace;
+
+@mixin turn-row($justify: flex-start, $align: center) {
+  display: flex;
+  justify-content: $justify;
+  align-items: $align;
+}
+
+@mixin turn-history-empty-copy($body, $hint) {
+  color: $hint;
+
+  p {
+    color: $body;
+
+    &.hint {
+      color: $hint;
+    }
+  }
+}
+
 .turn-history-panel {
   padding: 16px;
   background: var(--color-bg-primary);
@@ -7,24 +32,22 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 
   .turn-history-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
+    @include turn-row(space-between);
     margin-bottom: 16px;
     padding-bottom: 12px;
-    border-bottom: 1px solid #e5e7eb;
+    border-bottom: 1px solid $turn-history-border;
 
     h3 {
       margin: 0;
       font-size: 16px;
       font-weight: 600;
-      color: #111827;
+      color: $turn-history-heading;
     }
 
     .turn-count {
       font-size: 12px;
-      color: #6b7280;
-      background: #f3f4f6;
+      color: $turn-history-muted;
+      background: $turn-history-soft;
       padding: 4px 8px;
       border-radius: 4px;
     }
@@ -36,35 +59,32 @@
     gap: 12px;
     max-height: 500px;
     overflow-y: auto;
-
   }
 
   .turn-history-item {
     padding: 12px;
-    border: 1px solid #e5e7eb;
+    border: 1px solid $turn-history-border;
     border-radius: 6px;
     transition: all 0.2s ease;
 
     &:hover {
-      border-color: #3b82f6;
+      border-color: $turn-history-accent;
       box-shadow: 0 2px 4px rgba(59, 130, 246, 0.1);
     }
 
     &.current {
       background: #f0f9ff;
-      border-color: #3b82f6;
+      border-color: $turn-history-accent;
     }
 
     .turn-item-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
+      @include turn-row(space-between);
       margin-bottom: 8px;
 
       .turn-index {
         font-size: 14px;
         font-weight: 600;
-        color: #111827;
+        color: $turn-history-heading;
       }
     }
 
@@ -75,11 +95,11 @@
       border-radius: 4px;
 
       .files-label {
-        font-size: 12px;
-        color: #6b7280;
-        font-weight: 500;
         display: block;
         margin-bottom: 4px;
+        font-size: 12px;
+        font-weight: 500;
+        color: $turn-history-muted;
       }
 
       .files-list {
@@ -87,26 +107,26 @@
         padding-left: 16px;
 
         .file-item {
+          margin: 2px 0;
+          font-family: $turn-history-mono;
           font-size: 12px;
           color: #374151;
-          margin: 2px 0;
-          font-family: 'Monaco', 'Consolas', monospace;
         }
 
         .file-item-more {
+          margin-left: -16px;
+          color: $turn-history-muted;
           font-size: 12px;
-          color: #6b7280;
           font-style: italic;
           list-style: none;
-          margin-left: -16px;
         }
       }
     }
 
     .turn-item-time {
-      font-size: 11px;
-      color: #9ca3af;
       margin-top: 8px;
+      color: #9ca3af;
+      font-size: 11px;
     }
   }
 }
@@ -114,17 +134,17 @@
 .turn-history-panel-loading {
   padding: 40px;
   text-align: center;
-  color: #6b7280;
+  color: $turn-history-muted;
   font-size: 14px;
 }
 
 .turn-history-panel-empty {
   padding: 40px;
   text-align: center;
-  
+
   p {
     margin: 8px 0;
-    color: #6b7280;
+    color: $turn-history-muted;
     font-size: 14px;
 
     &.hint {
@@ -134,7 +154,6 @@
   }
 }
 
-// Dark theme
 @media (prefers-color-scheme: dark) {
   .turn-history-panel {
     background: #1f2937;
@@ -153,19 +172,16 @@
       }
     }
 
-    .turn-history-list {
-    }
-
     .turn-history-item {
       border-color: #374151;
 
-      &:hover {
-        border-color: #3b82f6;
+      &:hover,
+      &.current {
+        border-color: $turn-history-accent;
       }
 
       &.current {
         background: #1e3a8a;
-        border-color: #3b82f6;
       }
 
       .turn-item-header .turn-index {
@@ -191,23 +207,13 @@
       }
 
       .turn-item-time {
-        color: #6b7280;
+        color: $turn-history-muted;
       }
     }
   }
 
   .turn-history-panel-loading,
   .turn-history-panel-empty {
-    color: #9ca3af;
-
-    p {
-      color: #9ca3af;
-
-      &.hint {
-        color: #6b7280;
-      }
-    }
+    @include turn-history-empty-copy(#9ca3af, $turn-history-muted);
   }
 }
-
-
