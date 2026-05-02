@@ -3,20 +3,45 @@
  * Combines mission control entry and overflow menu.
  */
 
-// Button wrapper
-.canvas-tab-panorama-wrapper {
+$tab-panorama-size: 26px;
+$tab-menu-min: 200px;
+$tab-menu-max: 280px;
+$tab-menu-list-max: 280px;
+$tab-menu-shadow: 0 8px 24px var(--color-shadow, rgba(0, 0, 0, 0.5));
+$tab-menu-radius: 6px;
+$tab-row-pad: 6px 12px;
+
+@mixin tab-row($justify: null) {
   display: flex;
   align-items: center;
+
+  @if $justify != null {
+    justify-content: $justify;
+  }
+}
+
+@mixin tab-square($size) {
+  width: $size;
+  height: $size;
+}
+
+@mixin tab-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+// Button wrapper
+.canvas-tab-panorama-wrapper {
+  @include tab-row;
 }
 
 // Mission control button (with overflow)
 .canvas-tab-panorama-btn {
   position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
+  @include tab-row(center);
+  @include tab-square($tab-panorama-size);
+
   padding: 0;
   background: transparent;
   border: 1px dashed transparent;
@@ -79,10 +104,10 @@
 .canvas-tab-overflow-menu {
   background: var(--color-bg-elevated, var(--color-bg-primary, #1a1a1a));
   border: 1px solid var(--border-base);
-  border-radius: 6px;
-  box-shadow: 0 8px 24px var(--color-shadow, rgba(0, 0, 0, 0.5));
-  min-width: 200px;
-  max-width: 280px;
+  border-radius: $tab-menu-radius;
+  box-shadow: $tab-menu-shadow;
+  min-width: $tab-menu-min;
+  max-width: $tab-menu-max;
   max-height: 360px;
   overflow: hidden;
   z-index: 99999;
@@ -101,8 +126,8 @@
 
   // Mission control entry (fixed first item)
   &__mission-control {
-    display: flex;
-    align-items: center;
+    @include tab-row;
+
     gap: 8px;
     padding: 8px 12px;
     cursor: pointer;
@@ -145,7 +170,7 @@
   // Tab list
   &__list {
     padding: 4px 0;
-    max-height: 280px;
+    max-height: $tab-menu-list-max;
     overflow-y: auto;
 
     &::-webkit-scrollbar {
@@ -164,10 +189,10 @@
 
   // Tab item
   &__item {
-    display: flex;
-    align-items: center;
+    @include tab-row;
+
     gap: 6px;
-    padding: 6px 12px;
+    padding: $tab-row-pad;
     cursor: pointer;
     transition: background-color 0.1s ease;
 
@@ -193,9 +218,7 @@
     &-title {
       flex: 1;
       min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      @include tab-truncate;
       font-size: 12px;
       color: var(--color-text-primary);
 
@@ -212,11 +235,9 @@
     }
 
     &-close {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 16px;
-      height: 16px;
+      @include tab-row(center);
+      @include tab-square(16px);
+
       padding: 0;
       background: none;
       border: none;

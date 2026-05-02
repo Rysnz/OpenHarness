@@ -2,11 +2,37 @@
  * Image analysis card styles
  */
 
+$image-card-radius: 8px;
+$image-card-gap: 12px;
+$image-card-thumb-size: 60px;
+$image-card-thumb-radius: 6px;
+$image-card-status-colors: (
+  completed: var(--color-success),
+  error: var(--color-error)
+);
+
+@mixin image-row($align: center) {
+  display: flex;
+  align-items: $align;
+}
+
+@mixin image-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@mixin image-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .image-analysis-card {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: 8px;
-  padding: 12px;
+  border-radius: $image-card-radius;
+  padding: $image-card-gap;
   margin: 8px 0;
   transition: all 0.2s ease;
   
@@ -21,13 +47,10 @@
     background-size: 200% 100%;
     animation: shimmer 2s infinite;
   }
-  
-  &[data-status="completed"] {
-    border-color: var(--color-success);
-  }
-  
-  &[data-status="error"] {
-    border-color: var(--color-error);
+  @each $status, $color in $image-card-status-colors {
+    &[data-status="#{$status}"] {
+      border-color: $color;
+    }
   }
 }
 
@@ -41,22 +64,20 @@
 }
 
 .image-analysis-card__header {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
+  @include image-row(flex-start);
+
+  gap: $image-card-gap;
 }
 
 .image-analysis-card__thumbnail {
-  width: 60px;
-  height: 60px;
+  width: $image-card-thumb-size;
+  height: $image-card-thumb-size;
   flex-shrink: 0;
-  border-radius: 6px;
+  border-radius: $image-card-thumb-radius;
   overflow: hidden;
   background: var(--color-background);
   border: 1px solid var(--color-border);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  @include image-center;
   
   img {
     width: 100%;
@@ -79,15 +100,13 @@
   font-weight: 500;
   color: var(--color-text);
   margin-bottom: 6px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  @include image-truncate;
 }
 
 // Status variants
 .image-analysis-card__status {
-  display: flex;
-  align-items: center;
+  @include image-row;
+
   gap: 6px;
   font-size: 12px;
   
@@ -139,14 +158,14 @@
 }
 
 .image-analysis-card__content {
-  margin-top: 12px;
-  padding-top: 12px;
+  margin-top: $image-card-gap;
+  padding-top: $image-card-gap;
   border-top: 1px solid var(--color-border);
 }
 
 .image-analysis-card__summary {
-  display: flex;
-  align-items: flex-start;
+  @include image-row(flex-start);
+
   gap: 8px;
   font-size: 13px;
   line-height: 1.5;
@@ -180,8 +199,8 @@
 
 // Detailed content
 .image-analysis-card__detailed {
-  margin-top: 12px;
-  padding: 12px;
+  margin-top: $image-card-gap;
+  padding: $image-card-gap;
   background: var(--color-background);
   border-radius: 6px;
   
@@ -226,8 +245,8 @@
   }
   
   .metadata {
-    display: flex;
-    align-items: center;
+    @include image-row;
+
     gap: 8px;
     font-size: 12px;
     color: var(--color-text-secondary);
@@ -240,8 +259,8 @@
 
 // Error message
 .image-analysis-card__error {
-  display: flex;
-  align-items: center;
+  @include image-row;
+
   gap: 8px;
   margin-top: 12px;
   padding: 8px 12px;

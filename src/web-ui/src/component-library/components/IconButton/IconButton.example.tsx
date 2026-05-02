@@ -4,8 +4,61 @@
  */
 
 import React from 'react';
-import { IconButton } from './IconButton';
+import { IconButton, type IconButtonProps } from './IconButton';
 import { useI18n } from '@/infrastructure/i18n';
+
+type IconSpec = {
+  variant: NonNullable<IconButtonProps['variant']>;
+  size?: NonNullable<IconButtonProps['size']>;
+  shape?: NonNullable<IconButtonProps['shape']>;
+  disabled?: boolean;
+  icon?: 'plus' | 'heart';
+};
+
+const pageStyle: React.CSSProperties = { padding: '24px', background: '#1a1a1a', minHeight: '100vh' };
+const titleStyle: React.CSSProperties = { color: '#fff', marginBottom: '24px' };
+const sectionStyle: React.CSSProperties = { marginBottom: '32px' };
+const sectionTitleStyle: React.CSSProperties = { color: '#a0a0a0', marginBottom: '16px' };
+const rowStyle: React.CSSProperties = { display: 'flex', gap: '12px', alignItems: 'center' };
+const usageStyle: React.CSSProperties = {
+  marginTop: '48px',
+  padding: '16px',
+  background: 'rgba(255,255,255,0.05)',
+  borderRadius: '8px',
+};
+const usageListStyle: React.CSSProperties = { color: '#a0a0a0', lineHeight: '1.8' };
+
+const BASIC_BUTTONS: IconSpec[] = [
+  { variant: 'default', size: 'small' },
+  { variant: 'default', size: 'medium' },
+  { variant: 'default', size: 'large' },
+  { variant: 'default', size: 'medium', disabled: true },
+];
+
+const GHOST_BUTTONS: IconSpec[] = [
+  { variant: 'ghost', size: 'small', icon: 'heart' },
+  { variant: 'ghost', size: 'medium', icon: 'heart' },
+  { variant: 'ghost', size: 'large', icon: 'heart' },
+];
+
+const PRIMARY_BUTTONS: IconSpec[] = [
+  { variant: 'primary', size: 'small' },
+  { variant: 'primary', size: 'medium' },
+  { variant: 'primary', size: 'large' },
+  { variant: 'primary', size: 'medium', disabled: true },
+];
+
+const SHAPE_BUTTONS: IconSpec[] = [
+  { variant: 'default', shape: 'circle', size: 'medium' },
+  { variant: 'primary', shape: 'circle', size: 'medium', icon: 'heart' },
+];
+
+const TONE_BUTTONS: IconSpec[] = [
+  { variant: 'danger', size: 'medium' },
+  { variant: 'success', size: 'medium' },
+  { variant: 'warning', size: 'medium' },
+  { variant: 'ai', size: 'medium' },
+];
 
 const PlusIcon = () => (
   <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
@@ -19,127 +72,64 @@ const HeartIcon = () => (
   </svg>
 );
 
+const DemoIcon = ({ name = 'plus' }: { name?: IconSpec['icon'] }) =>
+  name === 'heart' ? <HeartIcon /> : <PlusIcon />;
+
+function IconButtonRow({ specs }: { specs: IconSpec[] }) {
+  return (
+    <div style={rowStyle}>
+      {specs.map((spec, index) => (
+        <IconButton
+          key={`${spec.variant}-${spec.size ?? 'medium'}-${spec.shape ?? 'square'}-${index}`}
+          variant={spec.variant}
+          size={spec.size}
+          shape={spec.shape}
+          disabled={spec.disabled}
+        >
+          <DemoIcon name={spec.icon} />
+        </IconButton>
+      ))}
+    </div>
+  );
+}
+
 export const IconButtonExample: React.FC = () => {
   const { t } = useI18n('components');
+  const sections = [
+    { key: 'basic', specs: BASIC_BUTTONS },
+    { key: 'ghost', specs: GHOST_BUTTONS },
+    { key: 'primary', specs: PRIMARY_BUTTONS },
+    { key: 'shape', specs: SHAPE_BUTTONS },
+    { key: 'other', specs: TONE_BUTTONS },
+  ] as const;
+  const usageItems = ['defaultGhost', 'primary', 'disabled', 'theme'] as const;
 
   return (
-    <div style={{ padding: '24px', background: '#1a1a1a', minHeight: '100vh' }}>
-      <h2 style={{ color: '#fff', marginBottom: '24px' }}>
+    <div style={pageStyle}>
+      <h2 style={titleStyle}>
         {t('componentLibrary.iconButtonExample.title')}
       </h2>
-      
-      <div style={{ marginBottom: '32px' }}>
-        <h3 style={{ color: '#a0a0a0', marginBottom: '16px' }}>
-          {t('componentLibrary.iconButtonExample.sections.basic')}
-        </h3>
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-          <IconButton variant="default" size="small">
-            <PlusIcon />
-          </IconButton>
-          <IconButton variant="default" size="medium">
-            <PlusIcon />
-          </IconButton>
-          <IconButton variant="default" size="large">
-            <PlusIcon />
-          </IconButton>
-          <IconButton variant="default" size="medium" disabled>
-            <PlusIcon />
-          </IconButton>
-        </div>
-      </div>
 
-      <div style={{ marginBottom: '32px' }}>
-        <h3 style={{ color: '#a0a0a0', marginBottom: '16px' }}>
-          {t('componentLibrary.iconButtonExample.sections.ghost')}
-        </h3>
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-          <IconButton variant="ghost" size="small">
-            <HeartIcon />
-          </IconButton>
-          <IconButton variant="ghost" size="medium">
-            <HeartIcon />
-          </IconButton>
-          <IconButton variant="ghost" size="large">
-            <HeartIcon />
-          </IconButton>
+      {sections.map((section) => (
+        <div key={section.key} style={sectionStyle}>
+          <h3 style={sectionTitleStyle}>
+            {t(`componentLibrary.iconButtonExample.sections.${section.key}`)}
+          </h3>
+          <IconButtonRow specs={section.specs} />
         </div>
-      </div>
+      ))}
 
-      <div style={{ marginBottom: '32px' }}>
-        <h3 style={{ color: '#a0a0a0', marginBottom: '16px' }}>
-          {t('componentLibrary.iconButtonExample.sections.primary')}
-        </h3>
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-          <IconButton variant="primary" size="small">
-            <PlusIcon />
-          </IconButton>
-          <IconButton variant="primary" size="medium">
-            <PlusIcon />
-          </IconButton>
-          <IconButton variant="primary" size="large">
-            <PlusIcon />
-          </IconButton>
-          <IconButton variant="primary" size="medium" disabled>
-            <PlusIcon />
-          </IconButton>
-        </div>
-      </div>
-
-      <div style={{ marginBottom: '32px' }}>
-        <h3 style={{ color: '#a0a0a0', marginBottom: '16px' }}>
-          {t('componentLibrary.iconButtonExample.sections.shape')}
-        </h3>
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-          <IconButton variant="default" shape="circle" size="medium">
-            <PlusIcon />
-          </IconButton>
-          <IconButton variant="primary" shape="circle" size="medium">
-            <HeartIcon />
-          </IconButton>
-        </div>
-      </div>
-
-      <div style={{ marginBottom: '32px' }}>
-        <h3 style={{ color: '#a0a0a0', marginBottom: '16px' }}>
-          {t('componentLibrary.iconButtonExample.sections.other')}
-        </h3>
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-          <IconButton variant="danger" size="medium">
-            <PlusIcon />
-          </IconButton>
-          <IconButton variant="success" size="medium">
-            <PlusIcon />
-          </IconButton>
-          <IconButton variant="warning" size="medium">
-            <PlusIcon />
-          </IconButton>
-          <IconButton variant="ai" size="medium">
-            <PlusIcon />
-          </IconButton>
-        </div>
-      </div>
-
-      <div style={{ marginTop: '48px', padding: '16px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px' }}>
-        <h3 style={{ color: '#fff', marginBottom: '12px' }}>
+      <div style={usageStyle}>
+        <h3 style={{ ...titleStyle, marginBottom: '12px' }}>
           {t('componentLibrary.iconButtonExample.sections.usage')}
         </h3>
-        <ul style={{ color: '#a0a0a0', lineHeight: '1.8' }}>
-          <li>
-            <strong>{t('componentLibrary.iconButtonExample.usage.defaultGhost.label')}</strong>
-            {t('componentLibrary.iconButtonExample.usage.defaultGhost.text')}
-          </li>
-          <li>
-            <strong>{t('componentLibrary.iconButtonExample.usage.primary.label')}</strong>
-            {t('componentLibrary.iconButtonExample.usage.primary.text')}
-          </li>
-          <li>
-            <strong>{t('componentLibrary.iconButtonExample.usage.disabled.label')}</strong>
-            {t('componentLibrary.iconButtonExample.usage.disabled.text')}
-          </li>
-          <li>
-            <strong>{t('componentLibrary.iconButtonExample.usage.theme.label')}</strong>
-            {t('componentLibrary.iconButtonExample.usage.theme.text')}
-          </li>
+        <ul style={usageListStyle}>
+          {usageItems.map((item) => (
+            <li key={item}>
+              <strong>{t(`componentLibrary.iconButtonExample.usage.${item}.label`)}</strong>
+              {t(`componentLibrary.iconButtonExample.usage.${item}.text`)}
+            </li>
+          ))}
         </ul>
       </div>
     </div>
