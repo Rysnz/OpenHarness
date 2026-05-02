@@ -1,45 +1,29 @@
-import React, { useEffect, useCallback } from 'react';
-import { useAnnouncementStore } from '../store/announcementStore';
+import React, { useCallback, useEffect } from 'react';
+import { createLogger } from '@/shared/utils/logger';
 import { announcementService } from '../services/AnnouncementService';
+import { useAnnouncementStore } from '../store/announcementStore';
 import AnnouncementToastStack from './AnnouncementToastStack';
 import FeatureModal from './FeatureModal';
-import { createLogger } from '@/shared/utils/logger';
 
 const log = createLogger('AnnouncementProvider');
 
-/**
- * Card IDs that the debug trigger will cycle through in dev mode.
- *
- * Add any card ID here to include it in the Ctrl+Shift+Alt+D preview cycle.
- * Order determines display sequence.
- */
 const DEBUG_CARD_IDS = [
   'feature_shortcuts_v0_2_2',
   'feature_welcome',
 ];
 
-/**
- * Application-level provider for the announcement system.
- *
- * Mount this once near the root of the app (after workspace loading is
- * complete, so the splash screen has already been shown).  It fetches pending
- * cards from the backend scheduler and passes them to the store, which then
- * drives the Toast and Modal rendering.
- *
- * The provider also renders the two global UI surfaces:
- *   - <AnnouncementToastStack>  (bottom-left)
- *   - <FeatureModal>            (centre-screen)
- *
- * ─── Debug Mode ───────────────────────────────────────────────────────────────
- * In development (`import.meta.env.DEV`), press **Ctrl+Shift+Alt+D** to
- * inject all cards listed in `DEBUG_CARD_IDS` into the queue, bypassing
- * backend filter logic.  This lets you preview the full UI flow without
- * clearing persisted state.
- */
+function isDebugShortcut(event: KeyboardEvent): boolean {
+  return event.ctrlKey && event.shiftKey && event.altKey && event.key === 'D';
+}
+
 const AnnouncementProvider: React.FC = () => {
   const { loadQueue, markInitialised, initialised, forceShowCards } = useAnnouncementStore();
 
-  // ── Normal load path ─────────────────────────────────────────────────────
+  const scheduleCards = useCallback((cards: Parameters<typeof loadQueue>[0]) => {
+    const maxDelay = Math.max(...cards.map((card) => card.trigger.delay_ms ?? 0));
+    setTimeout(() => loadQueue(cards), maxDelay);
+  }, [loadQueue]);
+
   useEffect(() => {
     if (initialised) return;
 
@@ -48,8 +32,7 @@ const AnnouncementProvider: React.FC = () => {
         const cards = await announcementService.getPendingAnnouncements();
         if (cards.length > 0) {
           log.debug('Announcement cards loaded', { count: cards.length });
-          const maxDelay = Math.max(...cards.map((c) => c.trigger.delay_ms ?? 0));
-          setTimeout(() => loadQueue(cards), maxDelay);
+          scheduleCards(cards);
         }
       } catch (e) {
         log.error('Failed to load announcement cards', e);
@@ -59,9 +42,8 @@ const AnnouncementProvider: React.FC = () => {
     };
 
     load();
-  }, [initialised, loadQueue, markInitialised]);
+  }, [initialised, markInitialised, scheduleCards]);
 
-  // ── Debug trigger ─────────────────────────────────────────────────────────
   const handleDebugTrigger = useCallback(async () => {
     log.debug('[DEBUG] Triggering announcement preview', { ids: DEBUG_CARD_IDS });
     try {
@@ -70,7 +52,7 @@ const AnnouncementProvider: React.FC = () => {
         log.warn('[DEBUG] No cards resolved for debug trigger. Check DEBUG_CARD_IDS.');
         return;
       }
-      log.debug('[DEBUG] Force-showing cards', { count: cards.length, ids: cards.map((c) => c.id) });
+      log.debug('[DEBUG] Force-showing cards', { count: cards.length, ids: cards.map((card) => card.id) });
       forceShowCards(cards);
     } catch (e) {
       log.error('[DEBUG] Failed to trigger debug cards', e);
@@ -80,10 +62,9 @@ const AnnouncementProvider: React.FC = () => {
   useEffect(() => {
     if (!import.meta.env.DEV) return;
 
-    const onKeyDown = (e: KeyboardEvent) => {
-      // Ctrl+Shift+Alt+D (all platforms)
-      if (e.ctrlKey && e.shiftKey && e.altKey && e.key === 'D') {
-        e.preventDefault();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (isDebugShortcut(event)) {
+        event.preventDefault();
         handleDebugTrigger();
       }
     };
