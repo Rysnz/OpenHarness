@@ -10,6 +10,9 @@ import { Tooltip } from '@/component-library';
 import { useI18n } from '@/infrastructure/i18n';
 import './EditorStatusBar.scss';
 
+type LspStatus = 'connected' | 'disconnected' | 'connecting';
+type Translate = ReturnType<typeof useI18n>['t'];
+
 export interface EditorStatusBarProps {
   /** Current line number */
   line: number;
@@ -34,7 +37,7 @@ export interface EditorStatusBarProps {
   /** Whether file is read-only */
   isReadOnly?: boolean;
   /** LSP connection status */
-  lspStatus?: 'connected' | 'disconnected' | 'connecting';
+  lspStatus?: LspStatus;
   /** Language click callback */
   onLanguageClick?: (e: React.MouseEvent) => void;
   /** Encoding click callback */
@@ -45,55 +48,68 @@ export interface EditorStatusBarProps {
   onPositionClick?: (e: React.MouseEvent) => void;
 }
 
-/** Get friendly display name for language */
-const getLanguageDisplayName = (language: string): string => {
-  const languageMap: Record<string, string> = {
-    'typescript': 'TypeScript',
-    'javascript': 'JavaScript',
-    'typescriptreact': 'TypeScript React',
-    'javascriptreact': 'JavaScript React',
-    'python': 'Python',
-    'rust': 'Rust',
-    'go': 'Go',
-    'java': 'Java',
-    'csharp': 'C#',
-    'cpp': 'C++',
-    'c': 'C',
-    'html': 'HTML',
-    'css': 'CSS',
-    'scss': 'SCSS',
-    'less': 'Less',
-    'json': 'JSON',
-    'yaml': 'YAML',
-    'xml': 'XML',
-    'markdown': 'Markdown',
-    'sql': 'SQL',
-    'shell': 'Shell',
-    'bash': 'Bash',
-    'powershell': 'PowerShell',
-    'dockerfile': 'Dockerfile',
-    'plaintext': 'Plain Text',
-    'toml': 'TOML',
-    'ini': 'INI',
-    'vue': 'Vue',
-    'svelte': 'Svelte',
-    'graphql': 'GraphQL',
-    'php': 'PHP',
-    'ruby': 'Ruby',
-    'swift': 'Swift',
-    'kotlin': 'Kotlin',
-    'scala': 'Scala',
-    'lua': 'Lua',
-    'perl': 'Perl',
-    'r': 'R',
-  };
-  return languageMap[language.toLowerCase()] || language;
+const languageNames: Record<string, string> = {
+  typescript: 'TypeScript',
+  javascript: 'JavaScript',
+  typescriptreact: 'TypeScript React',
+  javascriptreact: 'JavaScript React',
+  python: 'Python',
+  rust: 'Rust',
+  go: 'Go',
+  java: 'Java',
+  csharp: 'C#',
+  cpp: 'C++',
+  c: 'C',
+  html: 'HTML',
+  css: 'CSS',
+  scss: 'SCSS',
+  less: 'Less',
+  json: 'JSON',
+  yaml: 'YAML',
+  xml: 'XML',
+  markdown: 'Markdown',
+  sql: 'SQL',
+  shell: 'Shell',
+  bash: 'Bash',
+  powershell: 'PowerShell',
+  dockerfile: 'Dockerfile',
+  plaintext: 'Plain Text',
+  toml: 'TOML',
+  ini: 'INI',
+  vue: 'Vue',
+  svelte: 'Svelte',
+  graphql: 'GraphQL',
+  php: 'PHP',
+  ruby: 'Ruby',
+  swift: 'Swift',
+  kotlin: 'Kotlin',
+  scala: 'Scala',
+  lua: 'Lua',
+  perl: 'Perl',
+  r: 'R',
 };
 
-const getLspStatusInfo = (
-  status: 'connected' | 'disconnected' | 'connecting' | undefined,
-  t: (key: string) => string
-) => {
+function getLanguageDisplayName(language: string): string {
+  return languageNames[language.toLowerCase()] || language;
+}
+
+function getSelectionText(
+  selectedChars: number,
+  selectedLines: number,
+  t: Translate
+): string {
+  if (selectedLines > 1) {
+    return `(${t('editor.statusBar.selectionLinesChars', { lines: selectedLines, chars: selectedChars })})`;
+  }
+
+  if (selectedChars > 0) {
+    return `(${t('editor.statusBar.selectionChars', { count: selectedChars })})`;
+  }
+
+  return '';
+}
+
+function getLspStatusInfo(status: LspStatus | undefined, t: Translate) {
   switch (status) {
     case 'connected':
       return { 
@@ -117,6 +133,30 @@ const getLspStatusInfo = (
   }
 };
 
+interface StatusItemProps {
+  content: React.ReactNode;
+  tooltip: string;
+  onClick?: (e: React.MouseEvent) => void;
+}
+
+function itemClassName(onClick?: (e: React.MouseEvent) => void): string {
+  return `editor-status-bar__item ${onClick ? 'editor-status-bar__item--clickable' : ''}`;
+}
+
+function Separator(): React.ReactElement {
+  return <div className="editor-status-bar__separator" />;
+}
+
+function StatusItem({ content, tooltip, onClick }: StatusItemProps): React.ReactElement {
+  return (
+    <Tooltip content={tooltip} placement="top">
+      <div className={itemClassName(onClick)} onClick={onClick}>
+        {content}
+      </div>
+    </Tooltip>
+  );
+}
+
 export const EditorStatusBar: React.FC<EditorStatusBarProps> = ({
   line,
   column,
@@ -135,17 +175,16 @@ export const EditorStatusBar: React.FC<EditorStatusBarProps> = ({
 }) => {
   const { t } = useI18n('tools');
   const lspInfo = getLspStatusInfo(lspStatus, t);
-
-  // Build selection info text (updates with language changes).
-  const getSelectionText = () => {
-    if (selectedLines > 1) {
-      return `(${t('editor.statusBar.selectionLinesChars', { lines: selectedLines, chars: selectedChars })})`;
-    }
-    if (selectedChars > 0) {
-      return `(${t('editor.statusBar.selectionChars', { count: selectedChars })})`;
-    }
-    return '';
-  };
+  const selectionText = getSelectionText(selectedChars, selectedLines, t);
+  const positionContent = (
+    <>
+      <span>{t('editor.statusBar.ln')} {line}, {t('editor.statusBar.col')} {column}</span>
+      {selectionText && <span className="editor-status-bar__selection">{selectionText}</span>}
+    </>
+  );
+  const indentContent = insertSpaces
+    ? t('editor.statusBar.indentSpaces', { n: tabSize })
+    : t('editor.statusBar.indentTab', { n: tabSize });
 
   return (
     <div className="editor-status-bar">
@@ -158,54 +197,21 @@ export const EditorStatusBar: React.FC<EditorStatusBarProps> = ({
       </div>
 
       <div className="editor-status-bar__right">
-        <Tooltip content={t('editor.statusBar.goToLine')} placement="top">
-          <div 
-            className={`editor-status-bar__item ${onPositionClick ? 'editor-status-bar__item--clickable' : ''}`}
-            onClick={onPositionClick}
-          >
-            <span>{t('editor.statusBar.ln')} {line}, {t('editor.statusBar.col')} {column}</span>
-            {getSelectionText() && (
-              <span className="editor-status-bar__selection">{getSelectionText()}</span>
-            )}
-          </div>
-        </Tooltip>
-
-        <div className="editor-status-bar__separator" />
-
-        <Tooltip content={t('editor.statusBar.indentSettings')} placement="top">
-          <div 
-            className={`editor-status-bar__item ${onIndentClick ? 'editor-status-bar__item--clickable' : ''}`}
-            onClick={onIndentClick}
-          >
-            {insertSpaces ? t('editor.statusBar.indentSpaces', { n: tabSize }) : t('editor.statusBar.indentTab', { n: tabSize })}
-          </div>
-        </Tooltip>
-
-        <div className="editor-status-bar__separator" />
-
-        <Tooltip content={t('editor.statusBar.fileEncoding')} placement="top">
-          <div 
-            className={`editor-status-bar__item ${onEncodingClick ? 'editor-status-bar__item--clickable' : ''}`}
-            onClick={onEncodingClick}
-          >
-            {encoding}
-          </div>
-        </Tooltip>
-
-        <div className="editor-status-bar__separator" />
-
-        <Tooltip content={t('editor.statusBar.selectLanguageMode')} placement="top">
-          <div 
-            className={`editor-status-bar__item ${onLanguageClick ? 'editor-status-bar__item--clickable' : ''}`}
-            onClick={onLanguageClick}
-          >
-            {getLanguageDisplayName(language)}
-          </div>
-        </Tooltip>
+        <StatusItem content={positionContent} tooltip={t('editor.statusBar.goToLine')} onClick={onPositionClick} />
+        <Separator />
+        <StatusItem content={indentContent} tooltip={t('editor.statusBar.indentSettings')} onClick={onIndentClick} />
+        <Separator />
+        <StatusItem content={encoding} tooltip={t('editor.statusBar.fileEncoding')} onClick={onEncodingClick} />
+        <Separator />
+        <StatusItem
+          content={getLanguageDisplayName(language)}
+          tooltip={t('editor.statusBar.selectLanguageMode')}
+          onClick={onLanguageClick}
+        />
 
         {lspStatus && (
           <>
-            <div className="editor-status-bar__separator" />
+            <Separator />
             <div 
               className={`editor-status-bar__item editor-status-bar__lsp ${lspInfo.className}`}
               title={lspInfo.title}
