@@ -58,33 +58,23 @@ impl WebDriverErrorResponse {
     }
 
     pub fn invalid_session_id(session_id: &str) -> Self {
-        Self::new(
-            StatusCode::NOT_FOUND,
-            "invalid session id",
-            format!("Unknown session: {session_id}"),
-            None,
-        )
+        Self::not_found("invalid session id", format!("Unknown session: {session_id}"))
     }
 
     pub fn no_such_window(message: impl Into<String>) -> Self {
-        Self::new(StatusCode::NOT_FOUND, "no such window", message, None)
+        Self::not_found("no such window", message)
     }
 
     pub fn no_such_element(message: impl Into<String>) -> Self {
-        Self::new(StatusCode::NOT_FOUND, "no such element", message, None)
+        Self::not_found("no such element", message)
     }
 
     pub fn stale_element_reference(message: impl Into<String>) -> Self {
-        Self::new(
-            StatusCode::NOT_FOUND,
-            "stale element reference",
-            message,
-            None,
-        )
+        Self::not_found("stale element reference", message)
     }
 
     pub fn no_such_frame(message: impl Into<String>) -> Self {
-        Self::new(StatusCode::NOT_FOUND, "no such frame", message, None)
+        Self::not_found("no such frame", message)
     }
 
     pub fn session_not_created(message: impl Into<String>) -> Self {
@@ -106,45 +96,47 @@ impl WebDriverErrorResponse {
     }
 
     pub fn unknown_error(message: impl Into<String>) -> Self {
-        Self::new(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "unknown error",
-            message,
-            None,
-        )
+        Self::server_error("unknown error", message)
     }
 
     pub fn invalid_argument(message: impl Into<String>) -> Self {
-        Self::new(StatusCode::BAD_REQUEST, "invalid argument", message, None)
+        Self::bad_request("invalid argument", message)
     }
 
     pub fn invalid_selector(message: impl Into<String>) -> Self {
-        Self::new(StatusCode::BAD_REQUEST, "invalid selector", message, None)
+        Self::bad_request("invalid selector", message)
     }
 
     pub fn no_such_cookie(message: impl Into<String>) -> Self {
-        Self::new(StatusCode::NOT_FOUND, "no such cookie", message, None)
+        Self::not_found("no such cookie", message)
     }
 
     pub fn no_such_alert(message: impl Into<String>) -> Self {
-        Self::new(StatusCode::NOT_FOUND, "no such alert", message, None)
+        Self::not_found("no such alert", message)
     }
 
     pub fn no_such_shadow_root(message: impl Into<String>) -> Self {
-        Self::new(StatusCode::NOT_FOUND, "no such shadow root", message, None)
+        Self::not_found("no such shadow root", message)
     }
 
     pub fn unsupported_operation(message: impl Into<String>) -> Self {
-        Self::new(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "unsupported operation",
-            message,
-            None,
-        )
+        Self::server_error("unsupported operation", message)
     }
 
     pub fn timeout(message: impl Into<String>) -> Self {
         Self::new(StatusCode::REQUEST_TIMEOUT, "timeout", message, None)
+    }
+
+    fn not_found(error: &'static str, message: impl Into<String>) -> Self {
+        Self::new(StatusCode::NOT_FOUND, error, message, None)
+    }
+
+    fn bad_request(error: &'static str, message: impl Into<String>) -> Self {
+        Self::new(StatusCode::BAD_REQUEST, error, message, None)
+    }
+
+    fn server_error(error: &'static str, message: impl Into<String>) -> Self {
+        Self::new(StatusCode::INTERNAL_SERVER_ERROR, error, message, None)
     }
 }
 
