@@ -130,13 +130,10 @@ export interface WebElementContext extends BaseContext {
  */
 export type ContextType = ContextItem['type'];
 
- 
 export type ContextByType<T extends ContextType> = Extract<
   ContextItem,
   { type: T }
 >;
-
-
 
 export interface ValidationResult {
   valid: boolean;
@@ -148,57 +145,59 @@ export interface ValidationResult {
 
 
 export interface RenderOptions {
-  compact?: boolean;      
-  interactive?: boolean;  
-  showPreview?: boolean;  
+  compact?: boolean;
+  interactive?: boolean;
+  showPreview?: boolean;
 }
 
-
+const hasContextType = <T extends ContextType>(
+  context: ContextItem,
+  type: T
+): context is ContextByType<T> => context.type === type;
 
 export function isFileContext(context: ContextItem): context is FileContext {
-  return context.type === 'file';
+  return hasContextType(context, 'file');
 }
 
 export function isDirectoryContext(context: ContextItem): context is DirectoryContext {
-  return context.type === 'directory';
+  return hasContextType(context, 'directory');
 }
 
 export function isCodeSnippetContext(context: ContextItem): context is CodeSnippetContext {
-  return context.type === 'code-snippet';
+  return hasContextType(context, 'code-snippet');
 }
 
 export function isMermaidNodeContext(context: ContextItem): context is MermaidNodeContext {
-  return context.type === 'mermaid-node';
+  return hasContextType(context, 'mermaid-node');
 }
 
 export function isMermaidDiagramContext(context: ContextItem): context is MermaidDiagramContext {
-  return context.type === 'mermaid-diagram';
+  return hasContextType(context, 'mermaid-diagram');
 }
 
 export function isImageContext(context: ContextItem): context is ImageContext {
-  return context.type === 'image';
+  return hasContextType(context, 'image');
 }
 
 export function isTerminalCommandContext(context: ContextItem): context is TerminalCommandContext {
-  return context.type === 'terminal-command';
+  return hasContextType(context, 'terminal-command');
 }
 
 export function isGitRefContext(context: ContextItem): context is GitRefContext {
-  return context.type === 'git-ref';
+  return hasContextType(context, 'git-ref');
 }
 
 export function isURLContext(context: ContextItem): context is URLContext {
-  return context.type === 'url';
+  return hasContextType(context, 'url');
 }
 
 export function isWebElementContext(context: ContextItem): context is WebElementContext {
-  return context.type === 'web-element';
+  return hasContextType(context, 'web-element');
 }
 
- 
 export function isContextOfType<T extends ContextType>(
   context: ContextItem,
   type: T
 ): context is ContextByType<T> {
-  return context.type === type;
+  return hasContextType(context, type);
 }
