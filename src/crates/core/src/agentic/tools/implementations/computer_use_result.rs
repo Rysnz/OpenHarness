@@ -7,6 +7,27 @@ pub fn append_interaction_state(body: &mut Value, interaction: &ComputerUseInter
     }
 }
 
+fn screenshot_dimensions(shot: &ComputerScreenshot) -> Value {
+    json!({
+        "image_width": shot.image_width,
+        "image_height": shot.image_height,
+        "display_width_px": shot.image_width,
+        "display_height_px": shot.image_height,
+        "native_width": shot.native_width,
+        "native_height": shot.native_height,
+    })
+}
+
+fn pointer_projection(shot: &ComputerScreenshot) -> Value {
+    json!({
+        "display_origin_x": shot.display_origin_x,
+        "display_origin_y": shot.display_origin_y,
+        "vision_scale": shot.vision_scale,
+        "pointer_image_x": shot.pointer_image_x,
+        "pointer_image_y": shot.pointer_image_y,
+    })
+}
+
 pub fn build_screenshot_body(
     shot: &ComputerScreenshot,
     debug_rel: Option<String>,
@@ -15,17 +36,8 @@ pub fn build_screenshot_body(
     let mut data = json!({
         "success": true,
         "mime_type": shot.mime_type,
-        "image_width": shot.image_width,
-        "image_height": shot.image_height,
-        "display_width_px": shot.image_width,
-        "display_height_px": shot.image_height,
-        "native_width": shot.native_width,
-        "native_height": shot.native_height,
-        "display_origin_x": shot.display_origin_x,
-        "display_origin_y": shot.display_origin_y,
-        "vision_scale": shot.vision_scale,
-        "pointer_image_x": shot.pointer_image_x,
-        "pointer_image_y": shot.pointer_image_y,
+        "dimensions": screenshot_dimensions(shot),
+        "pointer_projection": pointer_projection(shot),
         "screenshot_crop_center": shot.screenshot_crop_center,
         "point_crop_half_extent_native": shot.point_crop_half_extent_native,
         "navigation_native_rect": shot.navigation_native_rect,
@@ -33,6 +45,14 @@ pub fn build_screenshot_body(
         "implicit_confirmation_crop_applied": shot.implicit_confirmation_crop_applied,
         "debug_screenshot_path": debug_rel,
     });
+    if let Value::Object(map) = &mut data {
+        if let Some(Value::Object(dimensions)) = map.remove("dimensions") {
+            map.extend(dimensions);
+        }
+        if let Some(Value::Object(pointer_projection)) = map.remove("pointer_projection") {
+            map.extend(pointer_projection);
+        }
+    }
     append_interaction_state(&mut data, interaction);
     data
 }
