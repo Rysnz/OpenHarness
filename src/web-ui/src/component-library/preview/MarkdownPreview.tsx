@@ -8,12 +8,17 @@ import { Button } from '@components/Button';
 import { useI18n } from '@/infrastructure/i18n';
 import './markdown-preview.css';
 
+type MarkdownVariant = 'default' | 'bordered' | 'minimal';
+type MarkdownMode = 'preview' | 'edit';
+
 export const MarkdownPreview: React.FC = () => {
   const { t } = useI18n('components');
   const getSampleMarkdown = () => t('componentLibrary.markdownPreview.sample');
   const [content, setContent] = useState(() => getSampleMarkdown());
-  const [variant, setVariant] = useState<'default' | 'bordered' | 'minimal'>('default');
-  const [activeTab, setActiveTab] = useState<'preview' | 'edit'>('preview');
+  const [variant, setVariant] = useState<MarkdownVariant>('default');
+  const [activeTab, setActiveTab] = useState<MarkdownMode>('preview');
+  const variantOptions: MarkdownVariant[] = ['default', 'bordered', 'minimal'];
+  const modeOptions: MarkdownMode[] = ['preview', 'edit'];
 
   return (
     <div className="markdown-preview-page">
@@ -37,47 +42,32 @@ export const MarkdownPreview: React.FC = () => {
         <div className="control-group">
           <label>{t('componentLibrary.markdownPreview.controls.variantLabel')}</label>
           <div className="button-group">
-            <Button
-              variant={variant === 'default' ? 'primary' : 'secondary'}
-              size="small"
-              onClick={() => setVariant('default')}
-            >
-              {t('componentLibrary.markdownPreview.variants.default')}
-            </Button>
-            <Button
-              variant={variant === 'bordered' ? 'primary' : 'secondary'}
-              size="small"
-              onClick={() => setVariant('bordered')}
-            >
-              {t('componentLibrary.markdownPreview.variants.bordered')}
-            </Button>
-            <Button
-              variant={variant === 'minimal' ? 'primary' : 'secondary'}
-              size="small"
-              onClick={() => setVariant('minimal')}
-            >
-              {t('componentLibrary.markdownPreview.variants.minimal')}
-            </Button>
+            {variantOptions.map((option) => (
+              <Button
+                key={option}
+                variant={variant === option ? 'primary' : 'secondary'}
+                size="small"
+                onClick={() => setVariant(option)}
+              >
+                {t(`componentLibrary.markdownPreview.variants.${option}`)}
+              </Button>
+            ))}
           </div>
         </div>
 
         <div className="control-group">
           <label>{t('componentLibrary.markdownPreview.controls.modeLabel')}</label>
           <div className="button-group">
-            <Button
-              variant={activeTab === 'preview' ? 'primary' : 'secondary'}
-              size="small"
-              onClick={() => setActiveTab('preview')}
-            >
-              {t('componentLibrary.markdownPreview.controls.preview')}
-            </Button>
-            <Button
-              variant={activeTab === 'edit' ? 'primary' : 'secondary'}
-              size="small"
-              onClick={() => setActiveTab('edit')}
-            >
-              {t('componentLibrary.markdownPreview.controls.edit')}
-            </Button>
+            {modeOptions.map((option) => (
+              <Button
+                key={option}
+                variant={activeTab === option ? 'primary' : 'secondary'}
+                size="small"
+                onClick={() => setActiveTab(option)}
+              >
+                {t(`componentLibrary.markdownPreview.controls.${option}`)}
+              </Button>
+            ))}
           </div>
         </div>
 
