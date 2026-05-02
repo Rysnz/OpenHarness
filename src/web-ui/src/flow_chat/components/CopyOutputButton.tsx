@@ -1,86 +1,128 @@
-/**
- * Button to copy a dialog turn output.
- * Copies all AI text and tool calls from the turn.
- */
-
-import React, { useState, useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
+import { Check, Copy, Edit } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Copy, Check, Edit } from 'lucide-react';
-import type { DialogTurn, FlowTextItem, FlowToolItem, FlowThinkingItem } from '../types/flow-chat';
-import { createMarkdownEditorTab } from '@/shared/utils/tabUtils';
 import { Tooltip } from '@/component-library';
 import { i18nService } from '@/infrastructure/i18n';
 import { createLogger } from '@/shared/utils/logger';
+import { createMarkdownEditorTab } from '@/shared/utils/tabUtils';
+import type { DialogTurn, FlowTextItem, FlowThinkingItem, FlowToolItem } from '../types/flow-chat';
 import './CopyOutputButton.css';
 
 const log = createLogger('CopyOutputButton');
+const COPY_RESET_DELAY_MS = 2000;
+const EDITOR_OPEN_DELAY_MS = 250;
 
 interface CopyOutputButtonProps {
   dialogTurn: DialogTurn;
   className?: string;
 }
 
+type Translate = ReturnType<typeof useTranslation>['t'];
+
+function stringifyBlock(value: unknown): string {
+  return typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+}
+
+function toolOutput(toolItem: FlowToolItem, t: Translate): string | null {
+  if (!toolItem.toolCall) {
+    return null;
+  }
+
+  const toolName = toolItem.toolName || t('copyOutput.unknownTool');
+  const sections = [t('copyOutput.toolCall', { name: toolName })];
+
+  if (toolItem.toolCall.input) {
+    sections.push(`[Input]\n\`\`\`json\n${stringifyBlock(toolItem.toolCall.input)}\n\`\`\``);
+  }
+
+  if (toolItem.toolResult?.error) {
+    sections.push(`[Error]\n${toolItem.toolResult.error}`);
+  } else if (toolItem.toolResult?.result !== undefined) {
+    sections.push(`[Result]\n\`\`\`\n${stringifyBlock(toolItem.toolResult.result)}\n\`\`\``);
+  }
+
+  return sections.join('\n\n').trim();
+}
+
+function itemOutput(item: DialogTurn['modelRounds'][number]['items'][number], t: Translate): string | null {
+  if (item.type === 'text') {
+    const content = (item as FlowTextItem).content.trim();
+    return content || null;
+  }
+
+  if (item.type === 'thinking') {
+    const content = (item as FlowThinkingItem).content.trim();
+    return content ? `[Thinking]\n${content}` : null;
+  }
+
+  if (item.type === 'tool') {
+    return toolOutput(item as FlowToolItem, t);
+  }
+
+  return null;
+}
+
+function extractOutputContent(dialogTurn: DialogTurn, t: Translate): string {
+  const contentParts = dialogTurn.modelRounds.flatMap((modelRound) =>
+    [...modelRound.items]
+      .sort((a, b) => a.timestamp - b.timestamp)
+      .map((item) => itemOutput(item, t))
+      .filter((content): content is string => Boolean(content))
+  );
+
+  return contentParts.join('\n\n');
+}
+
+function hasCopyableContent(dialogTurn: DialogTurn): boolean {
+  return dialogTurn.modelRounds.some((round) =>
+    round.items.some((item) =>
+      (item.type === 'text' && (item as FlowTextItem).content.trim()) ||
+      (item.type === 'tool' && (item as FlowToolItem).toolCall)
+    )
+  );
+}
+
+function timestampLabel(): string {
+  return i18nService
+    .formatDate(new Date(), {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+    .replace(/\//g, '-');
+}
+
+interface ActionButtonProps {
+  className: string;
+  onClick: () => void;
+  ariaLabel: string;
+  title?: string;
+  icon: React.ReactNode;
+  label: string;
+}
+
+function ActionButton({ className, onClick, ariaLabel, title, icon, label }: ActionButtonProps): React.ReactElement {
+  return (
+    <button className={className} onClick={onClick} title={title} aria-label={ariaLabel}>
+      <span className="button-icon">{icon}</span>
+      <span className="button-text">{label}</span>
+    </button>
+  );
+}
+
 export const CopyOutputButton: React.FC<CopyOutputButtonProps> = ({
   dialogTurn,
-  className = ''
+  className = '',
 }) => {
   const { t } = useTranslation('flow-chat');
   const [copied, setCopied] = useState(false);
 
-  const extractOutputContent = useCallback((dialogTurn: DialogTurn): string => {
-    const contentParts: string[] = [];
-
-    dialogTurn.modelRounds.forEach((modelRound) => {
-      const sortedItems = [...modelRound.items].sort((a, b) => a.timestamp - b.timestamp);
-
-      sortedItems.forEach((item) => {
-        if (item.type === 'text') {
-          const textItem = item as FlowTextItem;
-          if (textItem.content.trim()) {
-            contentParts.push(textItem.content.trim());
-          }
-        } else if (item.type === 'thinking') {
-          const thinkingItem = item as FlowThinkingItem;
-          if (thinkingItem.content.trim()) {
-            contentParts.push(`[Thinking]\n${thinkingItem.content.trim()}`);
-          }
-        } else if (item.type === 'tool') {
-          const toolItem = item as FlowToolItem;
-          
-          if (toolItem.toolCall) {
-            const toolName = toolItem.toolName || t('copyOutput.unknownTool');
-            let toolContent = t('copyOutput.toolCall', { name: toolName }) + '\n';
-            
-            if (toolItem.toolCall.input) {
-              const inputStr = typeof toolItem.toolCall.input === 'string'
-                ? toolItem.toolCall.input
-                : JSON.stringify(toolItem.toolCall.input, null, 2);
-              toolContent += `\n[Input]\n\`\`\`json\n${inputStr}\n\`\`\`\n`;
-            }
-            
-            if (toolItem.toolResult) {
-              if (toolItem.toolResult.error) {
-                toolContent += `\n[Error]\n${toolItem.toolResult.error}\n`;
-              } else if (toolItem.toolResult.result !== undefined) {
-                const resultStr = typeof toolItem.toolResult.result === 'string'
-                  ? toolItem.toolResult.result
-                  : JSON.stringify(toolItem.toolResult.result, null, 2);
-                toolContent += `\n[Result]\n\`\`\`\n${resultStr}\n\`\`\`\n`;
-              }
-            }
-            
-            contentParts.push(toolContent.trim());
-          }
-        }
-      });
-    });
-
-    return contentParts.join('\n\n');
-  }, [t]);
+  const getContent = useCallback(() => extractOutputContent(dialogTurn, t), [dialogTurn, t]);
 
   const handleCopy = useCallback(async () => {
     try {
-      const content = extractOutputContent(dialogTurn);
+      const content = getContent();
       if (!content.trim()) {
         log.warn('No content to copy');
         return;
@@ -88,86 +130,61 @@ export const CopyOutputButton: React.FC<CopyOutputButtonProps> = ({
 
       await navigator.clipboard.writeText(content);
       setCopied(true);
-      
-      setTimeout(() => setCopied(false), 2000);
+      setTimeout(() => setCopied(false), COPY_RESET_DELAY_MS);
     } catch (error) {
       log.error('Failed to copy', error);
     }
-  }, [dialogTurn, extractOutputContent]);
+  }, [getContent]);
 
   const handleOpenInEditor = useCallback(() => {
     try {
-      const content = extractOutputContent(dialogTurn);
+      const content = getContent();
       if (!content.trim()) {
         log.warn('No content to edit');
         return;
       }
 
       window.dispatchEvent(new CustomEvent('expand-right-panel'));
-
       setTimeout(() => {
-        const timestamp = i18nService.formatDate(new Date(), { 
-          month: '2-digit', 
-          day: '2-digit', 
-          hour: '2-digit', 
-          minute: '2-digit' 
-        }).replace(/\//g, '-');
-        
         createMarkdownEditorTab(
-          t('copyOutput.aiReply', { timestamp }),
+          t('copyOutput.aiReply', { timestamp: timestampLabel() }),
           content,
-          undefined, // No filePath: create a temporary editor.
+          undefined,
           undefined,
           'agent'
         );
-        
         log.debug('AI reply opened in editor');
-      }, 250);
+      }, EDITOR_OPEN_DELAY_MS);
     } catch (error) {
       log.error('Failed to open editor', error);
     }
-  }, [dialogTurn, extractOutputContent, t]);
+  }, [getContent, t]);
 
-  const hasContent = dialogTurn.modelRounds.some(round => 
-    round.items.some(item => 
-      (item.type === 'text' && (item as FlowTextItem).content.trim()) ||
-      (item.type === 'tool' && (item as FlowToolItem).toolCall)
-    )
-  );
-
-  if (!hasContent) {
+  if (!hasCopyableContent(dialogTurn)) {
     return null;
   }
 
+  const copyLabel = copied ? t('copyOutput.copiedOutputContent') : t('copyOutput.copyOutputContent');
+
   return (
     <div className={`copy-output-button-group ${className}`}>
-      <button
+      <ActionButton
         className={`copy-output-button ${copied ? 'copied' : ''}`}
         onClick={handleCopy}
-        title={copied ? t('copyOutput.copiedOutputContent') : t('copyOutput.copyOutputContent')}
-        aria-label={copied ? t('copyOutput.copiedOutputContent') : t('copyOutput.copyOutputContent')}
-      >
-        <span className="button-icon">
-          {copied ? <Check size={14} /> : <Copy size={14} />}
-        </span>
-        <span className="button-text">
-          {copied ? t('copyOutput.copied') : t('copyOutput.copy')}
-        </span>
-      </button>
-      
+        title={copyLabel}
+        ariaLabel={copyLabel}
+        icon={copied ? <Check size={14} /> : <Copy size={14} />}
+        label={copied ? t('copyOutput.copied') : t('copyOutput.copy')}
+      />
+
       <Tooltip content={t('copyOutput.openInEditor')}>
-        <button
+        <ActionButton
           className="copy-output-button edit-button"
           onClick={handleOpenInEditor}
-          aria-label={t('copyOutput.openInEditor')}
-        >
-          <span className="button-icon">
-            <Edit size={14} />
-          </span>
-          <span className="button-text">
-            {t('copyOutput.edit')}
-          </span>
-        </button>
+          ariaLabel={t('copyOutput.openInEditor')}
+          icon={<Edit size={14} />}
+          label={t('copyOutput.edit')}
+        />
       </Tooltip>
     </div>
   );
