@@ -1,9 +1,4 @@
-/**
- * Editor Type Definitions
- * 
- * Unified re-exports from config/types plus other editor-related types.
- * @module types
- */
+import type { CSSProperties } from 'react';
 
 export type {
   EditorConfig,
@@ -21,20 +16,43 @@ export type {
   EditorConfigChangeEvent,
 } from '../config/types';
 
-/** File content representation */
+export type LineEnding = 'lf' | 'crlf' | 'auto';
+export type EditorActionType = 'insert' | 'delete' | 'replace' | 'format';
+export type EditorThemeType = 'light' | 'dark' | 'high-contrast';
+export type MarkdownPreviewPosition = 'right' | 'bottom';
+export type MarkdownTheme = 'light' | 'dark' | 'nord';
+
+export interface Position {
+  line: number;
+  column: number;
+}
+
+export interface Range {
+  start: Position;
+  end: Position;
+}
+
 export interface FileContent {
   name: string;
   content: string;
   language: string;
   encoding?: string;
-  lineEnding?: 'lf' | 'crlf' | 'auto';
+  lineEnding?: LineEnding;
   isReadOnly?: boolean;
   isDirty?: boolean;
   lastModified?: Date;
   size?: number;
 }
 
-/** Editor state */
+export interface SearchResult {
+  fileIndex: number;
+  line: number;
+  column: number;
+  length: number;
+  match: string;
+  context: string;
+}
+
 export interface EditorState {
   openFiles: FileContent[];
   activeFileIndex: number;
@@ -46,49 +64,32 @@ export interface EditorState {
   currentSearchIndex: number;
 }
 
-/** Search result */
-export interface SearchResult {
-  fileIndex: number;
-  line: number;
-  column: number;
-  length: number;
-  match: string;
-  context: string;
-}
-
-/** Editor action */
 export interface EditorAction {
-  type: 'insert' | 'delete' | 'replace' | 'format';
+  type: EditorActionType;
   position: Position;
   content?: string;
   range?: Range;
   timestamp: Date;
 }
 
-/** Position information */
-export interface Position {
-  line: number;
-  column: number;
-}
+type EditorEventMap = {
+  'file:opened': FileContent;
+  'file:closed': { index: number };
+  'file:saved': { index: number; content: string };
+  'file:changed': { index: number; content: string };
+  'selection:changed': { range: Range };
+  'cursor:moved': { position: Position };
+  'search:performed': { query: string; results: SearchResult[] };
+  'config:changed': Record<string, unknown>;
+};
 
-/** Range information */
-export interface Range {
-  start: Position;
-  end: Position;
-}
+export type EditorEvent = {
+  [Type in keyof EditorEventMap]: {
+    type: Type;
+    payload: EditorEventMap[Type];
+  }
+}[keyof EditorEventMap];
 
-/** Editor event */
-export type EditorEvent = 
-  | { type: 'file:opened'; payload: FileContent }
-  | { type: 'file:closed'; payload: { index: number } }
-  | { type: 'file:saved'; payload: { index: number; content: string } }
-  | { type: 'file:changed'; payload: { index: number; content: string } }
-  | { type: 'selection:changed'; payload: { range: Range } }
-  | { type: 'cursor:moved'; payload: { position: Position } }
-  | { type: 'search:performed'; payload: { query: string; results: SearchResult[] } }
-  | { type: 'config:changed'; payload: Record<string, unknown> };
-
-/** Editor component props */
 export interface EditorProps {
   content?: string;
   fileName?: string;
@@ -99,10 +100,9 @@ export interface EditorProps {
   onSelectionChange?: (range: Range) => void;
   onCursorMove?: (position: Position) => void;
   className?: string;
-  style?: React.CSSProperties;
+  style?: CSSProperties;
 }
 
-/** Search options */
 export interface SearchOptions {
   caseSensitive?: boolean;
   wholeWord?: boolean;
@@ -110,30 +110,24 @@ export interface SearchOptions {
   fileIndex?: number;
 }
 
-/** Replace options */
 export interface ReplaceOptions extends SearchOptions {
   replaceAll?: boolean;
 }
 
-/** Editor manager interface */
 export interface IEditorManager {
   openFile(file: FileContent): Promise<number>;
   closeFile(index: number): Promise<void>;
   saveFile(index: number): Promise<void>;
   saveAllFiles(): Promise<void>;
-  
   getActiveFile(): FileContent | null;
   getFile(index: number): FileContent | null;
   getAllFiles(): FileContent[];
   isFileDirty(index: number): boolean;
-  
   search(query: string, options?: SearchOptions): SearchResult[];
   replace(query: string, replacement: string, options?: ReplaceOptions): number;
-  
   addEventListener(listener: (event: EditorEvent) => void): () => void;
 }
 
-/** useEditor hook return type */
 export interface UseEditorReturn {
   openFiles: FileContent[];
   activeFile: FileContent | null;
@@ -141,8 +135,6 @@ export interface UseEditorReturn {
   isLoading: boolean;
   error: string | null;
   searchResults: SearchResult[];
-  
-  // Actions
   openFile: (file: FileContent) => Promise<number>;
   closeFile: (index: number) => Promise<void>;
   saveFile: (index?: number) => Promise<void>;
@@ -153,18 +145,16 @@ export interface UseEditorReturn {
   clearError: () => void;
 }
 
-/** Language detection result */
 export interface LanguageDetectionResult {
   language: string;
   confidence: number;
   detected: boolean;
 }
 
-/** Editor theme definition */
 export interface EditorTheme {
   id: string;
   name: string;
-  type: 'light' | 'dark' | 'high-contrast';
+  type: EditorThemeType;
   colors: {
     background: string;
     foreground: string;
@@ -177,7 +167,6 @@ export interface EditorTheme {
   tokenColors: TokenColor[];
 }
 
-/** Syntax highlight token color */
 export interface TokenColor {
   name: string;
   scope: string | string[];
@@ -188,7 +177,6 @@ export interface TokenColor {
   };
 }
 
-/** Completion item */
 export interface CompletionItem {
   label: string;
   kind: CompletionItemKind;
@@ -198,7 +186,6 @@ export interface CompletionItem {
   range: Range;
 }
 
-/** Completion item kind */
 export enum CompletionItemKind {
   Text = 1,
   Method = 2,
@@ -227,7 +214,6 @@ export enum CompletionItemKind {
   TypeParameter = 25
 }
 
-/** Diagnostic information (errors, warnings, etc.) */
 export interface Diagnostic {
   range: Range;
   severity: DiagnosticSeverity;
@@ -237,7 +223,6 @@ export interface Diagnostic {
   relatedInformation?: DiagnosticRelatedInformation[];
 }
 
-/** Diagnostic severity */
 export enum DiagnosticSeverity {
   Error = 1,
   Warning = 2,
@@ -245,7 +230,6 @@ export enum DiagnosticSeverity {
   Hint = 4
 }
 
-/** Diagnostic related information */
 export interface DiagnosticRelatedInformation {
   location: {
     uri: string;
@@ -254,20 +238,18 @@ export interface DiagnosticRelatedInformation {
   message: string;
 }
 
-/** Markdown editor configuration */
 export interface MarkdownEditorConfig {
   showPreview: boolean;
-  previewPosition: 'right' | 'bottom';
+  previewPosition: MarkdownPreviewPosition;
   enableAutoSave: boolean;
   autoSaveDelay: number;
-  theme: 'light' | 'dark' | 'nord';
+  theme: MarkdownTheme;
   fontSize: number;
   lineHeight: number;
   enableSpellCheck: boolean;
   enableTableOfContents: boolean;
 }
 
-/** Markdown editor props */
 export interface MarkdownEditorProps {
   content?: string;
   fileName?: string;
@@ -278,10 +260,9 @@ export interface MarkdownEditorProps {
   onContentChange?: (content: string, hasChanges: boolean) => void;
   onSave?: (content: string) => void;
   className?: string;
-  style?: React.CSSProperties;
+  style?: CSSProperties;
 }
 
-/** Markdown render options */
 export interface MarkdownRenderOptions {
   enableGFM: boolean;
   enableMath: boolean;
@@ -290,7 +271,6 @@ export interface MarkdownRenderOptions {
   codeTheme: string;
 }
 
-/** Markdown document metadata */
 export interface MarkdownMetadata {
   title?: string;
   author?: string;
