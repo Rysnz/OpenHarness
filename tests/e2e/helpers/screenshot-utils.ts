@@ -43,18 +43,24 @@ function screenshotsSupported(): boolean {
   return process.platform !== 'linux';
 }
 
+function resolveScreenshotPath(name: string, options: ScreenshotOptions): string {
+  const directory = options.directory || path.resolve(__dirname, '..', 'reports', 'screenshots');
+  ensureDirectoryExists(directory);
+  return path.join(directory, generateScreenshotName(name, options));
+}
+
+function warnSkippedScreenshot(kind: string, filePath: string): void {
+  console.warn(`Skipping ${kind} screenshot on ${process.platform}: ${filePath}`);
+}
+
 export async function saveScreenshot(
   name: string,
   options: ScreenshotOptions = {}
 ): Promise<string> {
-  const directory = options.directory || path.resolve(__dirname, '..', 'reports', 'screenshots');
-  ensureDirectoryExists(directory);
-  
-  const fileName = generateScreenshotName(name, options);
-  const filePath = path.join(directory, fileName);
+  const filePath = resolveScreenshotPath(name, options);
 
   if (!screenshotsSupported()) {
-    console.warn(`Skipping screenshot on ${process.platform}: ${filePath}`);
+    warnSkippedScreenshot('page', filePath);
     return filePath;
   }
   
@@ -69,14 +75,10 @@ export async function saveElementScreenshot(
   name: string,
   options: ScreenshotOptions = {}
 ): Promise<string> {
-  const directory = options.directory || path.resolve(__dirname, '..', 'reports', 'screenshots');
-  ensureDirectoryExists(directory);
-  
-  const fileName = generateScreenshotName(name, options);
-  const filePath = path.join(directory, fileName);
+  const filePath = resolveScreenshotPath(name, options);
 
   if (!screenshotsSupported()) {
-    console.warn(`Skipping element screenshot on ${process.platform}: ${filePath}`);
+    warnSkippedScreenshot('element', filePath);
     return filePath;
   }
   
@@ -141,24 +143,18 @@ export async function createBaseline(
 ): Promise<string> {
   const baselineDir = path.resolve(__dirname, '..', 'baselines');
   ensureDirectoryExists(baselineDir);
-  
-  const fileName = `${name}.png`;
-  const filePath = path.join(baselineDir, fileName);
-  
-  if (selector) {
-    if (!screenshotsSupported()) {
-      console.warn(`Skipping baseline screenshot on ${process.platform}: ${filePath}`);
-      return filePath;
-    }
 
+  const filePath = path.join(baselineDir, `${name}.png`);
+
+  if (!screenshotsSupported()) {
+    warnSkippedScreenshot('baseline', filePath);
+    return filePath;
+  }
+
+  if (selector) {
     const element = await $(selector);
     await element.saveScreenshot(filePath);
   } else {
-    if (!screenshotsSupported()) {
-      console.warn(`Skipping baseline screenshot on ${process.platform}: ${filePath}`);
-      return filePath;
-    }
-
     await browser.saveScreenshot(filePath);
   }
   
