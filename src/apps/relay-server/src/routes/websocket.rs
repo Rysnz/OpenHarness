@@ -20,6 +20,8 @@ use tracing::{debug, error, info, warn};
 use crate::relay::room::{ConnId, OutboundMessage, ResponsePayload, RoomManager};
 use crate::routes::api::AppState;
 
+const MAX_WS_BYTES: usize = 64 * 1024 * 1024;
+
 /// Messages received from the desktop via WebSocket.
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -67,17 +69,17 @@ pub enum OutboundProtocol {
 }
 
 pub async fn websocket_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> Response {
-    ws.max_message_size(64 * 1024 * 1024)
-        .max_frame_size(64 * 1024 * 1024)
-        .max_write_buffer_size(64 * 1024 * 1024)
+    ws.max_message_size(MAX_WS_BYTES)
+        .max_frame_size(MAX_WS_BYTES)
+        .max_write_buffer_size(MAX_WS_BYTES)
         .on_upgrade(move |socket| handle_socket(socket, state))
 }
 
 async fn handle_socket(socket: WebSocket, state: AppState) {
     let (mut ws_sender, mut ws_receiver) = socket.split();
     let (out_tx, mut out_rx) = mpsc::unbounded_channel::<OutboundMessage>();
-
     let conn_id = state.room_manager.next_conn_id();
+
     info!("WebSocket connected: conn_id={conn_id}");
 
     let write_task = tokio::spawn(async move {
@@ -122,18 +124,9 @@ fn handle_text_message(
         "Received from conn_id={conn_id}: {}",
         &text[..text.len().min(200)]
     );
-    let msg: InboundMessage = match serde_json::from_str(text) {
-        Ok(m) => m,
-        Err(e) => {
-            warn!("Invalid message from conn_id={conn_id}: {e}");
-            send_json(
-                out_tx,
-                &OutboundProtocol::Error {
-                    message: format!("invalid message format: {e}"),
-                },
-            );
-            return;
-        }
+
+    let Some(msg) = parse_inbound_message(text, conn_id, out_tx) else {
+        return;
     };
 
     match msg {
@@ -143,24 +136,7 @@ fn handle_text_message(
             device_type: _,
             public_key,
         } => {
-            let room_id = room_id.unwrap_or_else(generate_room_id);
-            let ok = room_manager.create_room(
-                &room_id,
-                conn_id,
-                &device_id,
-                &public_key,
-                out_tx.clone(),
-            );
-            if ok {
-                send_json(out_tx, &OutboundProtocol::RoomCreated { room_id });
-            } else {
-                send_json(
-                    out_tx,
-                    &OutboundProtocol::Error {
-                        message: "failed to create room".into(),
-                    },
-                );
-            }
+            handle_create_room(room_manager, out_tx, conn_id, room_id, device_id, public_key);
         }
 
         InboundMessage::RelayResponse {
@@ -168,29 +144,90 @@ fn handle_text_message(
             encrypted_data,
             nonce,
         } => {
-            debug!("RelayResponse from desktop conn_id={conn_id} corr={correlation_id}");
-            room_manager.resolve_pending(
-                &correlation_id,
-                ResponsePayload {
-                    encrypted_data,
-                    nonce,
-                },
-            );
+            handle_relay_response(room_manager, conn_id, correlation_id, encrypted_data, nonce);
         }
 
         InboundMessage::Heartbeat => {
-            if room_manager.heartbeat(conn_id) {
-                send_json(out_tx, &OutboundProtocol::HeartbeatAck);
-            } else {
-                send_json(
-                    out_tx,
-                    &OutboundProtocol::Error {
-                        message: "Room not found or expired".into(),
-                    },
-                );
-            }
+            handle_heartbeat(room_manager, out_tx, conn_id);
         }
     }
+}
+
+fn parse_inbound_message(
+    text: &str,
+    conn_id: ConnId,
+    out_tx: &mpsc::UnboundedSender<OutboundMessage>,
+) -> Option<InboundMessage> {
+    match serde_json::from_str(text) {
+        Ok(message) => Some(message),
+        Err(error) => {
+            warn!("Invalid message from conn_id={conn_id}: {error}");
+            send_error(out_tx, format!("invalid message format: {error}"));
+            None
+        }
+    }
+}
+
+fn handle_create_room(
+    room_manager: &Arc<RoomManager>,
+    out_tx: &mpsc::UnboundedSender<OutboundMessage>,
+    conn_id: ConnId,
+    room_id: Option<String>,
+    device_id: String,
+    public_key: String,
+) {
+    let room_id = room_id.unwrap_or_else(generate_room_id);
+    let ok = room_manager.create_room(
+        &room_id,
+        conn_id,
+        &device_id,
+        &public_key,
+        out_tx.clone(),
+    );
+
+    if ok {
+        send_json(out_tx, &OutboundProtocol::RoomCreated { room_id });
+    } else {
+        send_error(out_tx, "failed to create room");
+    }
+}
+
+fn handle_relay_response(
+    room_manager: &Arc<RoomManager>,
+    conn_id: ConnId,
+    correlation_id: String,
+    encrypted_data: String,
+    nonce: String,
+) {
+    debug!("RelayResponse from desktop conn_id={conn_id} corr={correlation_id}");
+    room_manager.resolve_pending(
+        &correlation_id,
+        ResponsePayload {
+            encrypted_data,
+            nonce,
+        },
+    );
+}
+
+fn handle_heartbeat(
+    room_manager: &Arc<RoomManager>,
+    out_tx: &mpsc::UnboundedSender<OutboundMessage>,
+    conn_id: ConnId,
+) {
+    if room_manager.heartbeat(conn_id) {
+        send_json(out_tx, &OutboundProtocol::HeartbeatAck);
+    } else {
+        send_error(out_tx, "Room not found or expired");
+    }
+}
+
+fn send_error(tx: &mpsc::UnboundedSender<OutboundMessage>, message: impl Into<String>) {
+    send_json(
+        tx,
+        &OutboundProtocol::Error {
+            message: message.into(),
+        },
+    );
 }
 
 fn send_json<T: Serialize>(tx: &mpsc::UnboundedSender<OutboundMessage>, msg: &T) {
