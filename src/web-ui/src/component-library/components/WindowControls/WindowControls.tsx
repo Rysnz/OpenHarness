@@ -25,6 +25,75 @@ export interface WindowControlsProps extends React.HTMLAttributes<HTMLDivElement
   'data-testid-close'?: string;
 }
 
+interface WindowControlButtonProps {
+  className: string;
+  disabled: boolean;
+  label: string;
+  testId?: string;
+  tooltip: string;
+  icon: React.ReactNode;
+  onClick?: () => void;
+}
+
+const MinimizeGlyph = () => (
+  <svg width="10" height="10" viewBox="0 0 14 14" fill="none">
+    <line x1="3" y1="7" x2="11" y2="7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+  </svg>
+);
+
+const MaximizeGlyph = () => (
+  <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+    <rect x="2" y="2" width="8" height="8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+);
+
+const RestoreGlyph = () => (
+  <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+    <path d="M4 4 L4 1.5 Q4 1 4.5 1 L10.5 1 Q11 1 11 1.5 L11 7.5 Q11 8 10.5 8 L8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+    <rect x="1" y="4" width="7" height="7" rx="0.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+  </svg>
+);
+
+const CloseGlyph = () => (
+  <svg width="10" height="10" viewBox="0 0 14 14" fill="none">
+    <line x1="3" y1="3" x2="11" y2="11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+    <line x1="11" y1="3" x2="3" y2="11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+  </svg>
+);
+
+function WindowControlButton({
+  className,
+  disabled,
+  label,
+  testId,
+  tooltip,
+  icon,
+  onClick,
+}: WindowControlButtonProps) {
+  const handleClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!disabled) {
+      onClick?.();
+    }
+  };
+
+  return (
+    <Tooltip content={tooltip} placement="bottom">
+      <button
+        className={className}
+        onClick={handleClick}
+        disabled={disabled}
+        aria-label={label}
+        type="button"
+        data-testid={testId}
+      >
+        {icon}
+      </button>
+    </Tooltip>
+  );
+}
+
 /**
  * Window control button component
  * Provides a unified window control UI (minimize, maximize, close)
@@ -49,31 +118,10 @@ export const WindowControls: React.FC<WindowControlsProps> = ({
   ...props
 }) => {
   const { t } = useTranslation('common');
-  const defaultMinimizeIcon = (
-    <svg width="10" height="10" viewBox="0 0 14 14" fill="none">
-      <line x1="3" y1="7" x2="11" y2="7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-    </svg>
-  );
-
-  const defaultMaximizeIcon = (
-    <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
-      <rect x="2" y="2" width="8" height="8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-    </svg>
-  );
-
-  const defaultRestoreIcon = (
-    <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
-      <path d="M4 4 L4 1.5 Q4 1 4.5 1 L10.5 1 Q11 1 11 1.5 L11 7.5 Q11 8 10.5 8 L8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
-      <rect x="1" y="4" width="7" height="7" rx="0.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
-    </svg>
-  );
-
-  const defaultCloseIcon = (
-    <svg width="10" height="10" viewBox="0 0 14 14" fill="none">
-      <line x1="3" y1="3" x2="11" y2="11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-      <line x1="11" y1="3" x2="3" y2="11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-    </svg>
-  );
+  const minimizeLabel = t('window.minimize');
+  const maximizeLabel = t('window.maximize');
+  const restoreLabel = t('window.restore');
+  const closeLabel = t('window.close');
 
   return (
     <div 
@@ -81,69 +129,39 @@ export const WindowControls: React.FC<WindowControlsProps> = ({
       {...props}
     >
       {showMinimize && (
-        <Tooltip content={t('window.minimize')} placement="bottom">
-          <button
-            className="window-controls__btn window-controls__btn--minimize"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              if (onMinimize && !disabled) {
-                onMinimize();
-              }
-            }}
-            disabled={disabled}
-            aria-label={t('window.minimize')}
-            type="button"
-            data-testid={testIdMinimize}
-          >
-            {minimizeIcon || defaultMinimizeIcon}
-          </button>
-        </Tooltip>
+        <WindowControlButton
+          className="window-controls__btn window-controls__btn--minimize"
+          disabled={disabled}
+          icon={minimizeIcon || <MinimizeGlyph />}
+          label={minimizeLabel}
+          onClick={onMinimize}
+          testId={testIdMinimize}
+          tooltip={minimizeLabel}
+        />
       )}
 
       {showMaximize && (
-        <Tooltip content={isMaximized ? t('window.restore') : t('window.maximize')} placement="bottom">
-          <button
-            className="window-controls__btn window-controls__btn--maximize"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              if (onMaximize && !disabled) {
-                onMaximize();
-              }
-            }}
-            disabled={disabled}
-            aria-label={isMaximized ? t('window.restore') : t('window.maximize')}
-            type="button"
-            data-testid={testIdMaximize}
-          >
-            {isMaximized 
-              ? (restoreIcon || defaultRestoreIcon)
-              : (maximizeIcon || defaultMaximizeIcon)
-            }
-          </button>
-        </Tooltip>
+        <WindowControlButton
+          className="window-controls__btn window-controls__btn--maximize"
+          disabled={disabled}
+          icon={isMaximized ? (restoreIcon || <RestoreGlyph />) : (maximizeIcon || <MaximizeGlyph />)}
+          label={isMaximized ? restoreLabel : maximizeLabel}
+          onClick={onMaximize}
+          testId={testIdMaximize}
+          tooltip={isMaximized ? restoreLabel : maximizeLabel}
+        />
       )}
 
       {showClose && (
-        <Tooltip content={t('window.close')} placement="bottom">
-          <button
-            className="window-controls__btn window-controls__btn--close"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              if (onClose && !disabled) {
-                onClose();
-              }
-            }}
-            disabled={disabled}
-            aria-label={t('window.close')}
-            type="button"
-            data-testid={testIdClose}
-          >
-            {closeIcon || defaultCloseIcon}
-          </button>
-        </Tooltip>
+        <WindowControlButton
+          className="window-controls__btn window-controls__btn--close"
+          disabled={disabled}
+          icon={closeIcon || <CloseGlyph />}
+          label={closeLabel}
+          onClick={onClose}
+          testId={testIdClose}
+          tooltip={closeLabel}
+        />
       )}
     </div>
   );
