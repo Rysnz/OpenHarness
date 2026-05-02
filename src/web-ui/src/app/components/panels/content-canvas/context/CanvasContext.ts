@@ -119,6 +119,11 @@ export interface CanvasContextValue {
 // ==================== Context Creation ====================
 
 const CanvasContext = createContext<CanvasContextValue | null>(null);
+const CANVAS_PROVIDER_ERROR = 'useCanvas must be used within a CanvasProvider';
+
+function getGroupById(context: CanvasContextValue, groupId: EditorGroupId) {
+  return groupId === 'primary' ? context.primaryGroup : context.secondaryGroup;
+}
 
 // ==================== Hooks ====================
 
@@ -128,7 +133,7 @@ const CanvasContext = createContext<CanvasContextValue | null>(null);
 export const useCanvas = (): CanvasContextValue => {
   const context = useContext(CanvasContext);
   if (!context) {
-    throw new Error('useCanvas must be used within a CanvasProvider');
+    throw new Error(CANVAS_PROVIDER_ERROR);
   }
   return context;
 };
@@ -137,18 +142,16 @@ export const useCanvas = (): CanvasContextValue => {
  * Get state for a specific editor group only.
  */
 export const useEditorGroup = (groupId: EditorGroupId) => {
-  const { primaryGroup, secondaryGroup, activeGroupId, tabOps, dragOps } = useCanvas();
-  
-  const group = groupId === 'primary' ? primaryGroup : secondaryGroup;
-  const isActive = activeGroupId === groupId;
+  const canvas = useCanvas();
+  const group = getGroupById(canvas, groupId);
   
   return {
     group,
-    isActive,
+    isActive: canvas.activeGroupId === groupId,
     tabs: group.tabs,
     activeTabId: group.activeTabId,
-    tabOps,
-    dragOps,
+    tabOps: canvas.tabOps,
+    dragOps: canvas.dragOps,
   };
 };
 
