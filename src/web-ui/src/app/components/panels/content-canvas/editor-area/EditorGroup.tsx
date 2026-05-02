@@ -13,12 +13,15 @@ import { useSceneStore } from '../../../../stores/sceneStore';
 import type { 
   EditorGroupId, 
   EditorGroupState, 
+  CanvasTab,
   TabDragPayload,
   DropPosition,
   PanelContent,
   SplitMode,
 } from '../types';
 import './EditorGroup.scss';
+
+const MAX_WARM_TABS = 5;
 
 export interface EditorGroupProps {
   groupId: EditorGroupId;
@@ -45,6 +48,51 @@ export interface EditorGroupProps {
   onCloseAllTabs?: () => Promise<void> | void;
   onInteraction?: (itemId: string, userInput: string) => Promise<void>;
   disablePopOut?: boolean;
+}
+
+function getVisibleTabs(tabs: EditorGroupState['tabs']): EditorGroupState['tabs'] {
+  return tabs.filter((tab) => !tab.isHidden);
+}
+
+function getRecentlyAccessedTabs(
+  tabs: EditorGroupState['tabs'],
+  activeTabId: string | null
+): string[] {
+  return tabs
+    .filter((tab) => !tab.isHidden && tab.id !== activeTabId)
+    .sort((a, b) => (b.lastAccessedAt || 0) - (a.lastAccessedAt || 0))
+    .slice(0, MAX_WARM_TABS - 1)
+    .map((tab) => tab.id);
+}
+
+function useWarmTabs(group: EditorGroupState): EditorGroupState['tabs'] {
+  const warmTabIdsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    const visibleIds = new Set(getVisibleTabs(group.tabs).map((tab) => tab.id));
+    warmTabIdsRef.current = new Set([...warmTabIdsRef.current].filter((id) => visibleIds.has(id)));
+
+    if (!group.activeTabId || !visibleIds.has(group.activeTabId)) {
+      return;
+    }
+
+    warmTabIdsRef.current.add(group.activeTabId);
+
+    if (warmTabIdsRef.current.size > MAX_WARM_TABS) {
+      warmTabIdsRef.current = new Set([
+        group.activeTabId,
+        ...getRecentlyAccessedTabs(group.tabs, group.activeTabId),
+      ]);
+    }
+  }, [group.activeTabId, group.tabs]);
+
+  return useMemo(
+    () =>
+      getVisibleTabs(group.tabs).filter(
+        (tab) => tab.id === group.activeTabId || warmTabIdsRef.current.has(tab.id)
+      ),
+    [group.activeTabId, group.tabs]
+  );
 }
 
 export const EditorGroup: React.FC<EditorGroupProps> = ({
@@ -74,44 +122,8 @@ export const EditorGroup: React.FC<EditorGroupProps> = ({
   disablePopOut = false,
 }) => {
   const { t } = useTranslation('components');
-  const visibleTabs = useMemo(() => group.tabs.filter(t => !t.isHidden), [group.tabs]);
-  
-  // Cache recently visited tabs (max 5) for instant switching
-  const cachedTabsRef = useRef<Set<string>>(new Set());
-  
-  // Update cache: keep active tab and 4 most recent tabs
-  useEffect(() => {
-    // Remove closed tabs
-    const validTabIds = new Set(group.tabs.filter(t => !t.isHidden).map(t => t.id));
-    cachedTabsRef.current = new Set(
-      Array.from(cachedTabsRef.current).filter(id => validTabIds.has(id))
-    );
-    
-    // Add active tab
-    if (group.activeTabId && validTabIds.has(group.activeTabId)) {
-      cachedTabsRef.current.add(group.activeTabId);
-      
-      // If cache exceeds 5, keep active and 4 most recent
-      if (cachedTabsRef.current.size > 5) {
-        const sortedTabs = [...group.tabs]
-          .filter(t => !t.isHidden && t.id !== group.activeTabId)
-          .sort((a, b) => (b.lastAccessedAt || 0) - (a.lastAccessedAt || 0))
-          .slice(0, 4)
-          .map(t => t.id);
-        
-        cachedTabsRef.current = new Set([group.activeTabId, ...sortedTabs]);
-      }
-    }
-  }, [group.activeTabId, group.tabs]);
-  
-  // Tabs to render (active + cached)
-  const tabsToRender = useMemo(() => {
-    const result = group.tabs.filter(t => 
-      !t.isHidden && 
-      (t.id === group.activeTabId || cachedTabsRef.current.has(t.id))
-    );
-    return result;
-  }, [group.tabs, group.activeTabId]);
+  const visibleTabs = useMemo(() => getVisibleTabs(group.tabs), [group.tabs]);
+  const tabsToRender = useWarmTabs(group);
 
   const handleContentChange = useCallback((content: PanelContent | null) => {
     if (content && group.activeTabId) {
@@ -126,13 +138,56 @@ export const EditorGroup: React.FC<EditorGroupProps> = ({
   }, [group.activeTabId, onDirtyStateChange]);
 
   const handleTabPopOut = useCallback((tabId: string) => {
-    const tab = group.tabs.find(t => t.id === tabId);
+    const tab = group.tabs.find((item) => item.id === tabId);
     if (!tab || !tab.content) return;
     usePanelViewCanvasStore.getState().addTab(tab.content as PanelContent, 'active');
     useSceneStore.getState().openScene('panel-view');
   }, [group.tabs]);
 
   const isDragging = draggingTabId !== null;
+
+  const renderTabContent = (tab: CanvasTab) => {
+    const isCurrentTab = group.activeTabId === tab.id;
+    const handleFileMissing = onTabFileDeletedFromDiskChange
+      ? (missing: boolean) => onTabFileDeletedFromDiskChange(tab.id, missing)
+      : undefined;
+
+    return (
+      <div
+        key={tab.id}
+        className="canvas-editor-group__tab-content"
+        style={{ display: isCurrentTab ? 'flex' : 'none' }}
+      >
+        <FlexiblePanel
+          content={tab.content as any}
+          isActive={isSceneActive && isCurrentTab}
+          onContentChange={isCurrentTab ? handleContentChange : undefined}
+          onDirtyStateChange={isCurrentTab ? handleDirtyStateChange : undefined}
+          onFileMissingFromDiskChange={handleFileMissing}
+          onInteraction={onInteraction}
+          workspacePath={workspacePath}
+        />
+      </div>
+    );
+  };
+
+  const renderEditorContent = () => {
+    if (tabsToRender.length > 0) {
+      return tabsToRender.map(renderTabContent);
+    }
+
+    if (visibleTabs.length > 0) {
+      return null;
+    }
+
+    return (
+      <div className="canvas-editor-group__empty">
+        <div className="canvas-editor-group__empty-content">
+          <span>{t('canvas.dragTabHere')}</span>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div
@@ -166,36 +221,7 @@ export const EditorGroup: React.FC<EditorGroupProps> = ({
         onDrop={onDrop}
       >
         <div className="canvas-editor-group__content">
-          {/* Render cached tabs (active shown, others hidden) for instant switching */}
-          {tabsToRender.length > 0 ? (
-            tabsToRender.map((tab) => (
-              <div
-                key={tab.id}
-                className="canvas-editor-group__tab-content"
-                style={{ display: group.activeTabId === tab.id ? 'flex' : 'none' }}
-              >
-                <FlexiblePanel
-                  content={tab.content as any}
-                  isActive={isSceneActive && group.activeTabId === tab.id}
-                  onContentChange={group.activeTabId === tab.id ? handleContentChange : undefined}
-                  onDirtyStateChange={group.activeTabId === tab.id ? handleDirtyStateChange : undefined}
-                  onFileMissingFromDiskChange={
-                    onTabFileDeletedFromDiskChange
-                      ? (missing) => onTabFileDeletedFromDiskChange(tab.id, missing)
-                      : undefined
-                  }
-                  onInteraction={onInteraction}
-                  workspacePath={workspacePath}
-                />
-              </div>
-            ))
-          ) : visibleTabs.length === 0 ? (
-            <div className="canvas-editor-group__empty">
-              <div className="canvas-editor-group__empty-content">
-                <span>{t('canvas.dragTabHere')}</span>
-              </div>
-            </div>
-          ) : null}
+          {renderEditorContent()}
         </div>
       </DropZone>
     </div>
