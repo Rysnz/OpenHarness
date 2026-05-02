@@ -6,6 +6,9 @@
 import { createLogger } from '@/shared/utils/logger';
 
 const log = createLogger('ProcessingStatusManager');
+const COMPLETED_HISTORY_LIMIT = 10;
+const CLEANUP_INTERVAL_MS = 60 * 1000;
+const STALE_STATUS_TIMEOUT_MS = 5 * 60 * 1000;
 
 export interface ProcessingStatus {
   id: string;
@@ -19,6 +22,29 @@ export interface ProcessingStatus {
 
 export interface ProcessingStatusListener {
   (statuses: ProcessingStatus[]): void;
+}
+
+function isCompletedStatus(status: ProcessingStatus): boolean {
+  return status.status === 'completing' ||
+    status.message.includes('completed') ||
+    status.message.includes('success') ||
+    status.metadata?.isCompleted === true;
+}
+
+function minDisplayTimeFor(status: ProcessingStatus): number {
+  switch (status.status) {
+    case 'thinking':
+    case 'analyzing':
+    case 'generating':
+      return 2500;
+    case 'processing':
+    case 'executing':
+      return 3000;
+    case 'completing':
+      return 1500;
+    default:
+      return 2000;
+  }
 }
 
 export class ProcessingStatusManager {
@@ -60,28 +86,17 @@ export class ProcessingStatusManager {
       return;
     }
 
-    if (status.status === 'completing' || 
-        status.message.includes('completed') || 
-        status.message.includes('success') ||
-        status.metadata?.isCompleted === true) {
-      this.completedStatuses.unshift(status);
-      if (this.completedStatuses.length > 10) {
-        this.completedStatuses = this.completedStatuses.slice(0, 10);
-      }
+    if (isCompletedStatus(status)) {
+      this.rememberCompletedStatus(status);
     }
 
-    const minDisplayTime = this.getMinDisplayTime(status);
+    const minDisplayTime = minDisplayTimeFor(status);
     const elapsedTime = Date.now() - status.startTime;
     
     if (elapsedTime < minDisplayTime) {
       const delay = minDisplayTime - elapsedTime;
       
-      setTimeout(() => {
-        if (this.statuses.has(id)) {
-          this.statuses.delete(id);
-          this.notifyListeners();
-        }
-      }, delay);
+      this.removeAfterDelay(id, delay);
     } else {
       this.statuses.delete(id);
       this.notifyListeners();
@@ -142,6 +157,19 @@ export class ProcessingStatusManager {
     return `status_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
 
+  private rememberCompletedStatus(status: ProcessingStatus): void {
+    this.completedStatuses = [status, ...this.completedStatuses].slice(0, COMPLETED_HISTORY_LIMIT);
+  }
+
+  private removeAfterDelay(id: string, delay: number): void {
+    setTimeout(() => {
+      if (this.statuses.has(id)) {
+        this.statuses.delete(id);
+        this.notifyListeners();
+      }
+    }, delay);
+  }
+
   clearAll(): void {
     this.statuses.clear();
     this.notifyListeners();
@@ -159,7 +187,7 @@ export class ProcessingStatusManager {
     if (this.cleanupIntervalId !== null) return;
     this.cleanupIntervalId = setInterval(() => {
       this.cleanupOldStatuses();
-    }, 60 * 1000);
+    }, CLEANUP_INTERVAL_MS);
   }
 
   stopCleanupTimer(): void {
@@ -169,32 +197,12 @@ export class ProcessingStatusManager {
     }
   }
 
-  private getMinDisplayTime(status: ProcessingStatus): number {
-    const baseTime = 2000;
-    
-    switch (status.status) {
-      case 'thinking':
-      case 'analyzing':
-        return 2500;
-      case 'processing':
-      case 'executing':
-        return 3000;
-      case 'generating':
-        return 2500;
-      case 'completing':
-        return 1500;
-      default:
-        return baseTime;
-    }
-  }
-
   cleanupOldStatuses(): void {
     const now = Date.now();
-    const timeout = 5 * 60 * 1000;
     
     let hasChanges = false;
     for (const [id, status] of this.statuses.entries()) {
-      if (now - status.startTime > timeout) {
+      if (now - status.startTime > STALE_STATUS_TIMEOUT_MS) {
         this.statuses.delete(id);
         hasChanges = true;
       }
