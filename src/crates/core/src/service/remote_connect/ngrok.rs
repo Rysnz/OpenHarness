@@ -2,8 +2,8 @@
 //!
 //! Supports macOS (pgrep) and Windows (tasklist) for process detection.
 
-use anyhow::{anyhow, Result};
 use crate::util::process_manager;
+use anyhow::{anyhow, Result};
 use log::{info, warn};
 use std::path::PathBuf;
 use std::process::Stdio;

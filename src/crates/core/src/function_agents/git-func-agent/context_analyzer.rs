@@ -93,7 +93,10 @@ impl ContextAnalyzer {
 
     fn detect_code_standards(repo_path: &Path) -> Option<String> {
         let standards = [
-            (has_file(repo_path, "rustfmt.toml") || has_file(repo_path, ".rustfmt.toml"), "rustfmt"),
+            (
+                has_file(repo_path, "rustfmt.toml") || has_file(repo_path, ".rustfmt.toml"),
+                "rustfmt",
+            ),
             (has_file(repo_path, "clippy.toml"), "clippy"),
             (
                 has_file(repo_path, ".eslintrc.js")
@@ -192,7 +195,12 @@ fn append_directory_stack(repo_path: &Path, stack: &mut Vec<String>) {
     };
 
     for entry in entries.flatten() {
-        let Some(name) = entry.path().file_name().and_then(|name| name.to_str()).map(str::to_owned) else {
+        let Some(name) = entry
+            .path()
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(str::to_owned)
+        else {
             continue;
         };
         append_marker_matches(&name, DIRECTORY_STACK_MARKERS, stack);

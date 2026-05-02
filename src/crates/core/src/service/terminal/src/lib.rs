@@ -22,11 +22,6 @@ pub mod session;
 pub mod shell;
 
 // Re-export main types for convenience
-pub use public_api::{
-    AcknowledgeRequest, CloseSessionRequest, CreateSessionRequest, ExecuteCommandRequest,
-    ExecuteCommandResponse, GetHistoryRequest, GetHistoryResponse, ResizeRequest,
-    SendCommandRequest, SessionResponse, ShellInfo, SignalRequest, TerminalApi, WriteRequest,
-};
 pub use config::{ShellConfig, TerminalConfig};
 pub use events::{TerminalEvent, TerminalEventEmitter};
 pub use pty::{
@@ -45,6 +40,11 @@ pub use pty::{
     PtyServiceEvent,
     PtyWriter,
     SpawnResult,
+};
+pub use public_api::{
+    AcknowledgeRequest, CloseSessionRequest, CreateSessionRequest, ExecuteCommandRequest,
+    ExecuteCommandResponse, GetHistoryRequest, GetHistoryResponse, ResizeRequest,
+    SendCommandRequest, SessionResponse, ShellInfo, SignalRequest, TerminalApi, WriteRequest,
 };
 pub use session::{
     CommandCompletionReason, CommandExecuteResult, CommandStream, CommandStreamEvent,

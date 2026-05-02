@@ -4,7 +4,7 @@
 
 use crate::util::types::{Message, ToolDefinition};
 use log::warn;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 pub struct AnthropicMessageConverter;
 

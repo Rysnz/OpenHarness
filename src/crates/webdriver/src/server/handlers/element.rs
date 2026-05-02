@@ -1,16 +1,16 @@
 use std::sync::Arc;
 
 use axum::{
-    Json,
     extract::{Path, State},
+    Json,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::ensure_session;
 use crate::executor::BridgeExecutor;
-use crate::server::AppState;
 use crate::server::response::{WebDriverErrorResponse, WebDriverResponse, WebDriverResult};
+use crate::server::AppState;
 
 #[derive(Debug, Deserialize)]
 pub struct ElementLocationRequest {

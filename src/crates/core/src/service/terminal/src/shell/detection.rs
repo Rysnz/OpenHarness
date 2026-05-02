@@ -345,10 +345,7 @@ impl ShellDetector {
 
     #[allow(dead_code)]
     fn get_shell_version(path: &str) -> Option<String> {
-        let output = create_command(path)
-            .arg("--version")
-            .output()
-            .ok()?;
+        let output = create_command(path).arg("--version").output().ok()?;
 
         if output.status.success() {
             String::from_utf8(output.stdout)

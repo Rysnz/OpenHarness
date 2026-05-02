@@ -10,11 +10,11 @@ mod runtime_integration;
 mod scripts_manager;
 
 pub use detection::ShellDetector;
+pub use profiles::ShellProfile;
 pub use runtime_integration::{
     get_injection_command, get_integration_script_content, get_integration_script_path,
     CommandState, OscSequence, ShellIntegration, ShellIntegrationEvent, ShellIntegrationManager,
 };
-pub use profiles::ShellProfile;
 pub use scripts_manager::ScriptsManager;
 
 use serde::{Deserialize, Serialize};

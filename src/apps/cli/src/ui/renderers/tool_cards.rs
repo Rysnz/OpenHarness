@@ -4,9 +4,9 @@ use ratatui::{
     widgets::ListItem,
 };
 
+use crate::session::ToolCall;
 use crate::ui::string_utils::{prettify_result, truncate_str};
 use crate::ui::theme::{StyleKind, Theme};
-use crate::session::ToolCall;
 
 pub fn render_tool_card<'a>(tool_call: &'a ToolCall, theme: &Theme) -> Vec<ListItem<'a>> {
     let mut items = Vec::new();

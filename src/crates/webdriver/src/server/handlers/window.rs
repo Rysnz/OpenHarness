@@ -47,7 +47,10 @@ fn rect_response(rect: WindowRect) -> WebDriverResponse {
     }))
 }
 
-fn reset_session_window_state(session: &mut crate::webdriver::Session, window_handle: Option<String>) {
+fn reset_session_window_state(
+    session: &mut crate::webdriver::Session,
+    window_handle: Option<String>,
+) {
     if let Some(window_handle) = window_handle {
         session.current_window = window_handle;
     }

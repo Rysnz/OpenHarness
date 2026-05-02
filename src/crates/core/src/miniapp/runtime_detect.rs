@@ -66,7 +66,11 @@ fn resolve_windows_runtime_path(name: &str) -> Option<PathBuf> {
 
     if name.eq_ignore_ascii_case("bun") {
         if let Some(parent) = path.parent() {
-            let embedded_bun = parent.join("node_modules").join("bun").join("bin").join("bun.exe");
+            let embedded_bun = parent
+                .join("node_modules")
+                .join("bun")
+                .join("bin")
+                .join("bun.exe");
             if embedded_bun.exists() {
                 return Some(embedded_bun);
             }

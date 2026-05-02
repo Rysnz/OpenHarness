@@ -58,7 +58,10 @@ impl WebDriverErrorResponse {
     }
 
     pub fn invalid_session_id(session_id: &str) -> Self {
-        Self::not_found("invalid session id", format!("Unknown session: {session_id}"))
+        Self::not_found(
+            "invalid session id",
+            format!("Unknown session: {session_id}"),
+        )
     }
 
     pub fn no_such_window(message: impl Into<String>) -> Self {

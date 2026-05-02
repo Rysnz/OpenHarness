@@ -2,8 +2,8 @@
 
 pub mod errors;
 pub mod front_matter_markdown;
-mod json_recovery;
 pub mod json_extract;
+mod json_recovery;
 pub mod plain_output;
 pub mod process_manager;
 pub mod token_counter;

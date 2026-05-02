@@ -74,7 +74,11 @@ impl RelayRoom {
     }
 
     pub fn detach_desktop(&mut self, conn_id: ConnId) -> bool {
-        if self.desktop.as_ref().is_some_and(|desktop| desktop.conn_id == conn_id) {
+        if self
+            .desktop
+            .as_ref()
+            .is_some_and(|desktop| desktop.conn_id == conn_id)
+        {
             self.desktop = None;
             return true;
         }
@@ -94,7 +98,11 @@ impl RelayRoom {
     }
 
     pub fn update_heartbeat(&mut self, conn_id: ConnId) -> bool {
-        if !self.desktop.as_ref().is_some_and(|desktop| desktop.conn_id == conn_id) {
+        if !self
+            .desktop
+            .as_ref()
+            .is_some_and(|desktop| desktop.conn_id == conn_id)
+        {
             return false;
         }
 
@@ -160,9 +168,11 @@ impl RoomManager {
 
     #[allow(dead_code)]
     pub fn get_desktop_public_key(&self, room_id: &str) -> Option<String> {
-        self.rooms
-            .get(room_id)
-            .and_then(|room| room.desktop.as_ref().map(|desktop| desktop.public_key.clone()))
+        self.rooms.get(room_id).and_then(|room| {
+            room.desktop
+                .as_ref()
+                .map(|desktop| desktop.public_key.clone())
+        })
     }
 
     pub fn register_pending(&self, correlation_id: String) -> oneshot::Receiver<ResponsePayload> {
@@ -191,7 +201,11 @@ impl RoomManager {
     }
 
     pub fn heartbeat(&self, conn_id: ConnId) -> bool {
-        let Some(room_id) = self.conn_to_room.get(&conn_id).map(|entry| entry.value().clone()) else {
+        let Some(room_id) = self
+            .conn_to_room
+            .get(&conn_id)
+            .map(|entry| entry.value().clone())
+        else {
             return false;
         };
 
@@ -217,7 +231,9 @@ impl RoomManager {
     }
 
     pub fn has_desktop(&self, room_id: &str) -> bool {
-        self.rooms.get(room_id).is_some_and(|room| room.desktop.is_some())
+        self.rooms
+            .get(room_id)
+            .is_some_and(|room| room.desktop.is_some())
     }
 
     pub fn room_count(&self) -> usize {
@@ -230,15 +246,12 @@ impl RoomManager {
 
     fn detach_connection(&self, conn_id: ConnId) -> Option<String> {
         let (_, room_id) = self.conn_to_room.remove(&conn_id)?;
-        let should_remove = self
-            .rooms
-            .get_mut(&room_id)
-            .is_some_and(|mut room| {
-                if room.detach_desktop(conn_id) {
-                    info!("Desktop disconnected from room {room_id}");
-                }
-                room.is_empty()
-            });
+        let should_remove = self.rooms.get_mut(&room_id).is_some_and(|mut room| {
+            if room.detach_desktop(conn_id) {
+                info!("Desktop disconnected from room {room_id}");
+            }
+            room.is_empty()
+        });
 
         if should_remove {
             self.rooms.remove(&room_id);

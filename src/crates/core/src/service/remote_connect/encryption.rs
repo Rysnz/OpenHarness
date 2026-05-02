@@ -36,7 +36,10 @@ impl KeyPair {
     }
 
     /// Derive a shared secret from our secret key and the peer's public key.
-    pub fn derive_shared_secret(&self, peer_public_bytes: &[u8; X25519_KEY_SIZE]) -> [u8; X25519_KEY_SIZE] {
+    pub fn derive_shared_secret(
+        &self,
+        peer_public_bytes: &[u8; X25519_KEY_SIZE],
+    ) -> [u8; X25519_KEY_SIZE] {
         let peer_public = PublicKey::from(*peer_public_bytes);
         let shared = self.secret.diffie_hellman(&peer_public);
         *shared.as_bytes()
@@ -70,7 +73,10 @@ pub fn decrypt(
 }
 
 /// Convenience: encrypt a string and return base64-encoded `(data, nonce)`.
-pub fn encrypt_to_base64(shared_secret: &[u8; X25519_KEY_SIZE], plaintext: &str) -> Result<(String, String)> {
+pub fn encrypt_to_base64(
+    shared_secret: &[u8; X25519_KEY_SIZE],
+    plaintext: &str,
+) -> Result<(String, String)> {
     let (ct, nonce) = encrypt(shared_secret, plaintext.as_bytes())?;
     Ok((BASE64.encode(ct), BASE64.encode(nonce)))
 }

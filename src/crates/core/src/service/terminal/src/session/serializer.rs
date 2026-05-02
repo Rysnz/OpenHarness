@@ -162,11 +162,14 @@ impl SessionSerializer {
         session: &TerminalSession,
         replay_data: &str,
     ) -> TerminalResult<String> {
-        let serialized = serialized_session_from(session, vec![ReplayEvent {
-            cols: session.cols,
-            rows: session.rows,
-            data: replay_data.to_string(),
-        }]);
+        let serialized = serialized_session_from(
+            session,
+            vec![ReplayEvent {
+                cols: session.cols,
+                rows: session.rows,
+                data: replay_data.to_string(),
+            }],
+        );
 
         serde_json::to_string(&serialized).map_err(serialization_error)
     }

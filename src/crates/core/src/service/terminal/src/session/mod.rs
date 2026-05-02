@@ -10,7 +10,6 @@ mod serializer;
 mod singleton;
 mod terminal_binding;
 
-pub use terminal_binding::{TerminalBindingOptions, TerminalSessionBinding};
 pub use manager::{
     CommandCompletionReason, CommandExecuteResult, CommandStream, CommandStreamEvent,
     ExecuteOptions, SessionManager,
@@ -21,6 +20,7 @@ pub use singleton::{
     get_session_manager, init_session_manager, is_session_manager_initialized, session_manager,
     set_session_manager,
 };
+pub use terminal_binding::{TerminalBindingOptions, TerminalSessionBinding};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};

@@ -136,7 +136,14 @@ fn handle_text_message(
             device_type: _,
             public_key,
         } => {
-            handle_create_room(room_manager, out_tx, conn_id, room_id, device_id, public_key);
+            handle_create_room(
+                room_manager,
+                out_tx,
+                conn_id,
+                room_id,
+                device_id,
+                public_key,
+            );
         }
 
         InboundMessage::RelayResponse {
@@ -177,13 +184,7 @@ fn handle_create_room(
     public_key: String,
 ) {
     let room_id = room_id.unwrap_or_else(generate_room_id);
-    let ok = room_manager.create_room(
-        &room_id,
-        conn_id,
-        &device_id,
-        &public_key,
-        out_tx.clone(),
-    );
+    let ok = room_manager.create_room(&room_id, conn_id, &device_id, &public_key, out_tx.clone());
 
     if ok {
         send_json(out_tx, &OutboundProtocol::RoomCreated { room_id });

@@ -148,7 +148,11 @@ fn update_pointer_state(
     }
 }
 
-fn release_pointer_button(state: &mut crate::webdriver::ActionState, pointer_id: &str, button: u32) {
+fn release_pointer_button(
+    state: &mut crate::webdriver::ActionState,
+    pointer_id: &str,
+    button: u32,
+) {
     let should_remove_source = state
         .pressed_buttons
         .get_mut(pointer_id)

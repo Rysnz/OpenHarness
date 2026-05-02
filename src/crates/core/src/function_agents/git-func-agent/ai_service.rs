@@ -97,7 +97,10 @@ impl AIAnalysisService {
             .replace("{project_type}", &project_context.project_type)
             .replace("{tech_stack}", &project_context.tech_stack.join(", "))
             .replace("{format_desc}", Self::format_description(&options.format))
-            .replace("{language_desc}", Self::language_description(&options.language))
+            .replace(
+                "{language_desc}",
+                Self::language_description(&options.language),
+            )
             .replace("{diff_content}", diff_content)
             .replace("{max_title_length}", &options.max_title_length.to_string())
     }
@@ -139,7 +142,9 @@ impl AIAnalysisService {
             breaking_changes: Self::optional_string(&value, "breaking_changes"),
             reasoning: Self::optional_string(&value, "reasoning")
                 .unwrap_or_else(|| DEFAULT_REASONING.to_string()),
-            confidence: value["confidence"].as_f64().unwrap_or(DEFAULT_CONFIDENCE as f64) as f32,
+            confidence: value["confidence"]
+                .as_f64()
+                .unwrap_or(DEFAULT_CONFIDENCE as f64) as f32,
         })
     }
 

@@ -3,8 +3,8 @@
 //! Contains all core data structures and state definitions
 
 pub mod dialog_turn;
-mod message_model;
 pub mod message;
+mod message_model;
 pub mod messages_helper;
 pub mod model_round;
 pub mod prompt_markup;

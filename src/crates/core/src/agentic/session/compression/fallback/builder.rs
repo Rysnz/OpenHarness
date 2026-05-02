@@ -61,9 +61,12 @@ fn build_entries_from_messages(
                 text, tool_calls, ..
             } => {
                 if message.role == MessageRole::Assistant {
-                    if let Some(compressed) =
-                        compress_mixed_assistant_message(&text, tool_calls, options, &mut latest_todo)
-                    {
+                    if let Some(compressed) = compress_mixed_assistant_message(
+                        &text,
+                        tool_calls,
+                        options,
+                        &mut latest_todo,
+                    ) {
                         turn_messages.push(compressed);
                     }
                 }
@@ -81,7 +84,10 @@ fn compress_text_message(
     options: &CompressionFallbackOptions,
 ) -> Option<CompressedMessage> {
     let (role, text) = match role {
-        MessageRole::User => (CompressedMessageRole::User, sanitize_user_text(text, options)),
+        MessageRole::User => (
+            CompressedMessageRole::User,
+            sanitize_user_text(text, options),
+        ),
         MessageRole::Assistant => (
             CompressedMessageRole::Assistant,
             sanitize_assistant_text(text, options),
@@ -144,11 +150,7 @@ fn compress_tool_calls(
 
         compressed_tool_calls.push(CompressedToolCall {
             tool_name: tool_call.tool_name.clone(),
-            arguments: sanitize_tool_arguments(
-                &tool_call.tool_name,
-                &tool_call.arguments,
-                options,
-            ),
+            arguments: sanitize_tool_arguments(&tool_call.tool_name, &tool_call.arguments, options),
             is_error: tool_call.is_error,
         });
     }

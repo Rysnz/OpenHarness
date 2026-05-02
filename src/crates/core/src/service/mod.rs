@@ -23,8 +23,8 @@ pub mod remote_connect; // Remote Connect (phone 閳?desktop)
 pub mod remote_ssh; // Remote SSH (desktop 閳?server)
 pub mod runtime; // Managed runtime and capability management
 pub mod session; // Session persistence
-pub mod source_control; // Source control domain
 pub mod snapshot; // Snapshot-based change tracking
+pub mod source_control; // Source control domain
 pub mod system; // System command detection and execution
 pub mod token_usage; // Token usage tracking
 pub mod workspace; // Workspace management // Diff calculation and merge service

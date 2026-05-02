@@ -7,8 +7,8 @@ mod rule_model;
 pub mod service;
 pub mod types;
 
+pub use rule_model::*;
 pub use service::{
     get_global_ai_rules_service, initialize_global_ai_rules_service,
     is_global_ai_rules_service_initialized, AIRulesService, FileRulesResult,
 };
-pub use rule_model::*;

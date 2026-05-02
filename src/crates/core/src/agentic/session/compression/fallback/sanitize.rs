@@ -1,5 +1,5 @@
 use super::types::CompressionFallbackOptions;
-use crate::agentic::core::{CompressedTodoItem, CompressedTodoSnapshot, strip_prompt_markup};
+use crate::agentic::core::{strip_prompt_markup, CompressedTodoItem, CompressedTodoSnapshot};
 use serde_json::{Map, Value};
 
 const GREP_ARGUMENT_FIELDS: &[&str] = &[
