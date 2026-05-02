@@ -2,6 +2,8 @@ import { STORAGE_KEYS } from '@/shared/constants/app';
 import { createLogger } from '@/shared/utils/logger';
 
 const logger = createLogger('ManualTerminalProfileService');
+const MANUAL_PROFILE_STATE_VERSION = 1 as const;
+const MANUAL_PROFILE_ID_PREFIX = 'manual_profile';
 
 export interface ManualTerminalProfile {
   id: string;
@@ -13,7 +15,7 @@ export interface ManualTerminalProfile {
 }
 
 export interface ManualTerminalProfilesState {
-  version: 1;
+  version: typeof MANUAL_PROFILE_STATE_VERSION;
   profiles: ManualTerminalProfile[];
 }
 
@@ -27,7 +29,7 @@ export interface ManualTerminalProfileInput {
 }
 
 const EMPTY_STATE: ManualTerminalProfilesState = {
-  version: 1,
+  version: MANUAL_PROFILE_STATE_VERSION,
   profiles: [],
 };
 
@@ -36,22 +38,39 @@ function getStorageKey(workspacePath: string): string {
 }
 
 export function generateManualTerminalProfileId(): string {
-  return `manual_profile_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  const randomSuffix = Math.random().toString(36).slice(2, 10);
+  return `${MANUAL_PROFILE_ID_PREFIX}_${Date.now()}_${randomSuffix}`;
 }
 
-function normalizeProfile(profile: Partial<ManualTerminalProfile>): ManualTerminalProfile | null {
-  if (!profile.id || !profile.sessionId || !profile.name?.trim()) {
+function cleanOptionalText(value: string | undefined): string | undefined {
+  return value?.trim() || undefined;
+}
+
+function normalizeProfile(profile: Partial<ManualTerminalProfileInput>): ManualTerminalProfile | null {
+  const name = profile.name?.trim();
+
+  if (!profile.id || !profile.sessionId || !name) {
     return null;
   }
 
   return {
     id: profile.id,
     sessionId: profile.sessionId,
-    name: profile.name.trim(),
-    workingDirectory: profile.workingDirectory?.trim() || undefined,
-    startupCommand: profile.startupCommand?.trim() || undefined,
-    shellType: profile.shellType?.trim() || undefined,
+    name,
+    workingDirectory: cleanOptionalText(profile.workingDirectory),
+    startupCommand: cleanOptionalText(profile.startupCommand),
+    shellType: cleanOptionalText(profile.shellType),
   };
+}
+
+function normalizeProfiles(rawProfiles: unknown): ManualTerminalProfile[] {
+  if (!Array.isArray(rawProfiles)) {
+    return [];
+  }
+
+  return rawProfiles
+    .map((item) => normalizeProfile(item as Partial<ManualTerminalProfileInput>))
+    .filter((item): item is ManualTerminalProfile => item !== null);
 }
 
 function normalizeState(raw: unknown): ManualTerminalProfilesState {
@@ -59,24 +78,29 @@ function normalizeState(raw: unknown): ManualTerminalProfilesState {
     return EMPTY_STATE;
   }
 
-  const profiles = Array.isArray((raw as { profiles?: unknown[] }).profiles)
-    ? (raw as { profiles: unknown[] }).profiles
-        .map((item) => normalizeProfile(item as Partial<ManualTerminalProfile>))
-        .filter((item): item is ManualTerminalProfile => item !== null)
-    : [];
+  const profiles = normalizeProfiles((raw as { profiles?: unknown }).profiles);
 
   return {
-    version: 1,
+    version: MANUAL_PROFILE_STATE_VERSION,
     profiles,
   };
 }
 
+function loadStoredState(workspacePath: string): ManualTerminalProfilesState {
+  const raw = localStorage.getItem(getStorageKey(workspacePath));
+  return raw ? normalizeState(JSON.parse(raw)) : EMPTY_STATE;
+}
+
+function findProfileToReplace(
+  profiles: ManualTerminalProfile[],
+  input: ManualTerminalProfileInput,
+): ManualTerminalProfile | undefined {
+  return profiles.find((profile) => profile.id === input.id || profile.sessionId === input.sessionId);
+}
+
 export function loadManualTerminalProfiles(workspacePath: string): ManualTerminalProfilesState {
   try {
-    const raw = localStorage.getItem(getStorageKey(workspacePath));
-    if (raw) {
-      return normalizeState(JSON.parse(raw));
-    }
+    return loadStoredState(workspacePath);
   } catch (error) {
     logger.error('Failed to load manual terminal profiles', { workspacePath, error });
   }
@@ -118,9 +142,7 @@ export function upsertManualTerminalProfile(
   input: ManualTerminalProfileInput,
 ): ManualTerminalProfile {
   const currentState = loadManualTerminalProfiles(workspacePath);
-  const existingProfile = currentState.profiles.find(
-    (profile) => profile.id === input.id || profile.sessionId === input.sessionId,
-  );
+  const existingProfile = findProfileToReplace(currentState.profiles, input);
   const normalizedProfile = normalizeProfile({
     id: existingProfile?.id ?? input.id ?? generateManualTerminalProfileId(),
     sessionId: input.sessionId,
@@ -144,7 +166,7 @@ export function upsertManualTerminalProfile(
   }
 
   saveManualTerminalProfiles(workspacePath, {
-    version: 1,
+    version: MANUAL_PROFILE_STATE_VERSION,
     profiles: nextProfiles,
   });
 
@@ -154,7 +176,7 @@ export function upsertManualTerminalProfile(
 export function deleteManualTerminalProfile(workspacePath: string, profileId: string): void {
   const currentState = loadManualTerminalProfiles(workspacePath);
   saveManualTerminalProfiles(workspacePath, {
-    version: 1,
+    version: MANUAL_PROFILE_STATE_VERSION,
     profiles: currentState.profiles.filter((profile) => profile.id !== profileId),
   });
 }

@@ -24,73 +24,88 @@ Usage notes:
     };
 }
 
+macro_rules! make_document_prompt {
+    ($article:literal, $file_name:literal, [$($section:literal),+ $(,)?]) => {
+        concat!(
+            "Please analyze this codebase and generate the content of ",
+            $article,
+            " ",
+            $file_name,
+            " file.\n\n",
+            "You can refer to the following sections for inspiration, but determine the actual content based on the project's specific situation:\n\n",
+            $("- ", $section, "\n",)+
+            "\nNote: Only include sections that are relevant and meaningful for this specific project. Do not include sections that don't apply."
+        )
+    };
+}
+
 pub const AGENTS_MD_GENERATION_PROMPT: &str = make_ai_guide_prompt!("AGENTS.md");
 pub const CLAUDE_MD_GENERATION_PROMPT: &str = make_ai_guide_prompt!("CLAUDE.md");
 pub const COPILOT_INSTRUCTIONS_GENERATION_PROMPT: &str =
     make_ai_guide_prompt!(".github/copilot-instructions.md");
 
-pub const README_MD_GENERATION_PROMPT: &str = "Please analyze this codebase and generate the content of a README.md file.
+pub const README_MD_GENERATION_PROMPT: &str = make_document_prompt!(
+    "a",
+    "README.md",
+    [
+        "Project overview and purpose",
+        "Installation instructions",
+        "Quick start / Usage examples",
+        "Project structure",
+        "Configuration options",
+        "Contributing guidelines",
+        "License information",
+    ]
+);
 
-You can refer to the following sections for inspiration, but determine the actual content based on the project's specific situation:
+pub const API_DESIGN_GENERATION_PROMPT: &str = make_document_prompt!(
+    "an",
+    "API-DESIGN.md",
+    [
+        "API design principles and philosophy",
+        "Endpoint descriptions with methods, paths, and parameters",
+        "Request/response schemas and data models",
+        "Authentication and authorization mechanisms",
+        "Error handling and status codes",
+        "Rate limiting and throttling policies",
+        "Versioning strategy",
+    ]
+);
 
-- Project overview and purpose
-- Installation instructions
-- Quick start / Usage examples
-- Project structure
-- Configuration options
-- Contributing guidelines
-- License information
+pub const DESIGN_SYSTEM_GENERATION_PROMPT: &str = make_document_prompt!(
+    "a",
+    "DESIGN-SYSTEM.md",
+    [
+        "Design principles and philosophy",
+        "Color palette with usage guidelines",
+        "Typography system (fonts, sizes, weights, line heights)",
+        "Spacing and layout system (margins, paddings, grids)",
+        "Component library overview",
+        "Icon system",
+        "Animation and interaction patterns",
+    ]
+);
 
-Note: Only include sections that are relevant and meaningful for this specific project. Do not include sections that don't apply.";
+pub const DATABASE_DESIGN_GENERATION_PROMPT: &str = make_document_prompt!(
+    "a",
+    "DATABASE-DESIGN.md",
+    [
+        "Database architecture and overview",
+        "Schema definitions with table structures",
+        "Entity relationships",
+        "Indexes and optimization strategies",
+        "Data migration approach",
+        "Backup and recovery procedures",
+    ]
+);
 
-pub const API_DESIGN_GENERATION_PROMPT: &str = "Please analyze this codebase and generate the content of a API-DESIGN.md file.
-
-You can refer to the following sections for inspiration, but determine the actual content based on the project's specific situation:
-
-- API design principles and philosophy
-- Endpoint descriptions with methods, paths, and parameters
-- Request/response schemas and data models
-- Authentication and authorization mechanisms
-- Error handling and status codes
-- Rate limiting and throttling policies
-- Versioning strategy
-
-Note: Only include sections that are relevant and meaningful for this specific project. Do not include sections that don't apply.";
-
-pub const DESIGN_SYSTEM_GENERATION_PROMPT: &str = "Please analyze this codebase and generate the content of a DESIGN-SYSTEM.md file.
-
-You can refer to the following sections for inspiration, but determine the actual content based on the project's specific situation:
-
-- Design principles and philosophy
-- Color palette with usage guidelines
-- Typography system (fonts, sizes, weights, line heights)
-- Spacing and layout system (margins, paddings, grids)
-- Component library overview
-- Icon system
-- Animation and interaction patterns
-
-Note: Only include sections that are relevant and meaningful for this specific project. Do not include sections that don't apply.";
-
-pub const DATABASE_DESIGN_GENERATION_PROMPT: &str = "Please analyze this codebase and generate the content of a DATABASE-DESIGN.md file.
-
-You can refer to the following sections for inspiration, but determine the actual content based on the project's specific situation:
-
-- Database architecture and overview
-- Schema definitions with table structures
-- Entity relationships
-- Indexes and optimization strategies
-- Data migration approach
-- Backup and recovery procedures
-
-Note: Only include sections that are relevant and meaningful for this specific project. Do not include sections that don't apply.";
-
-pub const ARCHITECTURE_MD_GENERATION_PROMPT: &str = "Please analyze this codebase and generate the content of a ARCHITECTURE.md file.
-
-You can refer to the following sections for inspiration, but determine the actual content based on the project's specific situation:
-
-- System overview
-- Component relationships
-- Data flow diagrams (using mermaid)
-- Design decisions and rationale
-
-Note: Only include sections that are relevant and meaningful for this specific project. Do not include sections that don't apply.";
+pub const ARCHITECTURE_MD_GENERATION_PROMPT: &str = make_document_prompt!(
+    "an",
+    "ARCHITECTURE.md",
+    [
+        "System overview",
+        "Component relationships",
+        "Data flow diagrams (using mermaid)",
+        "Design decisions and rationale",
+    ]
+);

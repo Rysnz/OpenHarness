@@ -38,6 +38,10 @@ pub struct ShellProfile {
 impl ShellProfile {
     /// Create a new shell profile
     pub fn new(id: String, name: String, shell_type: ShellType, config: ShellConfig) -> Self {
+        Self::with_defaults(id, name, shell_type, config)
+    }
+
+    fn with_defaults(id: String, name: String, shell_type: ShellType, config: ShellConfig) -> Self {
         Self {
             id,
             name,
@@ -52,16 +56,12 @@ impl ShellProfile {
 
     /// Create a default profile from a detected shell
     pub fn from_detected(shell: &super::detection::DetectedShell) -> Self {
-        Self {
-            id: uuid::Uuid::new_v4().to_string(),
-            name: shell.display_name.clone(),
-            shell_type: shell.shell_type.clone(),
-            config: shell.to_config(),
-            is_default: false,
-            icon: None,
-            color: None,
-            hidden: false,
-        }
+        Self::with_defaults(
+            uuid::Uuid::new_v4().to_string(),
+            shell.display_name.clone(),
+            shell.shell_type.clone(),
+            shell.to_config(),
+        )
     }
 }
 
@@ -92,10 +92,8 @@ impl ShellProfileManager {
         for (i, shell) in shells.into_iter().enumerate() {
             let mut profile = ShellProfile::from_detected(&shell);
 
-            // Set first profile as default
             if i == 0 {
-                profile.is_default = true;
-                self.default_profile_id = Some(profile.id.clone());
+                self.mark_as_default(&mut profile);
             }
 
             self.profiles.insert(profile.id.clone(), profile);
@@ -114,10 +112,7 @@ impl ShellProfileManager {
     pub fn remove_profile(&mut self, id: &str) -> Option<ShellProfile> {
         let profile = self.profiles.remove(id)?;
 
-        // If this was the default, clear default
-        if self.default_profile_id.as_deref() == Some(id) {
-            self.default_profile_id = None;
-        }
+        self.clear_default_if(id);
 
         Some(profile)
     }
@@ -136,23 +131,17 @@ impl ShellProfileManager {
 
     /// Set the default profile
     pub fn set_default_profile(&mut self, id: &str) -> bool {
-        if self.profiles.contains_key(id) {
-            // Clear previous default
-            if let Some(old_id) = &self.default_profile_id {
-                if let Some(old_profile) = self.profiles.get_mut(old_id) {
-                    old_profile.is_default = false;
-                }
-            }
-
-            // Set new default
-            if let Some(profile) = self.profiles.get_mut(id) {
-                profile.is_default = true;
-            }
-            self.default_profile_id = Some(id.to_string());
-            true
-        } else {
-            false
+        if !self.profiles.contains_key(id) {
+            return false;
         }
+
+        self.unset_current_default();
+
+        if let Some(profile) = self.profiles.get_mut(id) {
+            profile.is_default = true;
+        }
+        self.default_profile_id = Some(id.to_string());
+        true
     }
 
     /// List all profiles
@@ -163,6 +152,25 @@ impl ShellProfileManager {
     /// List visible profiles (not hidden)
     pub fn list_visible_profiles(&self) -> Vec<&ShellProfile> {
         self.profiles.values().filter(|p| !p.hidden).collect()
+    }
+
+    fn mark_as_default(&mut self, profile: &mut ShellProfile) {
+        profile.is_default = true;
+        self.default_profile_id = Some(profile.id.clone());
+    }
+
+    fn clear_default_if(&mut self, id: &str) {
+        if self.default_profile_id.as_deref() == Some(id) {
+            self.default_profile_id = None;
+        }
+    }
+
+    fn unset_current_default(&mut self) {
+        if let Some(old_id) = &self.default_profile_id {
+            if let Some(old_profile) = self.profiles.get_mut(old_id) {
+                old_profile.is_default = false;
+            }
+        }
     }
 }
 
