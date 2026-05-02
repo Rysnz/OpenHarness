@@ -8,6 +8,8 @@ import { Modal, Input, Button } from '@/component-library';
 import { useI18n } from '@/infrastructure/i18n';
 import './TerminalEditModal.scss';
 
+const TERMINAL_NAME_FOCUS_DELAY_MS = 100;
+
 export interface TerminalEditModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -35,17 +37,19 @@ export const TerminalEditModal: React.FC<TerminalEditModalProps> = ({
   const [startupCommand, setStartupCommand] = useState(initialStartupCommand);
   const nameInputRef = useRef<HTMLInputElement>(null);
 
+  const focusNameInput = useCallback(() => {
+    nameInputRef.current?.focus();
+    nameInputRef.current?.select();
+  }, []);
+
   useEffect(() => {
     if (isOpen) {
       setName(initialName);
       setWorkingDirectory(initialWorkingDirectory);
       setStartupCommand(initialStartupCommand);
-      setTimeout(() => {
-        nameInputRef.current?.focus();
-        nameInputRef.current?.select();
-      }, 100);
+      setTimeout(focusNameInput, TERMINAL_NAME_FOCUS_DELAY_MS);
     }
-  }, [initialName, initialStartupCommand, initialWorkingDirectory, isOpen]);
+  }, [focusNameInput, initialName, initialStartupCommand, initialWorkingDirectory, isOpen]);
 
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
@@ -63,11 +67,12 @@ export const TerminalEditModal: React.FC<TerminalEditModalProps> = ({
 
     const trimmedWorkingDirectory = workingDirectory.trim();
     const trimmedCommand = startupCommand.trim();
-    onSave({
+    const payload = {
       name: trimmedName,
       workingDirectory: trimmedWorkingDirectory || undefined,
       startupCommand: trimmedCommand || undefined,
-    });
+    };
+    onSave(payload);
     onClose();
   }, [name, onClose, onSave, startupCommand, workingDirectory]);
 
