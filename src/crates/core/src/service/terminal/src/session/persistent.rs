@@ -62,13 +62,7 @@ impl PersistentSession {
 
     /// Attach to the session (client reconnected)
     pub async fn attach(&self) -> TerminalResult<()> {
-        // Cancel any pending disconnect timer
-        let handle = self.shutdown_handle.write().await.take();
-        if let Some(h) = handle {
-            h.abort();
-        }
-
-        *self.disconnect_timer_running.write().await = false;
+        self.cancel_disconnect_timer().await;
 
         // Update session status
         let mut session = self.session.write().await;
@@ -112,23 +106,8 @@ impl PersistentSession {
 
         *self.disconnect_timer_running.write().await = true;
 
-        let session = self.session.clone();
-        let disconnect_timer_running = self.disconnect_timer_running.clone();
         let grace_time = Duration::from_secs(self.config.grace_time_secs);
-
-        let handle = tokio::spawn(async move {
-            tokio::time::sleep(grace_time).await;
-
-            // Check if still orphaned
-            let mut session_guard = session.write().await;
-            if session_guard.status == SessionStatus::Orphaned {
-                session_guard.status = SessionStatus::Terminating;
-            }
-
-            *disconnect_timer_running.write().await = false;
-        });
-
-        *self.shutdown_handle.write().await = Some(handle);
+        self.schedule_termination_timer(grace_time).await;
     }
 
     /// Reduce grace time (e.g., when system is shutting down)
@@ -138,28 +117,12 @@ impl PersistentSession {
         }
 
         // Cancel existing timer
-        let handle = self.shutdown_handle.write().await.take();
-        if let Some(h) = handle {
-            h.abort();
-        }
+        self.cancel_disconnect_timer().await;
+        *self.disconnect_timer_running.write().await = true;
 
         // Start shorter timer
-        let session = self.session.clone();
-        let disconnect_timer_running = self.disconnect_timer_running.clone();
         let short_grace_time = Duration::from_secs(self.config.short_grace_time_secs);
-
-        let handle = tokio::spawn(async move {
-            tokio::time::sleep(short_grace_time).await;
-
-            let mut session_guard = session.write().await;
-            if session_guard.status == SessionStatus::Orphaned {
-                session_guard.status = SessionStatus::Terminating;
-            }
-
-            *disconnect_timer_running.write().await = false;
-        });
-
-        *self.shutdown_handle.write().await = Some(handle);
+        self.schedule_termination_timer(short_grace_time).await;
     }
 
     /// Check if the session is orphaned
@@ -173,6 +136,38 @@ impl PersistentSession {
             self.session.read().await.status,
             SessionStatus::Terminating | SessionStatus::Exited { .. }
         )
+    }
+
+    async fn cancel_disconnect_timer(&self) {
+        if let Some(handle) = self.shutdown_handle.write().await.take() {
+            handle.abort();
+        }
+
+        *self.disconnect_timer_running.write().await = false;
+    }
+
+    async fn schedule_termination_timer(&self, wait_time: Duration) {
+        let session = self.session.clone();
+        let disconnect_timer_running = self.disconnect_timer_running.clone();
+
+        let handle = tokio::spawn(async move {
+            tokio::time::sleep(wait_time).await;
+            Self::mark_orphaned_session_terminating(session, disconnect_timer_running).await;
+        });
+
+        *self.shutdown_handle.write().await = Some(handle);
+    }
+
+    async fn mark_orphaned_session_terminating(
+        session: Arc<RwLock<TerminalSession>>,
+        disconnect_timer_running: Arc<RwLock<bool>>,
+    ) {
+        let mut session_guard = session.write().await;
+        if session_guard.status == SessionStatus::Orphaned {
+            session_guard.status = SessionStatus::Terminating;
+        }
+
+        *disconnect_timer_running.write().await = false;
     }
 }
 
