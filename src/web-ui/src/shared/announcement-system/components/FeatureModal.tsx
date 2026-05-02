@@ -6,6 +6,8 @@ import { useAnnouncementI18n } from '../hooks/useAnnouncementI18n';
 import '../styles/FeatureModal.scss';
 import type { ModalConfig } from '../types';
 
+const FEATURE_MODAL_EXIT_DELAY_MS = 280;
+
 /**
  * Centre-screen feature demo modal.
  *
@@ -41,7 +43,7 @@ const FeatureModal: React.FC = () => {
 
   function triggerClose(neverShow = false) {
     setExiting(true);
-    setTimeout(() => closeModal(neverShow), 280);
+    setTimeout(() => closeModal(neverShow), FEATURE_MODAL_EXIT_DELAY_MS);
   }
 
   function handleBackdropClick(e: React.MouseEvent) {
@@ -51,17 +53,18 @@ const FeatureModal: React.FC = () => {
   }
 
   const sizeClass = `feature-modal--${modal.size ?? 'lg'}`;
+  const backdropClassName = `feature-modal-backdrop${exiting ? ' feature-modal-backdrop--exiting' : ''}`;
+  const modalClassName = `feature-modal ${sizeClass}${exiting ? ' feature-modal--exiting' : ''}`;
 
   return (
     <div
       ref={backdropRef}
-      className={`feature-modal-backdrop${exiting ? ' feature-modal-backdrop--exiting' : ''}`}
+      className={backdropClassName}
       onClick={handleBackdropClick}
       role="dialog"
       aria-modal="true"
     >
-      <div className={`feature-modal ${sizeClass}${exiting ? ' feature-modal--exiting' : ''}`}>
-        {/* Close button */}
+      <div className={modalClassName}>
         {modal.closable && (
           <button
             type="button"
@@ -73,7 +76,6 @@ const FeatureModal: React.FC = () => {
           </button>
         )}
 
-        {/* Page viewport */}
         <div className="feature-modal__pages">
           {pages.map((page, i) => (
             <div
@@ -85,9 +87,7 @@ const FeatureModal: React.FC = () => {
           ))}
         </div>
 
-        {/* Footer navigation */}
         <div className="feature-modal__footer">
-          {/* Dot indicators */}
           <div className="feature-modal__dots" aria-label="Page navigation">
             {pages.map((_, i) => (
               <button
@@ -100,7 +100,6 @@ const FeatureModal: React.FC = () => {
             ))}
           </div>
 
-          {/* Navigation buttons */}
           <div className="feature-modal__nav">
             {modal.completion_action === 'never_show_again' && isLast && (
               <button
