@@ -11,6 +11,18 @@ import type { AnchorPosition } from '../types';
 import { LAYOUT_CONFIG, clampAnchorSize } from '../types';
 import './AnchorZone.scss';
 
+const getAnchorClassName = (position: AnchorPosition, flags: {
+  isResizing: boolean;
+  isCollapsed: boolean;
+  isMaximized: boolean;
+}): string => [
+  'canvas-anchor-zone',
+  `canvas-anchor-zone--${position}`,
+  flags.isResizing ? 'is-resizing' : '',
+  flags.isCollapsed ? 'is-collapsed' : '',
+  flags.isMaximized ? 'is-maximized' : '',
+].filter(Boolean).join(' ');
+
 export interface AnchorZoneProps {
   /** Position */
   position: AnchorPosition;
@@ -47,8 +59,10 @@ export const AnchorZone: React.FC<AnchorZoneProps> = ({
   const startSizeRef = useRef(size);
 
   const isBottom = position === 'bottom';
+  const collapseIcon = isCollapsed
+    ? <ChevronUp size={14} />
+    : <ChevronDown size={14} />;
 
-  // Handle resize start
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     setIsResizing(true);
@@ -56,7 +70,6 @@ export const AnchorZone: React.FC<AnchorZoneProps> = ({
     startSizeRef.current = size;
   }, [isBottom, size]);
 
-  // Handle resizing
   useEffect(() => {
     if (!isResizing) return;
 
@@ -80,30 +93,27 @@ export const AnchorZone: React.FC<AnchorZoneProps> = ({
     };
   }, [isResizing, isBottom, onSizeChange]);
 
-  // Double click to reset size
   const handleDoubleClick = useCallback(() => {
     onSizeChange(LAYOUT_CONFIG.DEFAULT_ANCHOR_SIZE);
   }, [onSizeChange]);
 
-  // Collapse/expand
   const toggleCollapse = useCallback(() => {
-    setIsCollapsed(!isCollapsed);
-  }, [isCollapsed]);
+    setIsCollapsed(collapsed => !collapsed);
+  }, []);
 
-  // Toggle position
   if (position === 'hidden') {
     return null;
   }
 
+  const zoneStyle = isCollapsed ? undefined : {
+    [isBottom ? 'height' : 'width']: isMaximized ? '100%' : `${size}px`,
+  };
+
   return (
     <div
       ref={containerRef}
-      className={`canvas-anchor-zone canvas-anchor-zone--${position} ${
-        isResizing ? 'is-resizing' : ''
-      } ${isCollapsed ? 'is-collapsed' : ''} ${isMaximized ? 'is-maximized' : ''}`}
-      style={isCollapsed ? undefined : {
-        [isBottom ? 'height' : 'width']: isMaximized ? '100%' : `${size}px`,
-      }}
+      className={getAnchorClassName(position, { isResizing, isCollapsed, isMaximized })}
+      style={zoneStyle}
     >
       {/* Resize handle */}
       <Tooltip content={t('canvas.dragToResize')}>
@@ -130,11 +140,7 @@ export const AnchorZone: React.FC<AnchorZoneProps> = ({
               className="canvas-anchor-zone__action-btn"
               onClick={toggleCollapse}
             >
-              {isCollapsed ? (
-                isBottom ? <ChevronUp size={14} /> : <ChevronUp size={14} />
-              ) : (
-                isBottom ? <ChevronDown size={14} /> : <ChevronDown size={14} />
-              )}
+              {collapseIcon}
             </button>
           </Tooltip>
 
