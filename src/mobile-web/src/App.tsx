@@ -13,50 +13,93 @@ type Page = 'pairing' | 'workspace' | 'sessions' | 'chat';
 type NavDirection = 'push' | 'pop' | null;
 
 const NAV_DURATION = 300;
+const INITIAL_PAGE: Page = 'pairing';
+const ROOT_PAGES = new Set<Page>(['pairing', 'sessions']);
 
-function getNavClass(
+interface MobileRuntime {
+  client: RelayHttpClient | null;
+  sessionMgr: RemoteSessionManager | null;
+}
+
+interface NavigatorState {
+  page: Page;
+  prevPage: Page | null;
+  navDir: NavDirection;
+  isAnimating: boolean;
+  navigateTo: (target: Page, direction: NavDirection) => void;
+  resetToSessions: () => void;
+  shouldShow: (target: Page) => boolean;
+}
+
+const getNavClass = (
   targetPage: Page,
   currentPage: Page,
   navDir: NavDirection,
   isAnimating: boolean,
-): string {
-  if (!isAnimating) return '';
-  const isEntering = currentPage === targetPage;
-  if (isEntering) {
-    return navDir === 'push' ? 'nav-push-enter' : 'nav-pop-enter';
+): string => {
+  if (!isAnimating) {
+    return '';
   }
-  return navDir === 'push' ? 'nav-push-exit' : 'nav-pop-exit';
-}
 
-const AppContent: React.FC = () => {
-  const [page, setPage] = useState<Page>('pairing');
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  const [activeSessionName, setActiveSessionName] = useState<string>('Session');
-  const [chatAutoFocus, setChatAutoFocus] = useState(false);
-  const clientRef = useRef<RelayHttpClient | null>(null);
-  const sessionMgrRef = useRef<RemoteSessionManager | null>(null);
+  const entering = currentPage === targetPage;
+  if (navDir === 'push') {
+    return entering ? 'nav-push-enter' : 'nav-push-exit';
+  }
 
-  const [navDir, setNavDir] = useState<NavDirection>(null);
+  return entering ? 'nav-pop-enter' : 'nav-pop-exit';
+};
+
+const isExternalHttpLink = (href: string): boolean => (
+  href.startsWith('http://') || href.startsWith('https://')
+);
+
+const useExternalLinkInterception = (): void => {
+  useEffect(() => {
+    const handleLinkClick = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      const link = target.closest('a') as HTMLAnchorElement | null;
+
+      if (!link?.href || !isExternalHttpLink(link.href)) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      window.open(link.href, '_blank', 'noopener,noreferrer');
+    };
+
+    document.addEventListener('click', handleLinkClick, true);
+    return () => document.removeEventListener('click', handleLinkClick, true);
+  }, []);
+};
+
+const useMobileNavigator = (): NavigatorState => {
+  const [page, setPage] = useState<Page>(INITIAL_PAGE);
   const [prevPage, setPrevPage] = useState<Page | null>(null);
+  const [navDir, setNavDir] = useState<NavDirection>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout>>();
-
-  // Track the page stack for browser history integration.
-  // When user triggers browser back (phone back button / edge swipe),
-  // we intercept popstate and perform in-app navigation instead.
-  const pageStackRef = useRef<Page[]>(['pairing']);
+  const pageStackRef = useRef<Page[]>([INITIAL_PAGE]);
   const isPopstateNavRef = useRef(false);
 
-  const navigateTo = useCallback((target: Page, direction: NavDirection) => {
-    setPage(prev => {
-      setPrevPage(prev);
-      return target;
-    });
-    setNavDir(direction);
+  const clearNavigationTimer = useCallback(() => {
     clearTimeout(timerRef.current);
+  }, []);
+
+  const finishAnimationLater = useCallback(() => {
+    clearNavigationTimer();
     timerRef.current = setTimeout(() => {
       setPrevPage(null);
       setNavDir(null);
     }, NAV_DURATION);
+  }, [clearNavigationTimer]);
+
+  const navigateTo = useCallback((target: Page, direction: NavDirection) => {
+    setPage((current) => {
+      setPrevPage(current);
+      return target;
+    });
+    setNavDir(direction);
+    finishAnimationLater();
 
     if (direction === 'push') {
       pageStackRef.current = [...pageStackRef.current, target];
@@ -69,75 +112,31 @@ const AppContent: React.FC = () => {
         history.back();
       }
     }
+  }, [finishAnimationLater]);
+
+  const resetToSessions = useCallback(() => {
+    pageStackRef.current = ['pairing', 'sessions'];
+    history.pushState({ page: 'sessions' }, '');
+    setPage('sessions');
+    setPrevPage(null);
+    setNavDir(null);
   }, []);
 
-  useEffect(() => () => clearTimeout(timerRef.current), []);
-
-  // 全局链接点击处理 - 确保所有外部链接在新标签页打开
-  useEffect(() => {
-    const handleLinkClick = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      const link = target.closest('a') as HTMLAnchorElement | null;
-      
-      if (link && link.href) {
-        const href = link.href;
-        // 检查是否是外部链接 (http/https 且不是当前域名)
-        if (href.startsWith('http://') || href.startsWith('https://')) {
-          e.preventDefault();
-          e.stopPropagation();
-          window.open(href, '_blank', 'noopener,noreferrer');
-        }
-      }
-    };
-    
-    // 添加全局点击监听
-    document.addEventListener('click', handleLinkClick, true);
-    
-    return () => {
-      document.removeEventListener('click', handleLinkClick, true);
-    };
-  }, []);
-
-  const handlePaired = useCallback(
-    (client: RelayHttpClient, sessionMgr: RemoteSessionManager) => {
-      clientRef.current = client;
-      sessionMgrRef.current = sessionMgr;
-      pageStackRef.current = ['pairing', 'sessions'];
-      history.pushState({ page: 'sessions' }, '');
-      setPage('sessions');
-    },
-    [],
-  );
-
-  // Pop navigation handlers that can be called from both UI buttons and popstate
-  const doPopFromChat = useCallback(() => {
-    navigateTo('sessions', 'pop');
-    setTimeout(() => setActiveSessionId(null), NAV_DURATION);
-  }, [navigateTo]);
-
-  const doPopFromWorkspace = useCallback(() => {
-    navigateTo('sessions', 'pop');
-  }, [navigateTo]);
+  useEffect(() => () => clearNavigationTimer(), [clearNavigationTimer]);
 
   useEffect(() => {
     const onPopState = () => {
       const stack = pageStackRef.current;
       const currentPage = stack[stack.length - 1];
 
-      if (currentPage === 'pairing' || currentPage === 'sessions') {
-        // At the root-level pages: re-push a history entry so the user
-        // can't accidentally close the app with another back gesture.
+      if (ROOT_PAGES.has(currentPage)) {
         history.pushState({ page: currentPage }, '');
         return;
       }
 
       isPopstateNavRef.current = true;
       try {
-        if (currentPage === 'chat') {
-          doPopFromChat();
-        } else if (currentPage === 'workspace') {
-          doPopFromWorkspace();
-        }
+        navigateTo('sessions', 'pop');
       } finally {
         isPopstateNavRef.current = false;
       }
@@ -145,57 +144,102 @@ const AppContent: React.FC = () => {
 
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
-  }, [doPopFromChat, doPopFromWorkspace]);
+  }, [navigateTo]);
+
+  const isAnimating = navDir !== null;
+  const shouldShow = useCallback(
+    (target: Page) => page === target || (isAnimating && prevPage === target),
+    [isAnimating, page, prevPage]
+  );
+
+  return {
+    page,
+    prevPage,
+    navDir,
+    isAnimating,
+    navigateTo,
+    resetToSessions,
+    shouldShow,
+  };
+};
+
+const AppContent: React.FC = () => {
+  const [runtime, setRuntime] = useState<MobileRuntime>({ client: null, sessionMgr: null });
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [activeSessionName, setActiveSessionName] = useState('Session');
+  const [chatAutoFocus, setChatAutoFocus] = useState(false);
+  const navigator = useMobileNavigator();
+
+  useExternalLinkInterception();
+
+  const clearActiveSessionAfterTransition = useCallback(() => {
+    setTimeout(() => setActiveSessionId(null), NAV_DURATION);
+  }, []);
+
+  const handlePaired = useCallback(
+    (client: RelayHttpClient, sessionMgr: RemoteSessionManager) => {
+      setRuntime({ client, sessionMgr });
+      navigator.resetToSessions();
+    },
+    [navigator],
+  );
 
   const handleOpenWorkspace = useCallback(() => {
-    navigateTo('workspace', 'push');
-  }, [navigateTo]);
+    navigator.navigateTo('workspace', 'push');
+  }, [navigator]);
 
   const handleWorkspaceReady = useCallback(() => {
-    navigateTo('sessions', 'pop');
-  }, [navigateTo]);
+    navigator.navigateTo('sessions', 'pop');
+  }, [navigator]);
 
   const handleSelectSession = useCallback((sessionId: string, sessionName?: string, isNew?: boolean) => {
     setActiveSessionId(sessionId);
     setActiveSessionName(sessionName || 'Session');
-    setChatAutoFocus(!!isNew);
-    navigateTo('chat', 'push');
-  }, [navigateTo]);
+    setChatAutoFocus(Boolean(isNew));
+    navigator.navigateTo('chat', 'push');
+  }, [navigator]);
 
   const handleBackToSessions = useCallback(() => {
-    navigateTo('sessions', 'pop');
-    setTimeout(() => setActiveSessionId(null), NAV_DURATION);
-  }, [navigateTo]);
+    navigator.navigateTo('sessions', 'pop');
+    clearActiveSessionAfterTransition();
+  }, [clearActiveSessionAfterTransition, navigator]);
 
-  const isAnimating = navDir !== null;
-  const currentPage: Page = page;
+  useEffect(() => {
+    if (navigator.page === 'sessions' && navigator.prevPage === 'chat' && navigator.navDir === 'pop') {
+      clearActiveSessionAfterTransition();
+    }
+  }, [clearActiveSessionAfterTransition, navigator.navDir, navigator.page, navigator.prevPage]);
 
-  const shouldShow = (p: Page) => currentPage === p || (isAnimating && prevPage === p);
+  const navClassFor = useCallback((target: Page) => (
+    getNavClass(target, navigator.page, navigator.navDir, navigator.isAnimating)
+  ), [navigator.isAnimating, navigator.navDir, navigator.page]);
+
+  const { sessionMgr } = runtime;
 
   return (
     <div className="mobile-app">
-      {page === 'pairing' && <PairingPage onPaired={handlePaired} />}
-      {shouldShow('workspace') && sessionMgrRef.current && (
-        <div className={`nav-page ${getNavClass('workspace', currentPage, navDir, isAnimating)}`}>
-          <WorkspacePage
-            sessionMgr={sessionMgrRef.current}
-            onReady={handleWorkspaceReady}
-          />
+      {navigator.page === 'pairing' && <PairingPage onPaired={handlePaired} />}
+
+      {navigator.shouldShow('workspace') && sessionMgr && (
+        <div className={`nav-page ${navClassFor('workspace')}`}>
+          <WorkspacePage sessionMgr={sessionMgr} onReady={handleWorkspaceReady} />
         </div>
       )}
-      {shouldShow('sessions') && sessionMgrRef.current && (
-        <div className={`nav-page ${getNavClass('sessions', currentPage, navDir, isAnimating)}`}>
+
+      {navigator.shouldShow('sessions') && sessionMgr && (
+        <div className={`nav-page ${navClassFor('sessions')}`}>
           <SessionListPage
-            sessionMgr={sessionMgrRef.current}
+            sessionMgr={sessionMgr}
             onSelectSession={handleSelectSession}
             onOpenWorkspace={handleOpenWorkspace}
           />
         </div>
       )}
-      {shouldShow('chat') && sessionMgrRef.current && activeSessionId && (
-        <div className={`nav-page ${getNavClass('chat', currentPage, navDir, isAnimating)}`}>
+
+      {navigator.shouldShow('chat') && sessionMgr && activeSessionId && (
+        <div className={`nav-page ${navClassFor('chat')}`}>
           <ChatPage
-            sessionMgr={sessionMgrRef.current}
+            sessionMgr={sessionMgr}
             sessionId={activeSessionId}
             sessionName={activeSessionName}
             onBack={handleBackToSessions}
