@@ -43,6 +43,33 @@ function createSession(overrides: Partial<Session> = {}): Session {
   };
 }
 
+function createMetadata(overrides: Partial<SessionMetadata> = {}): SessionMetadata {
+  return {
+    sessionId: 'session-1',
+    sessionName: 'Session Title',
+    agentType: 'agentic',
+    modelName: 'gpt-test',
+    createdAt: 1000,
+    lastActiveAt: 1000,
+    turnCount: 0,
+    messageCount: 0,
+    toolCallCount: 0,
+    status: 'active',
+    tags: [],
+    customMetadata: {},
+    todos: [],
+    workspacePath: '/workspace',
+    ...overrides,
+  };
+}
+
+const BTW_ORIGIN = {
+  requestId: 'req-1',
+  parentSessionId: 'parent-1',
+  parentDialogTurnId: 'turn-9',
+  parentTurnIndex: 9,
+};
+
 describe('sessionMetadata', () => {
   it('normalizes runtime sessions to an explicit normal kind', () => {
     expect(normalizeSessionRelationship({})).toEqual({
@@ -58,12 +85,7 @@ describe('sessionMetadata', () => {
       title: 'BTW Child',
       sessionKind: 'btw',
       parentSessionId: 'parent-1',
-      btwOrigin: {
-        requestId: 'req-1',
-        parentSessionId: 'parent-1',
-        parentDialogTurnId: 'turn-9',
-        parentTurnIndex: 9,
-      },
+      btwOrigin: BTW_ORIGIN,
       dialogTurns: [
         {
           id: 'turn-1',
@@ -101,10 +123,9 @@ describe('sessionMetadata', () => {
       ],
     });
 
-    const existingMetadata: SessionMetadata = {
+    const existingMetadata = createMetadata({
       sessionId: 'child-1',
       sessionName: 'Old Name',
-      agentType: 'agentic',
       modelName: 'old-model',
       createdAt: 10,
       lastActiveAt: 10,
@@ -117,18 +138,10 @@ describe('sessionMetadata', () => {
       customMetadata: {
         unrelated: 'preserved',
       },
-      todos: [],
-      workspacePath: '/workspace',
-    };
+    });
 
     const metadata = buildSessionMetadata(session, existingMetadata);
-
-    expect(metadata.snapshotSessionId).toBe('snapshot-1');
-    expect(metadata.tags).toEqual(['keep-me', 'btw']);
-    expect(metadata.turnCount).toBe(99);
-    expect(metadata.messageCount).toBe(99);
-    expect(metadata.toolCallCount).toBe(99);
-    expect(metadata.customMetadata).toEqual({
+    const expectedCustomMetadata = {
       unrelated: 'preserved',
       kind: 'btw',
       parentSessionId: 'parent-1',
@@ -136,7 +149,14 @@ describe('sessionMetadata', () => {
       parentDialogTurnId: 'turn-9',
       parentTurnIndex: 9,
       lastFinishedAt: null,
-    });
+    };
+
+    expect(metadata.snapshotSessionId).toBe('snapshot-1');
+    expect(metadata.tags).toEqual(['keep-me', 'btw']);
+    expect(metadata.turnCount).toBe(99);
+    expect(metadata.messageCount).toBe(99);
+    expect(metadata.toolCallCount).toBe(99);
+    expect(metadata.customMetadata).toEqual(expectedCustomMetadata);
   });
 
   it('writes normal metadata explicitly and removes stale btw linkage', () => {
@@ -146,17 +166,7 @@ describe('sessionMetadata', () => {
       btwOrigin: undefined,
     });
 
-    const metadata = buildSessionMetadata(session, {
-      sessionId: 'session-1',
-      sessionName: 'Session Title',
-      agentType: 'agentic',
-      modelName: 'gpt-test',
-      createdAt: 1000,
-      lastActiveAt: 1000,
-      turnCount: 0,
-      messageCount: 0,
-      toolCallCount: 0,
-      status: 'active',
+    const metadata = buildSessionMetadata(session, createMetadata({
       tags: ['btw'],
       customMetadata: {
         unrelated: 'preserved',
@@ -164,9 +174,7 @@ describe('sessionMetadata', () => {
         parentSessionId: 'stale-parent',
         parentRequestId: 'stale-request',
       },
-      todos: [],
-      workspacePath: '/workspace',
-    });
+    }));
 
     expect(metadata.customMetadata).toEqual({
       unrelated: 'preserved',
@@ -180,24 +188,11 @@ describe('sessionMetadata', () => {
       lastFinishedAt: 4321,
     });
 
-    const metadata = buildSessionMetadata(session, {
-      sessionId: 'session-1',
-      sessionName: 'Session Title',
-      agentType: 'agentic',
-      modelName: 'gpt-test',
-      createdAt: 1000,
-      lastActiveAt: 1000,
-      turnCount: 0,
-      messageCount: 0,
-      toolCallCount: 0,
-      status: 'active',
-      tags: [],
+    const metadata = buildSessionMetadata(session, createMetadata({
       customMetadata: {
         unrelated: 'preserved',
       },
-      todos: [],
-      workspacePath: '/workspace',
-    });
+    }));
 
     expect(metadata.customMetadata).toEqual({
       unrelated: 'preserved',
@@ -208,12 +203,9 @@ describe('sessionMetadata', () => {
   });
 
   it('round-trips btw identity through persistence and UI selectors', () => {
-    const metadata: SessionMetadata = {
+    const metadata = createMetadata({
       sessionId: 'child-1',
       sessionName: 'BTW Child',
-      agentType: 'agentic',
-      modelName: 'gpt-test',
-      createdAt: 1000,
       lastActiveAt: 1001,
       turnCount: 1,
       messageCount: 2,
@@ -227,9 +219,7 @@ describe('sessionMetadata', () => {
         parentDialogTurnId: 'turn-2',
         parentTurnIndex: 2,
       },
-      todos: [],
-      workspacePath: '/workspace',
-    };
+    });
 
     const relationship = deriveSessionRelationshipFromMetadata(metadata);
     const resolved = resolveSessionRelationship(relationship);
