@@ -15,26 +15,22 @@ import { useI18n } from '@/infrastructure/i18n';
 
 const log = createLogger('useAIRules');
 
+type RuleMutation<T> = () => Promise<T>;
+
 export interface UseAIRulesReturn {
-  
   rules: AIRule[];
   stats: RuleStats | null;
 
-  
   isLoading: boolean;
   error: string | null;
 
-  
   createRule: (rule: CreateRuleRequest) => Promise<AIRule>;
   updateRule: (name: string, rule: UpdateRuleRequest) => Promise<AIRule>;
   deleteRule: (name: string) => Promise<boolean>;
   toggleRule: (name: string) => Promise<AIRule>;
-  
-  
   refresh: () => Promise<void>;
 }
 
- 
 export function useAIRules(level: RuleLevel): UseAIRulesReturn {
   const { t } = useI18n('errors');
   const { workspacePath } = useCurrentWorkspace();
@@ -44,7 +40,6 @@ export function useAIRules(level: RuleLevel): UseAIRulesReturn {
   const [error, setError] = useState<string | null>(null);
   const scopedWorkspacePath = level === RuleLevel.Project ? workspacePath || undefined : undefined;
 
-  
   const loadRules = useCallback(async () => {
     try {
       setIsLoading(true);
@@ -59,7 +54,6 @@ export function useAIRules(level: RuleLevel): UseAIRulesReturn {
     }
   }, [level, scopedWorkspacePath, t]);
 
-  
   const loadStats = useCallback(async () => {
     try {
       const data = await AIRulesAPI.getRulesStats(level, scopedWorkspacePath);
@@ -69,94 +63,84 @@ export function useAIRules(level: RuleLevel): UseAIRulesReturn {
     }
   }, [level, scopedWorkspacePath]);
 
-  
-  const createRule = useCallback(
-    async (request: CreateRuleRequest) => {
-      try {
-        setError(null);
-        const newRule = await AIRulesAPI.createRule(level, request, scopedWorkspacePath);
-        await loadRules();
-        await loadStats();
-        return newRule;
-      } catch (err) {
-        setError(err instanceof Error ? err.message : t('aiRules.createFailed'));
-        log.error('Failed to create rule', err);
-        throw err;
-      }
-    },
-    [level, loadRules, loadStats, scopedWorkspacePath, t]
-  );
-
-  
-  const updateRule = useCallback(
-    async (name: string, request: UpdateRuleRequest) => {
-      try {
-        setError(null);
-        const updated = await AIRulesAPI.updateRule(level, name, request, scopedWorkspacePath);
-        await loadRules();
-        await loadStats();
-        return updated;
-      } catch (err) {
-        setError(err instanceof Error ? err.message : t('aiRules.updateFailed'));
-        log.error('Failed to update rule', err);
-        throw err;
-      }
-    },
-    [level, loadRules, loadStats, scopedWorkspacePath, t]
-  );
-
-  
-  const deleteRule = useCallback(
-    async (name: string) => {
-      try {
-        setError(null);
-        const success = await AIRulesAPI.deleteRule(level, name, scopedWorkspacePath);
-        if (success) {
-          await loadRules();
-          await loadStats();
-        }
-        return success;
-      } catch (err) {
-        setError(err instanceof Error ? err.message : t('aiRules.deleteFailed'));
-        log.error('Failed to delete rule', err);
-        throw err;
-      }
-    },
-    [level, loadRules, loadStats, scopedWorkspacePath, t]
-  );
-
-  
-  const toggleRule = useCallback(
-    async (name: string) => {
-      try {
-        setError(null);
-        const updated = await AIRulesAPI.toggleRule(level, name, scopedWorkspacePath);
-        await loadRules();
-        await loadStats();
-        return updated;
-      } catch (err) {
-        setError(err instanceof Error ? err.message : t('aiRules.toggleFailed'));
-        log.error('Failed to toggle rule', err);
-        throw err;
-      }
-    },
-    [level, loadRules, loadStats, scopedWorkspacePath, t]
-  );
-
-  
-  const refresh = useCallback(async () => {
-    
-    await AIRulesAPI.reloadRules(level, scopedWorkspacePath);
-    
+  const reloadRulesAndStats = useCallback(async () => {
     await loadRules();
     await loadStats();
-  }, [level, loadRules, loadStats, scopedWorkspacePath]);
-
-  
-  useEffect(() => {
-    loadRules();
-    loadStats();
   }, [loadRules, loadStats]);
+
+  const runMutation = useCallback(async <T,>(
+    operation: RuleMutation<T>,
+    fallbackError: string,
+    logMessage: string,
+    shouldReload: (result: T) => boolean = () => true
+  ): Promise<T> => {
+    try {
+      setError(null);
+      const result = await operation();
+      if (shouldReload(result)) {
+        await reloadRulesAndStats();
+      }
+      return result;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : fallbackError);
+      log.error(logMessage, err);
+      throw err;
+    }
+  }, [reloadRulesAndStats]);
+
+  const createRule = useCallback(
+    async (request: CreateRuleRequest) => {
+      return runMutation(
+        () => AIRulesAPI.createRule(level, request, scopedWorkspacePath),
+        t('aiRules.createFailed'),
+        'Failed to create rule'
+      );
+    },
+    [level, runMutation, scopedWorkspacePath, t]
+  );
+
+  const updateRule = useCallback(
+    async (name: string, request: UpdateRuleRequest) => {
+      return runMutation(
+        () => AIRulesAPI.updateRule(level, name, request, scopedWorkspacePath),
+        t('aiRules.updateFailed'),
+        'Failed to update rule'
+      );
+    },
+    [level, runMutation, scopedWorkspacePath, t]
+  );
+
+  const deleteRule = useCallback(
+    async (name: string) => {
+      return runMutation(
+        () => AIRulesAPI.deleteRule(level, name, scopedWorkspacePath),
+        t('aiRules.deleteFailed'),
+        'Failed to delete rule',
+        Boolean
+      );
+    },
+    [level, runMutation, scopedWorkspacePath, t]
+  );
+
+  const toggleRule = useCallback(
+    async (name: string) => {
+      return runMutation(
+        () => AIRulesAPI.toggleRule(level, name, scopedWorkspacePath),
+        t('aiRules.toggleFailed'),
+        'Failed to toggle rule'
+      );
+    },
+    [level, runMutation, scopedWorkspacePath, t]
+  );
+
+  const refresh = useCallback(async () => {
+    await AIRulesAPI.reloadRules(level, scopedWorkspacePath);
+    await reloadRulesAndStats();
+  }, [level, reloadRulesAndStats, scopedWorkspacePath]);
+
+  useEffect(() => {
+    reloadRulesAndStats();
+  }, [reloadRulesAndStats]);
 
   return {
     rules,
