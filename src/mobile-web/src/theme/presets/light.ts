@@ -1,4 +1,6 @@
-export const lightTheme: Record<string, string> = {
+const defineTheme = <T extends Record<string, string>>(theme: T): T => theme;
+
+export const lightTheme = defineTheme({
   '--color-bg-primary': '#f2f2f7',
   '--color-bg-secondary': '#ffffff',
   '--color-bg-tertiary': '#f2f2f7',
@@ -169,4 +171,4 @@ export const lightTheme: Record<string, string> = {
   '--btn-ghost-bg': 'transparent',
   '--btn-ghost-color': '#48484a',
   '--btn-ghost-hover-bg': 'rgba(120, 120, 128, 0.08)',
-};
+});
