@@ -11,6 +11,39 @@ import { StartupPage } from '../page-objects/StartupPage';
 import { saveScreenshot, saveFailureScreenshot } from '../helpers/screenshot-utils';
 import { ensureWorkspaceOpen } from '../helpers/workspace-utils';
 
+const MESSAGE_LIST_SELECTORS = [
+  '[data-testid="message-list"]',
+  '.message-list',
+  '.chat-messages',
+  '[class*="message-list"]',
+];
+
+function requireWorkspace(context: { skip: () => void }, hasWorkspace: boolean, logMessage?: string): boolean {
+  if (hasWorkspace) {
+    return true;
+  }
+
+  if (logMessage) {
+    console.log(logMessage);
+  }
+  context.skip();
+  return false;
+}
+
+async function firstExistingSelector(selectors: string[]): Promise<string | null> {
+  for (const selector of selectors) {
+    try {
+      const element = await $(selector);
+      if (await element.isExisting()) {
+        return selector;
+      }
+    } catch (_error) {
+      // Try the next fallback selector.
+    }
+  }
+  return null;
+}
+
 describe('L1 Chat', () => {
   let chatPage: ChatPage;
   let chatInput: ChatInput;
@@ -39,47 +72,22 @@ describe('L1 Chat', () => {
 
   describe('Message display', () => {
     it('message list should exist', async function () {
-      if (!hasWorkspace) {
-        console.log('[L1] Skipping: workspace required');
-        this.skip();
-        return;
-      }
+      if (!requireWorkspace(this, hasWorkspace, '[L1] Skipping: workspace required')) return;
 
       await chatPage.waitForLoad();
-
-      // Message list might exist with different selectors
-      const selectors = [
-        '[data-testid="message-list"]',
-        '.message-list',
-        '.chat-messages',
-        '[class*="message-list"]',
-      ];
-
-      let messageListExists = false;
-      for (const selector of selectors) {
-        try {
-          const element = await $(selector);
-          const exists = await element.isExisting();
-          if (exists) {
-            console.log(`[L1] Message list found via ${selector}`);
-            messageListExists = true;
-            break;
-          }
-        } catch (e) {
-          // Continue
-        }
+      const matchedSelector = await firstExistingSelector(MESSAGE_LIST_SELECTORS);
+      if (matchedSelector) {
+        console.log(`[L1] Message list found via ${matchedSelector}`);
       }
 
+      const messageListExists = matchedSelector !== null;
       console.log('[L1] Message list exists:', messageListExists);
       // Use softer assertion - message list might not be present in empty state
       expect(typeof messageListExists).toBe('boolean');
     });
 
     it('should display user messages', async function () {
-      if (!hasWorkspace) {
-        this.skip();
-        return;
-      }
+      if (!requireWorkspace(this, hasWorkspace)) return;
 
       const userMessages = await browser.$$('[data-testid^="user-message-"]');
       console.log('[L1] User messages found:', userMessages.length);
@@ -88,10 +96,7 @@ describe('L1 Chat', () => {
     });
 
     it('should display model responses', async function () {
-      if (!hasWorkspace) {
-        this.skip();
-        return;
-      }
+      if (!requireWorkspace(this, hasWorkspace)) return;
 
       const modelResponses = await browser.$$('[data-testid^="model-response-"]');
       console.log('[L1] Model responses found:', modelResponses.length);
@@ -102,18 +107,12 @@ describe('L1 Chat', () => {
 
   describe('Message sending', () => {
     beforeEach(async function () {
-      if (!hasWorkspace) {
-        this.skip();
-        return;
-      }
+      if (!requireWorkspace(this, hasWorkspace)) return;
       await chatInput.clear();
     });
 
     it('should send message via send button', async function () {
-      if (!hasWorkspace) {
-        this.skip();
-        return;
-      }
+      if (!requireWorkspace(this, hasWorkspace)) return;
 
       const countBefore = await chatPage.getMessageCount();
       console.log('[L1] Messages before send:', countBefore);
@@ -128,10 +127,7 @@ describe('L1 Chat', () => {
     });
 
     it('should send message via Enter key', async function () {
-      if (!hasWorkspace) {
-        this.skip();
-        return;
-      }
+      if (!requireWorkspace(this, hasWorkspace)) return;
 
       await chatInput.typeMessage('L1 test with Enter');
       const typed = await chatInput.getValue();
@@ -143,10 +139,7 @@ describe('L1 Chat', () => {
     });
 
     it('should clear input after sending', async function () {
-      if (!hasWorkspace) {
-        this.skip();
-        return;
-      }
+      if (!requireWorkspace(this, hasWorkspace)) return;
 
       await chatInput.clear();
       await browser.pause(300);
@@ -182,10 +175,7 @@ describe('L1 Chat', () => {
 
   describe('Stop button', () => {
     it('stop button should exist', async function () {
-      if (!hasWorkspace) {
-        this.skip();
-        return;
-      }
+      if (!requireWorkspace(this, hasWorkspace)) return;
 
       const stopBtn = await $('[data-testid="chat-input-cancel-btn"], [class*="stop-btn"], [class*="cancel-btn"]');
       const exists = await stopBtn.isExisting();
@@ -195,10 +185,7 @@ describe('L1 Chat', () => {
     });
 
     it('stop button should be visible during streaming', async function () {
-      if (!hasWorkspace) {
-        this.skip();
-        return;
-      }
+      if (!requireWorkspace(this, hasWorkspace)) return;
 
       // Send a message that might trigger a response
       await chatInput.typeMessage('Hello');
@@ -215,10 +202,7 @@ describe('L1 Chat', () => {
 
   describe('Code block rendering', () => {
     it('code blocks should be rendered with syntax highlighting', async function () {
-      if (!hasWorkspace) {
-        this.skip();
-        return;
-      }
+      if (!requireWorkspace(this, hasWorkspace)) return;
 
       const codeBlocks = await browser.$$('pre code, [class*="code-block"], .markdown-code');
       console.log('[L1] Code blocks found:', codeBlocks.length);
@@ -227,10 +211,7 @@ describe('L1 Chat', () => {
     });
 
     it('code blocks should have language indicator', async function () {
-      if (!hasWorkspace) {
-        this.skip();
-        return;
-      }
+      if (!requireWorkspace(this, hasWorkspace)) return;
 
       const codeBlocks = await browser.$$('pre[class*="language-"], [class*="lang-"]');
       console.log('[L1] Code blocks with language:', codeBlocks.length);
@@ -239,10 +220,7 @@ describe('L1 Chat', () => {
     });
 
     it('code blocks should have copy button', async function () {
-      if (!hasWorkspace) {
-        this.skip();
-        return;
-      }
+      if (!requireWorkspace(this, hasWorkspace)) return;
 
       const copyBtns = await browser.$$('[class*="copy-btn"], [class*="copy-code"]');
       console.log('[L1] Copy buttons found:', copyBtns.length);
@@ -253,10 +231,7 @@ describe('L1 Chat', () => {
 
   describe('Tool cards', () => {
     it('tool cards should be displayed when tools are used', async function () {
-      if (!hasWorkspace) {
-        this.skip();
-        return;
-      }
+      if (!requireWorkspace(this, hasWorkspace)) return;
 
       const toolCards = await browser.$$('[data-testid^="tool-card-"], [class*="tool-card"]');
       console.log('[L1] Tool cards found:', toolCards.length);
@@ -265,10 +240,7 @@ describe('L1 Chat', () => {
     });
 
     it('tool cards should show status', async function () {
-      if (!hasWorkspace) {
-        this.skip();
-        return;
-      }
+      if (!requireWorkspace(this, hasWorkspace)) return;
 
       const statusIndicators = await browser.$$('[class*="tool-status"], [class*="tool-progress"]');
       console.log('[L1] Tool status indicators found:', statusIndicators.length);
@@ -279,10 +251,7 @@ describe('L1 Chat', () => {
 
   describe('Streaming indicator', () => {
     it('loading indicator should exist during response', async function () {
-      if (!hasWorkspace) {
-        this.skip();
-        return;
-      }
+      if (!requireWorkspace(this, hasWorkspace)) return;
 
       const loadingIndicator = await $('[data-testid="loading-indicator"], [class*="loading-indicator"]');
       const exists = await loadingIndicator.isExisting();
@@ -292,10 +261,7 @@ describe('L1 Chat', () => {
     });
 
     it('streaming indicator should exist during streaming', async function () {
-      if (!hasWorkspace) {
-        this.skip();
-        return;
-      }
+      if (!requireWorkspace(this, hasWorkspace)) return;
 
       const streamingIndicator = await $('[data-testid="streaming-indicator"], [class*="streaming"]');
       const exists = await streamingIndicator.isExisting();
