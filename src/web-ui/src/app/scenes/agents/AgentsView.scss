@@ -1,5 +1,27 @@
 @use '../../../component-library/styles/tokens' as *;
 
+$tv-gallery-width: 336px;
+$tv-gallery-width-compact: 260px;
+$tv-gallery-min: 280px;
+$tv-gallery-min-compact: 220px;
+$tv-content-max: 520px;
+$tv-panel-padding: clamp(16px, 2.2vw, 28px);
+$tv-template-icon-size: 36px;
+
+@mixin tv-label-text {
+  font-size: var(--font-size-xs);
+  font-weight: $font-weight-semibold;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+
+@mixin tv-flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 // ─── Page enter animations ────────────────────────────────────────────────────
 
 @keyframes tv-page-reveal {
@@ -24,7 +46,7 @@
     flex-shrink: 0;
     display: flex;
     align-items: center;
-    padding: $size-gap-3 clamp(16px, 2.2vw, 28px);
+    padding: $size-gap-3 $tv-panel-padding;
     border-bottom: 1px solid var(--border-subtle);
     background: linear-gradient(
       to bottom,
@@ -64,25 +86,25 @@
 
   &__gallery {
     flex-shrink: 0;
-    width: 336px;
-    min-width: 280px;
+    width: $tv-gallery-width;
+    min-width: $tv-gallery-min;
     display: flex;
     flex-direction: column;
     overflow: hidden;
     border-right: 1px solid var(--border-subtle);
     background: rgba(255, 255, 255, 0.02);
 
-    @media (max-width: 960px) { width: 260px; min-width: 220px; }
+    @media (max-width: 960px) {
+      width: $tv-gallery-width-compact;
+      min-width: $tv-gallery-min-compact;
+    }
   }
 
   &__panel-label {
+    @include tv-label-text;
+
     flex-shrink: 0;
     padding: 10px $size-gap-4;
-    font-size: var(--font-size-xs);
-    font-weight: $font-weight-semibold;
-    color: var(--color-text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.8px;
     border-bottom: 1px solid var(--border-subtle);
   }
 
@@ -116,9 +138,7 @@
   &__hero-icon {
     width: 56px;
     height: 56px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    @include tv-flex-center;
     border: 1px solid var(--border-subtle);
     border-radius: $size-radius-lg;
     color: var(--color-text-muted);
@@ -142,14 +162,11 @@
   }
 
   &__section-label {
-    font-size: var(--font-size-xs);
-    font-weight: $font-weight-semibold;
-    color: var(--color-text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.8px;
+    @include tv-label-text;
+
     align-self: flex-start;
     width: 100%;
-    max-width: 520px;
+    max-width: $tv-content-max;
   }
 
   &__list {
@@ -157,7 +174,7 @@
     flex-direction: column;
     gap: 2px;
     width: 100%;
-    max-width: 520px;
+    max-width: $tv-content-max;
   }
 
   &__tpl {
@@ -181,11 +198,9 @@
 
   &__tpl-icon {
     flex-shrink: 0;
-    width: 36px;
-    height: 36px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    width: $tv-template-icon-size;
+    height: $tv-template-icon-size;
+    @include tv-flex-center;
     border: 1px solid;
     border-radius: $size-radius-sm;
   }

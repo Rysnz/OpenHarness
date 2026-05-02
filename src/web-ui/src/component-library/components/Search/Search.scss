@@ -3,6 +3,23 @@
  */
 @use '../../styles/tokens.scss' as *;
 
+$search-height: 36px;
+$search-width-collapsed: 200px;
+$search-clear-size: 20px;
+$search-spinner-duration: 0.85s;
+
+@mixin search-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@mixin search-field-reset {
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
 .search {
   position: relative;
   width: 100%;
@@ -17,7 +34,7 @@
     border: 1px solid var(--border-base);
     border-radius: $size-radius-sm;
     transition: all $motion-base $easing-standard;
-    min-height: 36px;
+    min-height: $search-height;
   }
 
   &--hovered:not(.search--disabled) &__wrapper {
@@ -35,7 +52,7 @@
   }
 
   &--expandable:not(.search--focused) &__wrapper {
-    width: 200px;
+    width: $search-width-collapsed;
     transition: width $motion-base $easing-standard;
   }
 
@@ -44,9 +61,8 @@
   }
 
   &__prefix {
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    @include search-center;
+
     flex-shrink: 0;
     color: var(--color-text-muted);
     transition: color $motion-base $easing-standard;
@@ -60,7 +76,7 @@
   &__loading-icon {
     display: block;
     color: var(--color-accent-500);
-    animation: search-spin 0.85s linear infinite;
+    animation: search-spin $search-spinner-duration linear infinite;
     transform-origin: center;
     will-change: transform;
   }
@@ -75,9 +91,8 @@
 
   &__input {
     flex: 1;
-    border: none !important;
-    outline: none !important;
-    box-shadow: none !important;
+    @include search-field-reset;
+
     background: transparent;
     color: var(--color-text-primary);
     font-size: var(--font-size-sm);
@@ -92,9 +107,7 @@
     }
 
     &:focus {
-      border: none !important;
-      outline: none !important;
-      box-shadow: none !important;
+      @include search-field-reset;
 
       &::placeholder {
         color: var(--color-text-disabled);
@@ -118,12 +131,11 @@
   }
 
   &__clear {
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    @include search-center;
+
     flex-shrink: 0;
-    width: 20px;
-    height: 20px;
+    width: $search-clear-size;
+    height: $search-clear-size;
     padding: 0;
     border: none;
     border-radius: 50%;
@@ -151,9 +163,8 @@
   }
 
   &__button {
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    @include search-center;
+
     flex-shrink: 0;
     padding: $size-gap-2 $size-gap-4;
     border: 1px solid var(--color-accent-500);

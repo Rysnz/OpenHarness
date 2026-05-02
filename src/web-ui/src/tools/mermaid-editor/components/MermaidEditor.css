@@ -3,6 +3,14 @@
  * Colors come from CSS variables for theming.
  */
 .mermaid-editor {
+  --mermaid-editor-gap: var(--size-gap-2, 8px);
+  --mermaid-editor-pad: var(--size-gap-2, 8px);
+  --mermaid-left-width: 400px;
+  --mermaid-left-min: 300px;
+  --mermaid-bottom-height: 300px;
+  --mermaid-panel-border: var(--border-subtle, rgba(255, 255, 255, 0.06));
+  --mermaid-panel-border-hover: var(--border-medium, rgba(255, 255, 255, 0.1));
+
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -18,18 +26,18 @@
   flex: 1;
   display: flex;
   min-height: 0;
-  gap: var(--size-gap-2, 8px);
-  padding: var(--size-gap-2, 8px);
+  gap: var(--mermaid-editor-gap);
+  padding: var(--mermaid-editor-pad);
   background: var(--mermaid-bg, var(--color-bg-scene));
 }
 
 /* Panels. */
 .left-panel {
-  flex: 0 0 400px;
+  flex: 0 0 var(--mermaid-left-width);
   display: flex;
   flex-direction: column;
-  gap: var(--size-gap-2, 8px);
-  min-width: 300px;
+  gap: var(--mermaid-editor-gap);
+  min-width: var(--mermaid-left-min);
   max-width: 50%;
 }
 
@@ -38,13 +46,13 @@
   min-width: 0;
   border-radius: 0;
   overflow: hidden;
-  border: 1px dashed var(--border-subtle, rgba(255, 255, 255, 0.06));
+  border: 1px dashed var(--mermaid-panel-border);
   transition: border-color 0.2s ease, border-style 0.2s ease;
   position: relative;
 }
 
 .right-panel:hover {
-  border-color: var(--border-medium, rgba(255, 255, 255, 0.1));
+  border-color: var(--mermaid-panel-border-hover);
 }
 
 .right-panel:focus-within {
@@ -65,7 +73,7 @@
 }
 
 .left-panel .bottom-panel {
-  flex: 0 0 300px;
+  flex: 0 0 var(--mermaid-bottom-height);
   overflow: hidden;
 }
 
@@ -78,7 +86,7 @@
 /* Divider. */
 .panel-divider {
   width: 1px;
-  background: var(--border-subtle, rgba(255, 255, 255, 0.06));
+  background: var(--mermaid-panel-border);
   margin: 0 -6px;
   position: relative;
 }
@@ -202,10 +210,7 @@
 /* Loading overlay. */
 .loading-overlay {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
   background: color-mix(in srgb, var(--mermaid-bg, var(--color-bg-scene)) 92%, transparent);
   display: flex;
   flex-direction: column;
@@ -232,32 +237,29 @@
 
 /* Responsive layout. */
 @media (max-width: 1200px) {
-  .left-panel {
-    flex: 0 0 350px;
+  .mermaid-editor {
+    --mermaid-left-width: 350px;
   }
 }
 
 @media (max-width: 968px) {
-  .left-panel {
-    flex: 0 0 300px;
-    min-width: 250px;
+  .mermaid-editor {
+    --mermaid-editor-gap: 6px;
+    --mermaid-editor-pad: 6px;
+    --mermaid-left-width: 300px;
+    --mermaid-left-min: 250px;
+    --mermaid-bottom-height: 250px;
   }
   
-  .editor-content {
-    gap: 6px;
-    padding: 6px;
-  }
-  
-  .left-panel .bottom-panel {
-    flex: 0 0 250px;
-  }
 }
 
 @media (max-width: 768px) {
+  .mermaid-editor {
+    --mermaid-bottom-height: 200px;
+  }
+
   .editor-content {
     flex-direction: column;
-    gap: 6px;
-    padding: 6px;
   }
   
   .left-panel {
@@ -268,10 +270,6 @@
   
   .left-panel .top-panel {
     min-height: 150px;
-  }
-  
-  .left-panel .bottom-panel {
-    flex: 0 0 200px;
   }
   
   .right-panel {
@@ -285,9 +283,9 @@
 }
 
 @media (max-width: 480px) {
-  .editor-content {
-    padding: 4px;
-    gap: 4px;
+  .mermaid-editor {
+    --mermaid-editor-gap: 4px;
+    --mermaid-editor-pad: 4px;
   }
 }
 

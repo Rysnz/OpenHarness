@@ -4,6 +4,47 @@
 @use '../../../styles/tokens.scss' as tokens;
 @use '../shared-styles' as shared;
 
+$tool-status-colors: (
+  pending: (107, 114, 128, 0.6),
+  running: (96, 165, 250, 0.9),
+  streaming: (96, 165, 250, 0.9),
+  completed: (52, 211, 153, 0.9),
+  cancelled: (156, 163, 175, 0.7),
+  error: (239, 68, 68, 0.9)
+);
+
+@mixin tool-section-label {
+  font-size: var(--font-size-xs);
+  font-weight: tokens.$font-weight-semibold;
+  color: tokens.$color-text-secondary;
+  margin-bottom: tokens.$size-gap-2;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+@mixin tool-code-panel($max-height: null) {
+  background: tokens.$color-bg-elevated;
+  border: 1px solid tokens.$border-base;
+  border-radius: tokens.$size-radius-base;
+  padding: tokens.$size-gap-3;
+  overflow-x: auto;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+
+  @if $max-height != null {
+    max-height: $max-height;
+    overflow-y: auto;
+  }
+
+  pre {
+    margin: 0;
+    font-size: var(--font-size-xs);
+    color: tokens.$color-text-secondary;
+    font-family: tokens.$font-family-mono;
+    line-height: 1.5;
+  }
+}
+
 .base-tool-card {
   --primary-color: #{tokens.$color-accent-600};
 
@@ -11,25 +52,10 @@
   @include shared.card-light-flow;
 
 
-  &--pending {
-    @include shared.status-indicator(107, 114, 128, 0.6);
-  }
-
-  &--running,
-  &--streaming {
-    @include shared.status-indicator(96, 165, 250, 0.9);
-  }
-
-  &--completed {
-    @include shared.status-indicator(52, 211, 153, 0.9);
-  }
-
-  &--cancelled {
-    @include shared.status-indicator(156, 163, 175, 0.7);
-  }
-
-  &--error {
-    @include shared.status-indicator(239, 68, 68, 0.9);
+  @each $status, $tone in $tool-status-colors {
+    &--#{$status} {
+      @include shared.status-indicator(nth($tone, 1), nth($tone, 2), nth($tone, 3), nth($tone, 4));
+    }
   }
 
 
@@ -175,30 +201,11 @@
   }
 
   &__input-label {
-    font-size: var(--font-size-xs);
-    font-weight: tokens.$font-weight-semibold;
-    color: tokens.$color-text-secondary;
-    margin-bottom: tokens.$size-gap-2;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    @include tool-section-label;
   }
 
   &__input-content {
-    background: tokens.$color-bg-elevated;
-    border: 1px solid tokens.$border-base;
-    border-radius: tokens.$size-radius-base;
-    padding: tokens.$size-gap-3;
-    overflow-x: auto;
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
-
-    pre {
-      margin: 0;
-      font-size: var(--font-size-xs);
-      color: tokens.$color-text-secondary;
-      font-family: tokens.$font-family-mono;
-      line-height: 1.5;
-    }
+    @include tool-code-panel;
   }
 
 
@@ -232,33 +239,11 @@
   }
 
   &__result-label {
-    font-size: var(--font-size-xs);
-    font-weight: tokens.$font-weight-semibold;
-    color: tokens.$color-text-secondary;
-    margin-bottom: tokens.$size-gap-2;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    @include tool-section-label;
   }
 
   &__result-content {
-    background: tokens.$color-bg-elevated;
-    border: 1px solid tokens.$border-base;
-    border-radius: tokens.$size-radius-base;
-    padding: tokens.$size-gap-3;
-    overflow-x: auto;
-    max-height: 300px;
-    overflow-y: auto;
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
-
-    pre {
-      margin: 0;
-      font-size: var(--font-size-xs);
-      color: tokens.$color-text-secondary;
-      font-family: tokens.$font-family-mono;
-      line-height: 1.5;
-    }
-
+    @include tool-code-panel(300px);
   }
 
 

@@ -1,5 +1,19 @@
 @use '../../../../component-library/styles/tokens' as *;
 
+$skill-card-width: 360px;
+$skill-card-height: 200px;
+$skill-card-radius: 15px;
+$skill-card-footer-offset: 40px;
+$skill-card-icon-size: 32px;
+$skill-card-action-height: 35px;
+$skill-card-enter-delay: calc(var(--card-index, 0) * 35ms);
+
+@mixin skill-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 /* ───────────────────────────────────────────────────
    SkillCard — vertical card with glassmorphism effect
    DOM:
@@ -18,9 +32,9 @@
    ─────────────────────────────────────────────────── */
 
 .skill-card {
-  width: 360px;
-  height: 200px;
-  border-radius: 15px;
+  width: $skill-card-width;
+  height: $skill-card-height;
+  border-radius: $skill-card-radius;
   background: var(--element-bg-soft);
   display: flex;
   flex-direction: column;
@@ -28,7 +42,7 @@
   overflow: hidden;
   cursor: pointer;
   animation: skill-card-in 0.22s $easing-decelerate both;
-  animation-delay: calc(var(--card-index, 0) * 35ms);
+  animation-delay: $skill-card-enter-delay;
   transition:
     transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1),
     box-shadow 0.35s ease;
@@ -40,7 +54,7 @@
     top: 0;
     left: 0;
     right: 0;
-    bottom: 40px;
+    bottom: $skill-card-footer-offset;
     background: var(--skill-card-gradient);
     opacity: 0;
     transition: opacity 0.35s ease;
@@ -74,11 +88,10 @@
   }
 
   &__icon-area {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
+    @include skill-center;
+
+    width: $skill-card-icon-size;
+    height: $skill-card-icon-size;
     border-radius: 8px;
     background: rgba(255, 255, 255, 0.12);
     backdrop-filter: blur(8px);
@@ -87,7 +100,7 @@
   &__icon {
     color: var(--color-text-primary);
     animation: skill-card-icon-pop 0.46s $easing-decelerate both;
-    animation-delay: calc(var(--card-index, 0) * 35ms + 50ms);
+    animation-delay: calc(#{$skill-card-enter-delay} + 50ms);
   }
 
   &__badges {
@@ -161,7 +174,7 @@
     display: flex;
     align-items: center;
     width: 100%;
-    border-radius: 0 0 15px 15px;
+    border-radius: 0 0 $skill-card-radius $skill-card-radius;
     overflow: hidden;
     position: relative;
     z-index: 1;
@@ -195,10 +208,10 @@
 
   &__action-btn {
     flex: 1;
+    @include skill-center;
+
     display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    height: 35px;
+    height: $skill-card-action-height;
     padding: 0;
     border: none;
     background: rgba(255, 255, 255, 0.08);
