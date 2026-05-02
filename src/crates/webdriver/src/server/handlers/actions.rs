@@ -102,45 +102,88 @@ fn update_action_state(state: &mut crate::webdriver::ActionState, actions: &[Act
     for action_sequence in actions {
         match action_sequence {
             ActionSequence::Key { actions, .. } => {
-                for action in actions {
-                    match action {
-                        KeyAction::KeyDown { value } => {
-                            state.pressed_keys.insert(value.clone());
-                        }
-                        KeyAction::KeyUp { value } => {
-                            state.pressed_keys.remove(value);
-                        }
-                        KeyAction::Pause { .. } => {}
-                    }
-                }
+                update_key_state(state, actions);
             }
             ActionSequence::Pointer { id, actions, .. } => {
-                for action in actions {
-                    match action {
-                        PointerAction::PointerDown { button } => {
-                            state
-                                .pressed_buttons
-                                .entry(id.clone())
-                                .or_default()
-                                .insert(*button);
-                        }
-                        PointerAction::PointerUp { button } => {
-                            let mut remove_source = false;
-                            if let Some(buttons) = state.pressed_buttons.get_mut(id) {
-                                buttons.remove(button);
-                                remove_source = buttons.is_empty();
-                            }
-                            if remove_source {
-                                state.pressed_buttons.remove(id);
-                            }
-                        }
-                        PointerAction::PointerMove { .. } | PointerAction::Pause { .. } => {}
-                    }
-                }
+                update_pointer_state(state, id, actions);
             }
             ActionSequence::Wheel { .. } | ActionSequence::None { .. } => {}
         }
     }
+}
+
+fn update_key_state(state: &mut crate::webdriver::ActionState, actions: &[KeyAction]) {
+    for action in actions {
+        match action {
+            KeyAction::KeyDown { value } => {
+                state.pressed_keys.insert(value.clone());
+            }
+            KeyAction::KeyUp { value } => {
+                state.pressed_keys.remove(value);
+            }
+            KeyAction::Pause { .. } => {}
+        }
+    }
+}
+
+fn update_pointer_state(
+    state: &mut crate::webdriver::ActionState,
+    pointer_id: &str,
+    actions: &[PointerAction],
+) {
+    for action in actions {
+        match action {
+            PointerAction::PointerDown { button } => {
+                state
+                    .pressed_buttons
+                    .entry(pointer_id.to_string())
+                    .or_default()
+                    .insert(*button);
+            }
+            PointerAction::PointerUp { button } => {
+                release_pointer_button(state, pointer_id, *button);
+            }
+            PointerAction::PointerMove { .. } | PointerAction::Pause { .. } => {}
+        }
+    }
+}
+
+fn release_pointer_button(state: &mut crate::webdriver::ActionState, pointer_id: &str, button: u32) {
+    let should_remove_source = state
+        .pressed_buttons
+        .get_mut(pointer_id)
+        .map(|buttons| {
+            buttons.remove(&button);
+            buttons.is_empty()
+        })
+        .unwrap_or(false);
+
+    if should_remove_source {
+        state.pressed_buttons.remove(pointer_id);
+    }
+}
+
+fn action_sequences_as_values(actions: &[ActionSequence]) -> Vec<Value> {
+    serde_json::to_value(actions)
+        .unwrap_or(Value::Array(Vec::new()))
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+}
+
+fn release_payloads(action_state: crate::webdriver::ActionState) -> (Vec<String>, Vec<Value>) {
+    let pressed_keys = action_state.pressed_keys.into_iter().collect::<Vec<_>>();
+    let pressed_buttons = action_state
+        .pressed_buttons
+        .into_iter()
+        .flat_map(|(source_id, buttons)| {
+            buttons
+                .into_iter()
+                .map(move |button| json!({ "sourceId": source_id, "button": button }))
+        })
+        .collect();
+
+    (pressed_keys, pressed_buttons)
 }
 
 pub async fn perform(
@@ -149,11 +192,7 @@ pub async fn perform(
     Json(request): Json<PerformActionsRequest>,
 ) -> WebDriverResult {
     ensure_session(&state, &session_id).await?;
-    let actions_value = serde_json::to_value(&request.actions)
-        .unwrap_or(Value::Array(Vec::new()))
-        .as_array()
-        .cloned()
-        .unwrap_or_default();
+    let actions_value = action_sequences_as_values(&request.actions);
     BridgeExecutor::from_session_id(state.clone(), &session_id)
         .await?
         .perform_actions(&actions_value)
@@ -175,16 +214,7 @@ pub async fn release(
         sessions.get(&session_id)?.action_state.clone()
     };
 
-    let pressed_keys = action_state.pressed_keys.into_iter().collect::<Vec<_>>();
-    let pressed_buttons = action_state
-        .pressed_buttons
-        .into_iter()
-        .flat_map(|(source_id, buttons)| {
-            buttons
-                .into_iter()
-                .map(move |button| json!({ "sourceId": source_id, "button": button }))
-        })
-        .collect::<Vec<_>>();
+    let (pressed_keys, pressed_buttons) = release_payloads(action_state);
 
     BridgeExecutor::from_session_id(state.clone(), &session_id)
         .await?
