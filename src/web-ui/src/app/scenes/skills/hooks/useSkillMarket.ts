@@ -18,6 +18,44 @@ interface UseSkillMarketOptions {
   pageSize?: number;
 }
 
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+function workspacePathParam(workspacePath?: string | null): string | undefined {
+  return workspacePath || undefined;
+}
+
+function queryParam(searchQuery: string): string | undefined {
+  return searchQuery || undefined;
+}
+
+function sortMarketSkills(
+  marketSkills: SkillMarketItem[],
+  installedSkillNames: Set<string>
+): SkillMarketItem[] {
+  return marketSkills
+    .map((skill, index) => ({
+      skill,
+      index,
+      installed: installedSkillNames.has(skill.name),
+    }))
+    .sort((a, b) => {
+      if (a.installed !== b.installed) {
+        return a.installed ? -1 : 1;
+      }
+
+      const installDelta = (b.skill.installs ?? 0) - (a.skill.installs ?? 0);
+      return installDelta || a.index - b.index;
+    })
+    .map((entry) => entry.skill);
+}
+
+function calculateTotalPages(loadedCount: number, pageSize: number, hasMore: boolean): number {
+  const loadedPages = Math.ceil(loadedCount / pageSize);
+  return hasMore ? loadedPages + 1 : Math.max(1, loadedPages);
+}
+
 export function useSkillMarket({
   searchQuery,
   installedSkillNames,
@@ -53,43 +91,25 @@ export function useSkillMarket({
       setHasMore(skillList.length >= pageSize);
     } catch (err) {
       log.error('Failed to load skill market', err);
-      setMarketError(err instanceof Error ? err.message : String(err));
+      setMarketError(errorMessage(err));
     } finally {
       setMarketLoading(false);
     }
   }, [fetchSkills, pageSize]);
 
   useEffect(() => {
-    loadFirstPage(searchQuery || undefined);
+    loadFirstPage(queryParam(searchQuery));
   }, [loadFirstPage, searchQuery]);
 
   const refresh = useCallback(async () => {
-    await loadFirstPage(searchQuery || undefined);
+    await loadFirstPage(queryParam(searchQuery));
   }, [loadFirstPage, searchQuery]);
 
-  const displayMarketSkills = useMemo(() => {
-    const entries = marketSkills.map((skill, index) => ({
-      skill,
-      index,
-      installed: installedSkillNames.has(skill.name),
-    }));
-
-    entries.sort((a, b) => {
-      if (a.installed !== b.installed) {
-        return a.installed ? -1 : 1;
-      }
-      const installDelta = (b.skill.installs ?? 0) - (a.skill.installs ?? 0);
-      if (installDelta !== 0) {
-        return installDelta;
-      }
-      return a.index - b.index;
-    });
-
-    return entries.map((entry) => entry.skill);
-  }, [installedSkillNames, marketSkills]);
-
-  const loadedPages = Math.ceil(displayMarketSkills.length / pageSize);
-  const totalPages = hasMore ? loadedPages + 1 : Math.max(1, loadedPages);
+  const displayMarketSkills = useMemo(
+    () => sortMarketSkills(marketSkills, installedSkillNames),
+    [installedSkillNames, marketSkills]
+  );
+  const totalPages = calculateTotalPages(displayMarketSkills.length, pageSize, hasMore);
 
   const paginatedSkills = useMemo(() => displayMarketSkills.slice(
     currentPage * pageSize,
@@ -117,7 +137,7 @@ export function useSkillMarket({
 
     try {
       setLoadingMore(true);
-      const skillList = await fetchSkills(searchQuery || undefined, neededCount);
+      const skillList = await fetchSkills(queryParam(searchQuery), neededCount);
       setMarketSkills(skillList);
       const hitCap = neededCount >= MAX_TOTAL_SKILLS;
       setHasMore(!hitCap && skillList.length >= neededCount);
@@ -143,7 +163,7 @@ export function useSkillMarket({
       const result = await configAPI.downloadSkillMarket({
         packageId: skill.installId,
         level: 'project',
-        workspacePath: workspacePath || undefined,
+        workspacePath: workspacePathParam(workspacePath),
       });
       const installedName = result.installedSkills[0] ?? skill.name;
       notification.success(t('messages.marketDownloadSuccess', { name: installedName }));
@@ -151,7 +171,7 @@ export function useSkillMarket({
     } catch (err) {
       notification.error(
         t('messages.marketDownloadFailed', {
-          error: err instanceof Error ? err.message : String(err),
+          error: errorMessage(err),
         }),
       );
     } finally {
