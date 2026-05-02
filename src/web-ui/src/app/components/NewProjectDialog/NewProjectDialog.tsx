@@ -1,11 +1,7 @@
-/**
- * New Project Dialog Component
- */
-
 import React, { useState, useCallback, useMemo } from 'react';
-import { 
-  FolderPlus, 
-  FolderOpen, 
+import {
+  FolderPlus,
+  FolderOpen,
   FileText,
   FolderTree,
   AlertCircle,
@@ -27,34 +23,102 @@ export interface NewProjectDialogProps {
   defaultParentPath?: string;
 }
 
-export const NewProjectDialog: React.FC<NewProjectDialogProps> = ({
-  isOpen,
-  onClose,
+interface ProjectFieldProps {
+  icon: React.ReactNode;
+  label: string;
+  children: React.ReactNode;
+}
+
+const normalizePreviewPath = (parentPath: string, projectName: string): string => {
+  const trimmedName = projectName.trim();
+  if (!parentPath || !trimmedName) {
+    return '';
+  }
+
+  return `${parentPath.replace(/\\/g, '/')}/${trimmedName}`;
+};
+
+const ProjectField: React.FC<ProjectFieldProps> = ({ icon, label, children }) => (
+  <div className="new-project-dialog__field">
+    <label className="new-project-dialog__label">
+      {icon}
+      {label}
+    </label>
+    {children}
+  </div>
+);
+
+const DialogHero: React.FC<{ title: string; subtitle: string }> = ({ title, subtitle }) => (
+  <div className="new-project-dialog__hero">
+    <div className="new-project-dialog__icon-wrapper">
+      <FolderPlus size={24} />
+    </div>
+    <h2 className="new-project-dialog__title">{title}</h2>
+    <p className="new-project-dialog__subtitle">{subtitle}</p>
+  </div>
+);
+
+const FullPathPreview: React.FC<{ label: string; path: string }> = ({ label, path }) => {
+  if (!path) {
+    return null;
+  }
+
+  return (
+    <div className="new-project-dialog__preview">
+      <div className="new-project-dialog__preview-icon">
+        <FolderTree size={14} />
+      </div>
+      <div className="new-project-dialog__preview-content">
+        <span className="new-project-dialog__preview-label">{label}</span>
+        <span className="new-project-dialog__preview-path">{path}</span>
+      </div>
+    </div>
+  );
+};
+
+const ErrorMessage: React.FC<{ message: string }> = ({ message }) => (
+  message ? (
+    <div className="new-project-dialog__error">
+      <AlertCircle size={14} />
+      <span>{message}</span>
+    </div>
+  ) : null
+);
+
+const useNewProjectForm = ({
+  defaultParentPath,
   onConfirm,
-  defaultParentPath
+  onClose,
+  t
+}: {
+  defaultParentPath?: string;
+  onConfirm: NewProjectDialogProps['onConfirm'];
+  onClose: NewProjectDialogProps['onClose'];
+  t: (key: string) => string;
 }) => {
-  const { t } = useTranslation('common');
-  const [parentPath, setParentPath] = useState<string>(defaultParentPath || '');
-  const [projectName, setProjectName] = useState<string>('');
+  const [parentPath, setParentPath] = useState(defaultParentPath || '');
+  const [projectName, setProjectName] = useState('');
   const [isCreating, setIsCreating] = useState(false);
-  const [error, setError] = useState<string>('');
+  const [error, setError] = useState('');
+  const fullPath = useMemo(
+    () => normalizePreviewPath(parentPath, projectName),
+    [parentPath, projectName]
+  );
 
-  // Combine parent path and project name
-  const fullPath = useMemo(() => {
-    if (!parentPath || !projectName.trim()) return '';
-    const normalizedPath = parentPath.replace(/\\/g, '/');
-    return `${normalizedPath}/${projectName.trim()}`;
-  }, [parentPath, projectName]);
+  const resetForm = useCallback(() => {
+    setParentPath('');
+    setProjectName('');
+    setError('');
+  }, []);
 
-  // Open directory picker dialog
-  const handleSelectParentPath = useCallback(async () => {
+  const selectParentPath = useCallback(async () => {
     try {
       const selected = await open({
         directory: true,
         multiple: false,
         title: t('newProject.selectParentDirectory'),
         defaultPath: parentPath || defaultParentPath
-      }) as string;
+      });
 
       if (selected && typeof selected === 'string') {
         setParentPath(selected);
@@ -63,16 +127,27 @@ export const NewProjectDialog: React.FC<NewProjectDialogProps> = ({
     } catch (error) {
       log.error('Failed to select directory', error);
     }
-  }, [parentPath, defaultParentPath, t]);
+  }, [defaultParentPath, parentPath, t]);
 
-  // Validate and create new project
-  const handleConfirm = useCallback(async () => {
-    // Validate form fields
-    if (!parentPath || !parentPath.trim()) {
+  const updateProjectName = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    setProjectName(event.target.value);
+    setError('');
+  }, []);
+
+  const cancel = useCallback(() => {
+    resetForm();
+    onClose();
+  }, [onClose, resetForm]);
+
+  const submit = useCallback(async () => {
+    const trimmedParent = parentPath.trim();
+    const trimmedName = projectName.trim();
+
+    if (!trimmedParent) {
       setError(t('newProject.errorSelectParent'));
       return;
     }
-    if (!projectName || !projectName.trim()) {
+    if (!trimmedName) {
       setError(t('newProject.errorEnterName'));
       return;
     }
@@ -81,9 +156,8 @@ export const NewProjectDialog: React.FC<NewProjectDialogProps> = ({
     setError('');
 
     try {
-      await onConfirm(parentPath, projectName.trim());
-      setParentPath('');
-      setProjectName('');
+      await onConfirm(trimmedParent, trimmedName);
+      resetForm();
       onClose();
     } catch (error) {
       log.error('Failed to create project', error);
@@ -91,53 +165,51 @@ export const NewProjectDialog: React.FC<NewProjectDialogProps> = ({
     } finally {
       setIsCreating(false);
     }
-  }, [parentPath, projectName, onConfirm, onClose, t]);
+  }, [onClose, onConfirm, parentPath, projectName, resetForm, t]);
 
-  // Reset form and close dialog
-  const handleCancel = useCallback(() => {
-    setParentPath('');
-    setProjectName('');
-    setError('');
-    onClose();
-  }, [onClose]);
+  return {
+    parentPath,
+    projectName,
+    fullPath,
+    isCreating,
+    error,
+    selectParentPath,
+    updateProjectName,
+    submit,
+    cancel
+  };
+};
 
-  // Update project name and clear errors
-  const handleProjectNameChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    setProjectName(e.target.value);
-    if (error) setError('');
-  }, [error]);
+export const NewProjectDialog: React.FC<NewProjectDialogProps> = ({
+  isOpen,
+  onClose,
+  onConfirm,
+  defaultParentPath
+}) => {
+  const { t } = useTranslation('common');
+  const form = useNewProjectForm({ defaultParentPath, onConfirm, onClose, t });
 
   return (
     <Modal
       isOpen={isOpen}
-      onClose={handleCancel}
+      onClose={form.cancel}
       title=""
       size="small"
       showCloseButton={true}
     >
       <div className="new-project-dialog">
-        {/* Hero section */}
-        <div className="new-project-dialog__hero">
-          <div className="new-project-dialog__icon-wrapper">
-            <FolderPlus size={24} />
-          </div>
-          <h2 className="new-project-dialog__title">{t('newProject.title')}</h2>
-          <p className="new-project-dialog__subtitle">{t('newProject.subtitle')}</p>
-        </div>
+        <DialogHero
+          title={t('newProject.title')}
+          subtitle={t('newProject.subtitle')}
+        />
 
-        {/* Form content */}
         <div className="new-project-dialog__content">
-          {/* Parent directory */}
-          <div className="new-project-dialog__field">
-            <label className="new-project-dialog__label">
-              <FolderOpen size={14} />
-              {t('newProject.parentDirectory')}
-            </label>
+          <ProjectField icon={<FolderOpen size={14} />} label={t('newProject.parentDirectory')}>
             <div className="new-project-dialog__path-selector">
               <div className="new-project-dialog__path-input">
                 <Input
                   type="text"
-                  value={parentPath}
+                  value={form.parentPath}
                   readOnly
                   placeholder={t('newProject.parentDirectoryPlaceholder')}
                 />
@@ -147,63 +219,39 @@ export const NewProjectDialog: React.FC<NewProjectDialogProps> = ({
                 className="new-project-dialog__select-btn"
                 variant="secondary"
                 size="small"
-                onClick={handleSelectParentPath}
+                onClick={form.selectParentPath}
               >
                 <FolderOpen size={14} />
                 <span>{t('newProject.select')}</span>
               </Button>
             </div>
-          </div>
+          </ProjectField>
 
-          {/* Project name */}
-          <div className="new-project-dialog__field">
-            <label className="new-project-dialog__label">
-              <FileText size={14} />
-              {t('newProject.projectName')}
-            </label>
+          <ProjectField icon={<FileText size={14} />} label={t('newProject.projectName')}>
             <div className="new-project-dialog__name-input">
               <Input
                 type="text"
-                value={projectName}
-                onChange={handleProjectNameChange}
+                value={form.projectName}
+                onChange={form.updateProjectName}
                 placeholder={t('newProject.projectNamePlaceholder')}
-                disabled={isCreating}
+                disabled={form.isCreating}
                 autoFocus
               />
             </div>
-          </div>
+          </ProjectField>
 
-          {/* Full path display */}
-          {fullPath && (
-            <div className="new-project-dialog__preview">
-              <div className="new-project-dialog__preview-icon">
-                <FolderTree size={14} />
-              </div>
-              <div className="new-project-dialog__preview-content">
-                <span className="new-project-dialog__preview-label">{t('newProject.fullPath')}</span>
-                <span className="new-project-dialog__preview-path">{fullPath}</span>
-              </div>
-            </div>
-          )}
-
-          {/* Error message */}
-          {error && (
-            <div className="new-project-dialog__error">
-              <AlertCircle size={14} />
-              <span>{error}</span>
-            </div>
-          )}
+          <FullPathPreview label={t('newProject.fullPath')} path={form.fullPath} />
+          <ErrorMessage message={form.error} />
         </div>
 
-        {/* Footer buttons */}
         <div className="new-project-dialog__footer">
           <Button
             type="button"
             className="new-project-dialog__btn new-project-dialog__btn--cancel"
             variant="ghost"
             size="small"
-            onClick={handleCancel}
-            disabled={isCreating}
+            onClick={form.cancel}
+            disabled={form.isCreating}
           >
             <X size={14} />
             {t('newProject.cancel')}
@@ -213,11 +261,11 @@ export const NewProjectDialog: React.FC<NewProjectDialogProps> = ({
             className="new-project-dialog__btn new-project-dialog__btn--confirm"
             variant="primary"
             size="small"
-            onClick={handleConfirm}
-            disabled={isCreating}
-            isLoading={isCreating}
+            onClick={form.submit}
+            disabled={form.isCreating}
+            isLoading={form.isCreating}
           >
-            {isCreating ? (
+            {form.isCreating ? (
               t('newProject.creating')
             ) : (
               <>
