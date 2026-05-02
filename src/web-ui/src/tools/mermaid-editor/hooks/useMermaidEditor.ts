@@ -7,6 +7,8 @@ import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { MermaidEditorState } from '../types';
 import { mermaidService } from '../services/MermaidService';
 
+type MermaidStatePatch = Partial<MermaidEditorState>;
+
 export interface UseMermaidEditorOptions {
   /** Initial source code. */
   initialSourceCode?: string;
@@ -35,6 +37,17 @@ export interface UseMermaidEditorReturn {
   showComponentLibrary: boolean;
 }
 
+function createInitialEditorState(initialSourceCode?: string): MermaidEditorState {
+  return {
+    sourceCode: initialSourceCode || mermaidService.getDefaultTemplate(),
+    isDirty: false,
+    showSourceEditor: false,
+    showComponentLibrary: false,
+    isLoading: false,
+    error: null,
+  };
+}
+
 export function useMermaidEditor(options: UseMermaidEditorOptions = {}): UseMermaidEditorReturn {
   const {
     initialSourceCode,
@@ -42,17 +55,21 @@ export function useMermaidEditor(options: UseMermaidEditorOptions = {}): UseMerm
     autoParseInterval = 300,
   } = options;
 
-  const [state, setState] = useState<MermaidEditorState>({
-    sourceCode: initialSourceCode || mermaidService.getDefaultTemplate(),
-    isDirty: false,
-    showSourceEditor: false,
-    showComponentLibrary: false,
-    isLoading: false,
-    error: null,
-  });
+  const [state, setState] = useState<MermaidEditorState>(() => createInitialEditorState(initialSourceCode));
 
-  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initialSourceCodeRef = useRef(initialSourceCode);
+
+  const patchState = useCallback((patch: MermaidStatePatch) => {
+    setState(prev => ({ ...prev, ...patch }));
+  }, []);
+
+  const clearPendingValidation = useCallback(() => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     initialSourceCodeRef.current = initialSourceCode;
@@ -60,42 +77,37 @@ export function useMermaidEditor(options: UseMermaidEditorOptions = {}): UseMerm
 
   const validateSourceCode = useCallback(async (sourceCode: string) => {
     try {
-      setState(prev => ({ ...prev, isLoading: true, error: null }));
+      patchState({ isLoading: true, error: null });
       const isValid = await mermaidService.validateSourceCode(sourceCode);
-      
-      setState(prev => ({
-        ...prev,
+
+      patchState({
         isLoading: false,
         error: isValid ? null : 'Diagram syntax error',
-      }));
+      });
     } catch (error) {
-      setState(prev => ({
-        ...prev,
+      patchState({
         isLoading: false,
         error: error instanceof Error ? error.message : 'Validation failed',
-      }));
+      });
     }
-  }, []);
+  }, [patchState]);
 
   const debouncedValidate = useCallback((sourceCode: string) => {
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
-    }
+    clearPendingValidation();
 
     debounceTimerRef.current = setTimeout(() => {
       validateSourceCode(sourceCode);
     }, autoParseInterval);
-  }, [validateSourceCode, autoParseInterval]);
+  }, [autoParseInterval, clearPendingValidation, validateSourceCode]);
 
   const setSourceCode = useCallback((sourceCode: string, immediate = false) => {
     const defaultTemplate = mermaidService.getDefaultTemplate();
     const baseCode = initialSourceCodeRef.current || defaultTemplate;
-    
-    setState(prev => ({
-      ...prev,
+
+    patchState({
       sourceCode,
       isDirty: sourceCode !== baseCode,
-    }));
+    });
 
     if (autoValidate) {
       if (immediate) {
@@ -104,35 +116,28 @@ export function useMermaidEditor(options: UseMermaidEditorOptions = {}): UseMerm
         debouncedValidate(sourceCode);
       }
     }
-  }, [autoValidate, debouncedValidate, validateSourceCode]);
+  }, [autoValidate, debouncedValidate, patchState, validateSourceCode]);
 
   const setShowSourceEditor = useCallback((show: boolean) => {
-    setState(prev => ({ ...prev, showSourceEditor: show }));
-  }, []);
+    patchState({ showSourceEditor: show });
+  }, [patchState]);
 
   const setShowComponentLibrary = useCallback((show: boolean) => {
-    setState(prev => ({ ...prev, showComponentLibrary: show }));
-  }, []);
+    patchState({ showComponentLibrary: show });
+  }, [patchState]);
 
   const setLoading = useCallback((loading: boolean) => {
-    setState(prev => ({ ...prev, isLoading: loading }));
-  }, []);
+    patchState({ isLoading: loading });
+  }, [patchState]);
 
   const setError = useCallback((error: string | null) => {
-    setState(prev => ({ ...prev, error }));
-  }, []);
+    patchState({ error });
+  }, [patchState]);
 
   const reset = useCallback(() => {
     const defaultTemplate = mermaidService.getDefaultTemplate();
-    setState({
-      sourceCode: defaultTemplate,
-      isDirty: false,
-      showSourceEditor: false,
-      showComponentLibrary: false,
-      isLoading: false,
-      error: null,
-    });
-    
+    setState(createInitialEditorState(defaultTemplate));
+
     if (autoValidate) {
       debouncedValidate(defaultTemplate);
     }
@@ -140,11 +145,9 @@ export function useMermaidEditor(options: UseMermaidEditorOptions = {}): UseMerm
 
   useEffect(() => {
     return () => {
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-      }
+      clearPendingValidation();
     };
-  }, []);
+  }, [clearPendingValidation]);
 
   const actions = useMemo(() => ({
     setSourceCode,
