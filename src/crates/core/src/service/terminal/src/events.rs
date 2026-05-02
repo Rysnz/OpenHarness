@@ -9,6 +9,9 @@ use tokio::sync::mpsc;
 
 use crate::shell::ShellType;
 
+type EventSendResult = Result<(), mpsc::error::SendError<TerminalEvent>>;
+type EventTrySendResult = Result<(), mpsc::error::TrySendError<TerminalEvent>>;
+
 /// Terminal events for frontend communication
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
@@ -96,20 +99,20 @@ impl TerminalEvent {
     /// Get the session ID associated with this event (if any)
     pub fn session_id(&self) -> Option<&str> {
         match self {
-            TerminalEvent::SessionCreated { session_id, .. } => Some(session_id),
-            TerminalEvent::Data { session_id, .. } => Some(session_id),
-            TerminalEvent::BinaryData { session_id, .. } => Some(session_id),
-            TerminalEvent::Ready { session_id, .. } => Some(session_id),
-            TerminalEvent::Exit { session_id, .. } => Some(session_id),
-            TerminalEvent::TitleChanged { session_id, .. } => Some(session_id),
-            TerminalEvent::CwdChanged { session_id, .. } => Some(session_id),
-            TerminalEvent::ShellTypeChanged { session_id, .. } => Some(session_id),
-            TerminalEvent::CommandStarted { session_id, .. } => Some(session_id),
-            TerminalEvent::CommandFinished { session_id, .. } => Some(session_id),
+            TerminalEvent::SessionCreated { session_id, .. }
+            | TerminalEvent::Data { session_id, .. }
+            | TerminalEvent::BinaryData { session_id, .. }
+            | TerminalEvent::Ready { session_id, .. }
+            | TerminalEvent::Exit { session_id, .. }
+            | TerminalEvent::TitleChanged { session_id, .. }
+            | TerminalEvent::CwdChanged { session_id, .. }
+            | TerminalEvent::ShellTypeChanged { session_id, .. }
+            | TerminalEvent::CommandStarted { session_id, .. }
+            | TerminalEvent::CommandFinished { session_id, .. }
+            | TerminalEvent::SessionRestored { session_id, .. }
+            | TerminalEvent::Resized { session_id, .. }
+            | TerminalEvent::SessionDestroyed { session_id, .. } => Some(session_id),
             TerminalEvent::Error { session_id, .. } => session_id.as_deref(),
-            TerminalEvent::SessionRestored { session_id, .. } => Some(session_id),
-            TerminalEvent::Resized { session_id, .. } => Some(session_id),
-            TerminalEvent::SessionDestroyed { session_id, .. } => Some(session_id),
         }
     }
 
@@ -141,18 +144,12 @@ impl TerminalEventEmitter {
     }
 
     /// Emit an event
-    pub async fn emit(
-        &self,
-        event: TerminalEvent,
-    ) -> Result<(), mpsc::error::SendError<TerminalEvent>> {
+    pub async fn emit(&self, event: TerminalEvent) -> EventSendResult {
         self.tx.send(event).await
     }
 
     /// Try to emit an event without blocking
-    pub fn try_emit(
-        &self,
-        event: TerminalEvent,
-    ) -> Result<(), mpsc::error::TrySendError<TerminalEvent>> {
+    pub fn try_emit(&self, event: TerminalEvent) -> EventTrySendResult {
         self.tx.try_send(event)
     }
 
@@ -191,9 +188,7 @@ pub struct EventDispatcher {
 impl EventDispatcher {
     /// Create a new event dispatcher
     pub fn new() -> Self {
-        Self {
-            callbacks: Vec::new(),
-        }
+        Self { callbacks: vec![] }
     }
 
     /// Register a callback
