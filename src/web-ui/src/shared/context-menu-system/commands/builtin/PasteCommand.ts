@@ -9,6 +9,18 @@ import { i18nService } from '@/infrastructure/i18n';
 
 const log = createLogger('PasteCommand');
 
+async function readClipboardText(): Promise<string | null> {
+  if (!navigator.clipboard?.readText) {
+    return null;
+  }
+
+  return navigator.clipboard.readText();
+}
+
+function insertTextWithDocumentCommand(text: string): boolean {
+  return document.execCommand('insertText', false, text);
+}
+
 export class PasteCommand extends BaseCommand {
   constructor() {
     const t = i18nService.getT();
@@ -23,7 +35,6 @@ export class PasteCommand extends BaseCommand {
   }
 
   canExecute(context: MenuContext): boolean {
-    
     if (context.type === ContextType.SELECTION) {
       return (context as SelectionContext).isEditable;
     }
@@ -36,12 +47,9 @@ export class PasteCommand extends BaseCommand {
   async execute(context: MenuContext): Promise<CommandResult> {
     try {
       const t = i18nService.getT();
-      
-      let text: string;
-      
-      if (navigator.clipboard && navigator.clipboard.readText) {
-        text = await navigator.clipboard.readText();
-      } else {
+
+      const text = await readClipboardText();
+      if (text === null) {
         return this.failure(t('errors:contextMenu.clipboardUnavailable'));
       }
 
@@ -49,13 +57,11 @@ export class PasteCommand extends BaseCommand {
         return this.failure(t('errors:contextMenu.clipboardEmpty'));
       }
 
-      
       if (context.type === ContextType.EDITOR) {
         return await this.executeForEditor(context as EditorContext, text);
       }
 
-      
-      const success = document.execCommand('insertText', false, text);
+      const success = insertTextWithDocumentCommand(text);
 
       if (success) {
         return this.success(t('common:contextMenu.status.pasteSuccess'), { text });
@@ -75,28 +81,24 @@ export class PasteCommand extends BaseCommand {
       if (context.isReadOnly) {
         return this.failure(t('errors:contextMenu.readOnlyEditor'));
       }
-      
-      
+
       const editor = MonacoHelper.getEditorFromElement(context.targetElement);
       
       if (!editor) {
         log.warn('Editor instance not found, using fallback method');
-        
-        const success = document.execCommand('insertText', false, text);
+        const success = insertTextWithDocumentCommand(text);
         return success
           ? this.success(t('common:contextMenu.status.pasteSuccess'), { text })
           : this.failure(t('errors:contextMenu.pasteFailed'));
       }
-      
-      
+
       const selection = editor.getSelection();
       if (selection) {
         editor.executeEdits('paste', [{
           range: selection,
-          text: text
+          text,
         }]);
       } else {
-        
         const position = editor.getPosition();
         if (position) {
           editor.executeEdits('paste', [{
@@ -106,7 +108,7 @@ export class PasteCommand extends BaseCommand {
               endLineNumber: position.lineNumber,
               endColumn: position.column
             },
-            text: text
+            text,
           }]);
         }
       }
