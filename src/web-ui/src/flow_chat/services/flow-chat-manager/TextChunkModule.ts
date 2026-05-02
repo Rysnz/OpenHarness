@@ -1,8 +1,71 @@
-/**
- * Handles streamed text chunks and thinking content.
- */
-
+import type { FlowThinkingItem } from '../../types/flow-chat';
 import type { FlowChatContext, FlowTextItem } from './types';
+
+type BufferMap = Map<string, string>;
+type ActiveItemMap = Map<string, string>;
+
+interface SessionStreamState {
+  contentBuffer: BufferMap;
+  activeItems: ActiveItemMap;
+}
+
+function ensureSessionStreamState(context: FlowChatContext, sessionId: string): SessionStreamState {
+  if (!context.contentBuffers.has(sessionId)) {
+    context.contentBuffers.set(sessionId, new Map());
+  }
+  if (!context.activeTextItems.has(sessionId)) {
+    context.activeTextItems.set(sessionId, new Map());
+  }
+
+  return {
+    contentBuffer: context.contentBuffers.get(sessionId)!,
+    activeItems: context.activeTextItems.get(sessionId)!,
+  };
+}
+
+function appendBufferedContent(buffer: BufferMap, key: string, text: string): string {
+  const content = `${buffer.get(key) || ''}${text}`.replace(/\n{3,}/g, '\n\n');
+  buffer.set(key, content);
+  return content;
+}
+
+function newStreamItemId(prefix: string): string {
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+}
+
+function thinkingKey(roundId: string): string {
+  return `thinking_${roundId}`;
+}
+
+function createTextItem(itemId: string, content: string): FlowTextItem {
+  return {
+    id: itemId,
+    type: 'text',
+    content,
+    isStreaming: true,
+    isMarkdown: true,
+    timestamp: Date.now(),
+    status: 'streaming',
+  };
+}
+
+function createThinkingItem(itemId: string, content: string, isThinkingEnd: boolean): FlowThinkingItem {
+  return {
+    id: itemId,
+    type: 'thinking',
+    content,
+    isStreaming: !isThinkingEnd,
+    isCollapsed: isThinkingEnd,
+    timestamp: Date.now(),
+    status: isThinkingEnd ? 'completed' : 'streaming',
+  };
+}
+
+function clearStreamingKey(state: SessionStreamState, key: string): void {
+  state.contentBuffer.delete(key);
+  state.activeItems.delete(key);
+}
+
 /**
  * Process a normal text chunk without notifying the store.
  */
@@ -13,44 +76,26 @@ export function processNormalTextChunkInternal(
   roundId: string,
   text: string
 ): void {
-  if (!context.contentBuffers.has(sessionId)) {
-    context.contentBuffers.set(sessionId, new Map());
-  }
-  if (!context.activeTextItems.has(sessionId)) {
-    context.activeTextItems.set(sessionId, new Map());
-  }
-  
-  const sessionContentBuffer = context.contentBuffers.get(sessionId)!;
-  const sessionActiveTextItems = context.activeTextItems.get(sessionId)!;
+  const streamState = ensureSessionStreamState(context, sessionId);
+  const cleanedContent = appendBufferedContent(streamState.contentBuffer, roundId, text);
+  const textItemId = streamState.activeItems.get(roundId);
 
-  // Coalesce excessive newlines while appending.
-  const currentContent = sessionContentBuffer.get(roundId) || '';
-  const cleanedContent = (currentContent + text).replace(/\n{3,}/g, '\n\n');
-  sessionContentBuffer.set(roundId, cleanedContent);
-
-  let textItemId = sessionActiveTextItems.get(roundId);
-  
-  if (!textItemId) {
-    textItemId = `text_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
-    const textItem: FlowTextItem = {
-      id: textItemId,
-      type: 'text',
-      content: cleanedContent,
-      isStreaming: true,
-      isMarkdown: true,
-      timestamp: Date.now(),
-      status: 'streaming'
-    };
-    
-    context.flowChatStore.addModelRoundItemSilent(sessionId, turnId, textItem, roundId);
-    sessionActiveTextItems.set(roundId, textItemId);
-  } else {
+  if (textItemId) {
     context.flowChatStore.updateModelRoundItemSilent(sessionId, turnId, textItemId, {
       content: cleanedContent,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     } as any);
+    return;
   }
+
+  const newItemId = newStreamItemId('text');
+  context.flowChatStore.addModelRoundItemSilent(
+    sessionId,
+    turnId,
+    createTextItem(newItemId, cleanedContent),
+    roundId
+  );
+  streamState.activeItems.set(roundId, newItemId);
 }
 
 /**
@@ -64,63 +109,41 @@ export function processThinkingChunkInternal(
   text: string,
   isThinkingEnd = false
 ): void {
-  if (!context.contentBuffers.has(sessionId)) {
-    context.contentBuffers.set(sessionId, new Map());
-  }
-  if (!context.activeTextItems.has(sessionId)) {
-    context.activeTextItems.set(sessionId, new Map());
-  }
-  
-  const sessionContentBuffer = context.contentBuffers.get(sessionId)!;
-  const sessionActiveTextItems = context.activeTextItems.get(sessionId)!;
+  const streamState = ensureSessionStreamState(context, sessionId);
+  const key = thinkingKey(roundId);
+  const cleanedContent = appendBufferedContent(streamState.contentBuffer, key, text);
+  const thinkingItemId = streamState.activeItems.get(key);
 
-  // Store thinking content under a separate key.
-  const thinkingKey = `thinking_${roundId}`;
-
-  const currentContent = sessionContentBuffer.get(thinkingKey) || '';
-  const cleanedContent = (currentContent + text).replace(/\n{3,}/g, '\n\n');
-  sessionContentBuffer.set(thinkingKey, cleanedContent);
-
-  let thinkingItemId = sessionActiveTextItems.get(thinkingKey);
-  
   if (!thinkingItemId) {
-    thinkingItemId = `thinking_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
-    const thinkingItem: import('../../types/flow-chat').FlowThinkingItem = {
-      id: thinkingItemId,
-      type: 'thinking',
-      content: cleanedContent,
-      isStreaming: !isThinkingEnd,
-      isCollapsed: isThinkingEnd,
-      timestamp: Date.now(),
-      status: isThinkingEnd ? 'completed' : 'streaming'
-    };
-    
-    context.flowChatStore.addModelRoundItemSilent(sessionId, turnId, thinkingItem, roundId);
-    sessionActiveTextItems.set(thinkingKey, thinkingItemId);
-    
+    const newItemId = newStreamItemId('thinking');
+    context.flowChatStore.addModelRoundItemSilent(
+      sessionId,
+      turnId,
+      createThinkingItem(newItemId, cleanedContent, isThinkingEnd),
+      roundId
+    );
+    streamState.activeItems.set(key, newItemId);
+
     if (isThinkingEnd) {
-      sessionContentBuffer.delete(thinkingKey);
-      sessionActiveTextItems.delete(thinkingKey);
+      clearStreamingKey(streamState, key);
     }
-  } else {
-    if (isThinkingEnd) {
-      context.flowChatStore.updateModelRoundItemSilent(sessionId, turnId, thinkingItemId, {
-        content: cleanedContent,
-        isStreaming: false,
-        isCollapsed: true,
-        status: 'completed',
-        timestamp: Date.now()
-      } as any);
-      
-      sessionContentBuffer.delete(thinkingKey);
-      sessionActiveTextItems.delete(thinkingKey);
-    } else {
-      context.flowChatStore.updateModelRoundItemSilent(sessionId, turnId, thinkingItemId, {
-        content: cleanedContent,
-        timestamp: Date.now()
-      } as any);
-    }
+    return;
+  }
+
+  context.flowChatStore.updateModelRoundItemSilent(sessionId, turnId, thinkingItemId, {
+    content: cleanedContent,
+    ...(isThinkingEnd
+      ? {
+          isStreaming: false,
+          isCollapsed: true,
+          status: 'completed',
+        }
+      : {}),
+    timestamp: Date.now(),
+  } as any);
+
+  if (isThinkingEnd) {
+    clearStreamingKey(streamState, key);
   }
 }
 
@@ -133,51 +156,37 @@ export function completeActiveTextItems(
   turnId: string
 ): void {
   const sessionActiveTextItems = context.activeTextItems.get(sessionId);
-  if (sessionActiveTextItems && sessionActiveTextItems.size > 0) {
-    const itemsToComplete = Array.from(sessionActiveTextItems.entries());
-    const batchUpdates = itemsToComplete
-      .map(([_roundId, itemId]) => ({
-        itemId,
-        changes: {
-          isStreaming: false,
-          status: 'completed' as const
-        }
-      }));
-    
-    if (batchUpdates.length > 0) {
-      context.flowChatStore.batchUpdateModelRoundItems(sessionId, turnId, batchUpdates);
-    }
-    
-    sessionActiveTextItems.clear();
+  if (!sessionActiveTextItems || sessionActiveTextItems.size === 0) {
+    return;
   }
+
+  const batchUpdates = Array.from(sessionActiveTextItems.values()).map((itemId) => ({
+    itemId,
+    changes: {
+      isStreaming: false,
+      status: 'completed' as const,
+    },
+  }));
+
+  context.flowChatStore.batchUpdateModelRoundItems(sessionId, turnId, batchUpdates);
+  sessionActiveTextItems.clear();
 }
 
 /**
  * Clean up session buffers.
  */
 export function cleanupSessionBuffers(context: FlowChatContext, sessionId: string): void {
-  const batcherSize = context.eventBatcher.getBufferSize();
-  if (batcherSize > 0) {
+  if (context.eventBatcher.getBufferSize() > 0) {
     context.eventBatcher.clear();
   }
 
   const pendingCompletion = context.pendingTurnCompletions.get(sessionId);
-  if (pendingCompletion) {
-    if (pendingCompletion.timer) {
-      clearTimeout(pendingCompletion.timer);
-    }
-    context.pendingTurnCompletions.delete(sessionId);
+  if (pendingCompletion?.timer) {
+    clearTimeout(pendingCompletion.timer);
   }
-  
-  const contentBuffer = context.contentBuffers.get(sessionId);
-  if (contentBuffer) {
-    context.contentBuffers.delete(sessionId);
-  }
-  
-  const activeItems = context.activeTextItems.get(sessionId);
-  if (activeItems) {
-    context.activeTextItems.delete(sessionId);
-  }
+  context.pendingTurnCompletions.delete(sessionId);
+  context.contentBuffers.delete(sessionId);
+  context.activeTextItems.delete(sessionId);
 }
 
 /**
@@ -193,7 +202,7 @@ export function clearAllBuffers(context: FlowChatContext): void {
 
   context.contentBuffers.clear();
   context.activeTextItems.clear();
-  
+
   for (const timer of context.saveDebouncers.values()) {
     clearTimeout(timer);
   }
