@@ -41,6 +41,42 @@ const ControlledHarness = forwardRef<HarnessHandle>(function ControlledHarness(_
 
 const describeWithJsdom = JSDOMCtor ? describe : describe.skip;
 
+const WINDOW_GLOBALS = [
+  'document',
+  'navigator',
+  'Node',
+  'Text',
+  'Element',
+  'HTMLElement',
+  'HTMLDivElement',
+  'HTMLSpanElement',
+  'DocumentFragment',
+  'Range',
+  'Selection',
+  'NodeFilter',
+  'Event',
+  'InputEvent',
+] as const;
+
+function installDomGlobals(window: Window & typeof globalThis) {
+  vi.stubGlobal('window', window);
+  for (const key of WINDOW_GLOBALS) {
+    vi.stubGlobal(key, window[key]);
+  }
+  vi.stubGlobal('getSelection', window.getSelection.bind(window));
+  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+}
+
+function installAnimationFrameStubs(window: Window & typeof globalThis) {
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    callback(0);
+    return 1;
+  });
+  vi.stubGlobal('cancelAnimationFrame', () => {});
+  window.requestAnimationFrame = globalThis.requestAnimationFrame;
+  window.cancelAnimationFrame = globalThis.cancelAnimationFrame;
+}
+
 describeWithJsdom('RichTextInput external sync', () => {
   let dom: { window: Window & typeof globalThis };
   let container: HTMLDivElement;
@@ -52,31 +88,8 @@ describeWithJsdom('RichTextInput external sync', () => {
     });
 
     const { window } = dom;
-    vi.stubGlobal('window', window);
-    vi.stubGlobal('document', window.document);
-    vi.stubGlobal('navigator', window.navigator);
-    vi.stubGlobal('Node', window.Node);
-    vi.stubGlobal('Text', window.Text);
-    vi.stubGlobal('Element', window.Element);
-    vi.stubGlobal('HTMLElement', window.HTMLElement);
-    vi.stubGlobal('HTMLDivElement', window.HTMLDivElement);
-    vi.stubGlobal('HTMLSpanElement', window.HTMLSpanElement);
-    vi.stubGlobal('DocumentFragment', window.DocumentFragment);
-    vi.stubGlobal('Range', window.Range);
-    vi.stubGlobal('Selection', window.Selection);
-    vi.stubGlobal('NodeFilter', window.NodeFilter);
-    vi.stubGlobal('Event', window.Event);
-    vi.stubGlobal('InputEvent', window.InputEvent);
-    vi.stubGlobal('getSelection', window.getSelection.bind(window));
-    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
-
-    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
-      callback(0);
-      return 1;
-    });
-    vi.stubGlobal('cancelAnimationFrame', () => {});
-    window.requestAnimationFrame = globalThis.requestAnimationFrame;
-    window.cancelAnimationFrame = globalThis.cancelAnimationFrame;
+    installDomGlobals(window);
+    installAnimationFrameStubs(window);
 
     container = document.createElement('div');
     document.body.appendChild(container);
