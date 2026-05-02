@@ -1,51 +1,56 @@
- 
-
 import { ITransportAdapter } from './base';
 import { createLogger } from '@/shared/utils/logger';
 
 const log = createLogger('WebSocketAdapter');
 
+const DEFAULT_WS_URL = 'ws://localhost:8080/ws';
+const REQUEST_TIMEOUT_MS = 30_000;
+const MAX_RECONNECT_ATTEMPTS = 5;
+const RECONNECT_DELAY_MS = 1_000;
+
 interface PendingRequest {
   resolve: (value: any) => void;
   reject: (error: any) => void;
-  timeout: NodeJS.Timeout;
+  timeout: ReturnType<typeof setTimeout>;
 }
+
+type EventCallback = (data: any) => void;
 
 export class WebSocketTransportAdapter implements ITransportAdapter {
   private ws: WebSocket | null = null;
-  private url: string;
-  private eventListeners: Map<string, Set<(data: any) => void>> = new Map();
-  private pendingRequests: Map<string, PendingRequest> = new Map();
+  private readonly url: string;
+  private readonly eventListeners = new Map<string, Set<EventCallback>>();
+  private readonly pendingRequests = new Map<string, PendingRequest>();
   private messageIdCounter = 0;
   private reconnectAttempts = 0;
-  private maxReconnectAttempts = 5;
-  private reconnectDelay = 1000;
-  
+  private shouldReconnect = true;
+
   constructor(url?: string) {
-    
-    this.url = url || import.meta.env.VITE_WS_URL || 'ws://localhost:8080/ws';
+    this.url = url || import.meta.env.VITE_WS_URL || DEFAULT_WS_URL;
   }
-  
-   
+
   async connect(): Promise<void> {
+    this.shouldReconnect = true;
+
     return new Promise((resolve, reject) => {
       try {
         log.info('Connecting', { url: this.url });
-        this.ws = new WebSocket(this.url);
-        
-        this.ws.onopen = () => {
+        const socket = new WebSocket(this.url);
+        this.ws = socket;
+
+        socket.onopen = () => {
           log.info('Connected successfully');
           this.reconnectAttempts = 0;
-          this.setupMessageHandler();
+          this.installMessageHandler(socket);
           resolve();
         };
-        
-        this.ws.onerror = (error) => {
+
+        socket.onerror = (error) => {
           log.error('Connection error', error);
           reject(new Error('WebSocket connection failed'));
         };
-        
-        this.ws.onclose = () => {
+
+        socket.onclose = () => {
           log.info('Connection closed');
           this.handleDisconnect();
         };
@@ -55,150 +60,181 @@ export class WebSocketTransportAdapter implements ITransportAdapter {
       }
     });
   }
-  
-   
-  private handleDisconnect(): void {
-    if (this.reconnectAttempts < this.maxReconnectAttempts) {
-      this.reconnectAttempts++;
-      const delay = this.reconnectDelay * this.reconnectAttempts;
-      
-      log.info('Reconnecting', { delay, attempt: this.reconnectAttempts, maxAttempts: this.maxReconnectAttempts });
-      
-      setTimeout(() => {
-        this.connect().catch(error => {
-          log.error('Reconnection failed', error);
-        });
-      }, delay);
-    } else {
-      log.error('Max reconnection attempts reached');
-      
-      this.pendingRequests.forEach((pending) => {
-        clearTimeout(pending.timeout);
-        pending.reject(new Error('WebSocket disconnected'));
-      });
-      this.pendingRequests.clear();
+
+  async request<T>(action: string, params?: any): Promise<T> {
+    if (!this.isConnected()) {
+      throw new Error('WebSocket not connected');
     }
+
+    const messageId = this.nextMessageId();
+
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.pendingRequests.delete(messageId);
+        reject(new Error(`Request timeout: ${action}`));
+      }, REQUEST_TIMEOUT_MS);
+
+      this.pendingRequests.set(messageId, { resolve, reject, timeout });
+      this.sendRequest(messageId, action, params, reject, timeout);
+    });
   }
-  
-   
-  private setupMessageHandler(): void {
-    if (!this.ws) return;
-    
-    this.ws.onmessage = (event) => {
+
+  listen<T>(event: string, callback: (data: T) => void): () => void {
+    const listeners = this.getEventListeners(event);
+    listeners.add(callback as EventCallback);
+
+    return () => {
+      this.removeEventListener(event, callback as EventCallback);
+    };
+  }
+
+  async disconnect(): Promise<void> {
+    this.shouldReconnect = false;
+    this.rejectPendingRequests('WebSocket manually disconnected');
+    this.eventListeners.clear();
+
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
+    }
+
+    this.reconnectAttempts = 0;
+  }
+
+  isConnected(): boolean {
+    return this.ws?.readyState === WebSocket.OPEN;
+  }
+
+  private installMessageHandler(socket: WebSocket): void {
+    socket.onmessage = (event) => {
       try {
-        const message = JSON.parse(event.data);
-        
-        
-        if (message.id && this.pendingRequests.has(message.id)) {
-          const pending = this.pendingRequests.get(message.id)!;
-          clearTimeout(pending.timeout);
-          
-          if (message.error) {
-            pending.reject(new Error(message.error));
-          } else {
-            pending.resolve(message.result);
-          }
-          
-          this.pendingRequests.delete(message.id);
-          return;
-        }
-        
-        
-        if (message.event) {
-          const listeners = this.eventListeners.get(message.event);
-          if (listeners && listeners.size > 0) {
-            listeners.forEach(callback => {
-              try {
-                callback(message.payload);
-              } catch (error) {
-                log.error('Error in event listener', { event: message.event, error });
-              }
-            });
-          }
-        }
+        this.routeMessage(JSON.parse(event.data));
       } catch (error) {
         log.error('Failed to parse message', { data: event.data, error });
       }
     };
   }
-  
-   
-  async request<T>(action: string, params?: any): Promise<T> {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      throw new Error('WebSocket not connected');
+
+  private routeMessage(message: any): void {
+    if (message.id && this.resolvePendingRequest(message)) {
+      return;
     }
-    
-    const messageId = `msg_${Date.now()}_${++this.messageIdCounter}`;
-    
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        this.pendingRequests.delete(messageId);
-        reject(new Error(`Request timeout: ${action}`));
-      }, 30000); 
-      
-      this.pendingRequests.set(messageId, { resolve, reject, timeout });
-      
+
+    if (message.event) {
+      this.dispatchEvent(message.event, message.payload);
+    }
+  }
+
+  private resolvePendingRequest(message: any): boolean {
+    const pending = this.pendingRequests.get(message.id);
+    if (!pending) {
+      return false;
+    }
+
+    clearTimeout(pending.timeout);
+    this.pendingRequests.delete(message.id);
+
+    if (message.error) {
+      pending.reject(new Error(message.error));
+    } else {
+      pending.resolve(message.result);
+    }
+
+    return true;
+  }
+
+  private dispatchEvent(event: string, payload: any): void {
+    const listeners = this.eventListeners.get(event);
+    if (!listeners || listeners.size === 0) {
+      return;
+    }
+
+    listeners.forEach((callback) => {
       try {
-        this.ws!.send(JSON.stringify({
-          id: messageId,
-          action,
-          params: params || {}
-        }));
+        callback(payload);
       } catch (error) {
-        clearTimeout(timeout);
-        this.pendingRequests.delete(messageId);
-        reject(error);
+        log.error('Error in event listener', { event, error });
       }
     });
   }
-  
-   
-  listen<T>(event: string, callback: (data: T) => void): () => void {
-    if (!this.eventListeners.has(event)) {
-      this.eventListeners.set(event, new Set());
+
+  private handleDisconnect(): void {
+    if (!this.shouldReconnect) {
+      return;
     }
-    
-    const listeners = this.eventListeners.get(event)!;
-    listeners.add(callback);
-    
-    
-    return () => {
-      const listeners = this.eventListeners.get(event);
-      if (listeners) {
-        listeners.delete(callback);
-        if (listeners.size === 0) {
-          this.eventListeners.delete(event);
-        }
-      }
-    };
+
+    if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+      log.error('Max reconnection attempts reached');
+      this.rejectPendingRequests('WebSocket disconnected');
+      return;
+    }
+
+    this.reconnectAttempts += 1;
+    const delay = RECONNECT_DELAY_MS * this.reconnectAttempts;
+    log.info('Reconnecting', {
+      delay,
+      attempt: this.reconnectAttempts,
+      maxAttempts: MAX_RECONNECT_ATTEMPTS,
+    });
+
+    setTimeout(() => {
+      this.connect().catch(error => {
+        log.error('Reconnection failed', error);
+      });
+    }, delay);
   }
-  
-   
-  async disconnect(): Promise<void> {
-    
+
+  private rejectPendingRequests(message: string): void {
     this.pendingRequests.forEach((pending) => {
       clearTimeout(pending.timeout);
-      pending.reject(new Error('WebSocket manually disconnected'));
+      pending.reject(new Error(message));
     });
     this.pendingRequests.clear();
-    
-    
-    this.eventListeners.clear();
-    
-    
-    if (this.ws) {
-      this.ws.close();
-      this.ws = null;
-    }
-    
-    
-    this.reconnectAttempts = 0;
   }
-  
-   
-  isConnected(): boolean {
-    return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
+
+  private sendRequest(
+    messageId: string,
+    action: string,
+    params: any,
+    reject: (error: any) => void,
+    timeout: ReturnType<typeof setTimeout>
+  ): void {
+    try {
+      this.ws!.send(JSON.stringify({
+        id: messageId,
+        action,
+        params: params || {},
+      }));
+    } catch (error) {
+      clearTimeout(timeout);
+      this.pendingRequests.delete(messageId);
+      reject(error);
+    }
+  }
+
+  private getEventListeners(event: string): Set<EventCallback> {
+    let listeners = this.eventListeners.get(event);
+    if (!listeners) {
+      listeners = new Set();
+      this.eventListeners.set(event, listeners);
+    }
+    return listeners;
+  }
+
+  private removeEventListener(event: string, callback: EventCallback): void {
+    const listeners = this.eventListeners.get(event);
+    if (!listeners) {
+      return;
+    }
+
+    listeners.delete(callback);
+    if (listeners.size === 0) {
+      this.eventListeners.delete(event);
+    }
+  }
+
+  private nextMessageId(): string {
+    this.messageIdCounter += 1;
+    return `msg_${Date.now()}_${this.messageIdCounter}`;
   }
 }
-
-
