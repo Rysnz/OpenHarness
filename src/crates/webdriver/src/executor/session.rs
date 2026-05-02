@@ -1,4 +1,7 @@
-use tauri::webview::cookie::{time::OffsetDateTime, Cookie as NativeCookie, SameSite};
+use tauri::{
+    webview::cookie::{time::OffsetDateTime, Cookie as NativeCookie, SameSite},
+    WebviewWindow,
+};
 
 use crate::executor::BridgeExecutor;
 use crate::platform::Cookie;
@@ -7,9 +10,7 @@ use crate::server::response::WebDriverErrorResponse;
 impl BridgeExecutor {
     pub async fn get_all_cookies(&self) -> Result<Vec<Cookie>, WebDriverErrorResponse> {
         let window = self.webview_window()?;
-        let cookies = window.cookies().map_err(|error| {
-            WebDriverErrorResponse::unknown_error(format!("Failed to read cookies: {error}"))
-        })?;
+        let cookies = window.cookies().map_err(cookie_read_error)?;
         Ok(cookies.iter().map(to_webdriver_cookie).collect())
     }
 
@@ -21,32 +22,19 @@ impl BridgeExecutor {
     pub async fn add_cookie(&self, mut cookie: Cookie) -> Result<(), WebDriverErrorResponse> {
         let window = self.webview_window()?;
 
-        if cookie.domain.is_none() {
-            if let Ok(url) = window.url() {
-                cookie.domain = url.host_str().map(str::to_owned);
-            }
-        }
-        if cookie.path.is_none() {
-            cookie.path = Some("/".to_string());
-        }
+        apply_cookie_defaults(&mut cookie, &window);
 
         let cookie = build_native_cookie(&cookie)?;
-        window.set_cookie(cookie).map_err(|error| {
-            WebDriverErrorResponse::unknown_error(format!("Failed to set cookie: {error}"))
-        })?;
+        window.set_cookie(cookie).map_err(cookie_set_error)?;
         Ok(())
     }
 
     pub async fn delete_cookie(&self, name: &str) -> Result<(), WebDriverErrorResponse> {
         let window = self.webview_window()?;
-        let cookies = window.cookies().map_err(|error| {
-            WebDriverErrorResponse::unknown_error(format!("Failed to read cookies: {error}"))
-        })?;
+        let cookies = window.cookies().map_err(cookie_read_error)?;
 
         for cookie in cookies.into_iter().filter(|cookie| cookie.name() == name) {
-            window.delete_cookie(cookie).map_err(|error| {
-                WebDriverErrorResponse::unknown_error(format!("Failed to delete cookie: {error}"))
-            })?;
+            window.delete_cookie(cookie).map_err(cookie_delete_error)?;
         }
 
         Ok(())
@@ -54,18 +42,38 @@ impl BridgeExecutor {
 
     pub async fn delete_all_cookies(&self) -> Result<(), WebDriverErrorResponse> {
         let window = self.webview_window()?;
-        let cookies = window.cookies().map_err(|error| {
-            WebDriverErrorResponse::unknown_error(format!("Failed to read cookies: {error}"))
-        })?;
+        let cookies = window.cookies().map_err(cookie_read_error)?;
 
         for cookie in cookies {
-            window.delete_cookie(cookie).map_err(|error| {
-                WebDriverErrorResponse::unknown_error(format!("Failed to delete cookie: {error}"))
-            })?;
+            window.delete_cookie(cookie).map_err(cookie_delete_error)?;
         }
 
         Ok(())
     }
+}
+
+fn apply_cookie_defaults(cookie: &mut Cookie, window: &WebviewWindow) {
+    if cookie.domain.is_none() {
+        if let Ok(url) = window.url() {
+            cookie.domain = url.host_str().map(str::to_owned);
+        }
+    }
+
+    if cookie.path.is_none() {
+        cookie.path = Some("/".to_string());
+    }
+}
+
+fn cookie_read_error(error: impl std::fmt::Display) -> WebDriverErrorResponse {
+    WebDriverErrorResponse::unknown_error(format!("Failed to read cookies: {error}"))
+}
+
+fn cookie_set_error(error: impl std::fmt::Display) -> WebDriverErrorResponse {
+    WebDriverErrorResponse::unknown_error(format!("Failed to set cookie: {error}"))
+}
+
+fn cookie_delete_error(error: impl std::fmt::Display) -> WebDriverErrorResponse {
+    WebDriverErrorResponse::unknown_error(format!("Failed to delete cookie: {error}"))
 }
 
 fn to_webdriver_cookie(cookie: &NativeCookie<'_>) -> Cookie {
