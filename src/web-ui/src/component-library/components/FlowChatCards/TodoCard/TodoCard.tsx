@@ -20,6 +20,38 @@ export interface TodoCardProps extends Omit<BaseToolCardProps, 'toolName' | 'dis
   action?: 'create' | 'update' | 'list';
 }
 
+type TodoStats = Record<'total' | 'completed' | 'inProgress' | 'pending', number>;
+
+function calculateTodoStats(todos: TodoItem[]): TodoStats {
+  return todos.reduce<TodoStats>((stats, todo) => {
+    stats.total += 1;
+    if (todo.status === 'completed') {
+      stats.completed += 1;
+    } else if (todo.status === 'in_progress') {
+      stats.inProgress += 1;
+    } else {
+      stats.pending += 1;
+    }
+    return stats;
+  }, { total: 0, completed: 0, inProgress: 0, pending: 0 });
+}
+
+function TodoStatusIcon({ status }: { status: TodoItem['status'] }) {
+  const className = `todo-card__status-icon todo-card__status-icon--${
+    status === 'in_progress' ? 'in-progress' : status
+  }`;
+
+  if (status === 'completed') {
+    return <CheckSquare size={12} className={className} />;
+  }
+
+  if (status === 'in_progress') {
+    return <Circle size={12} className={className} />;
+  }
+
+  return <Square size={12} className={className} />;
+}
+
 export const TodoCard: React.FC<TodoCardProps> = ({
   todos,
   input,
@@ -30,24 +62,7 @@ export const TodoCard: React.FC<TodoCardProps> = ({
 }) => {
   const { t } = useI18n('components');
   const resolvedTodos = todos || result?.todos || input?.todos || [];
-
-  const stats = {
-    total: resolvedTodos.length,
-    completed: resolvedTodos.filter((t: TodoItem) => t.status === 'completed').length,
-    inProgress: resolvedTodos.filter((t: TodoItem) => t.status === 'in_progress').length,
-    pending: resolvedTodos.filter((t: TodoItem) => t.status === 'pending').length
-  };
-
-  const getStatusIcon = (todoStatus: string) => {
-    switch (todoStatus) {
-      case 'completed':
-        return <CheckSquare size={12} className="todo-card__status-icon todo-card__status-icon--completed" />;
-      case 'in_progress':
-        return <Circle size={12} className="todo-card__status-icon todo-card__status-icon--in-progress" />;
-      default:
-        return <Square size={12} className="todo-card__status-icon todo-card__status-icon--pending" />;
-    }
-  };
+  const stats = calculateTodoStats(resolvedTodos);
 
   if (displayMode === 'compact') {
     return (
@@ -96,7 +111,7 @@ export const TodoCard: React.FC<TodoCardProps> = ({
         <div className="todo-card__list">
           {resolvedTodos.map((todo: TodoItem) => (
             <div key={todo.id} className={`todo-card__item todo-card__item--${todo.status}`}>
-              {getStatusIcon(todo.status)}
+              <TodoStatusIcon status={todo.status} />
               <span className="todo-card__item-content">{todo.content}</span>
             </div>
           ))}
