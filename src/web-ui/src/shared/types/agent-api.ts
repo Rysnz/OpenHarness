@@ -4,6 +4,27 @@
  * These types mirror backend request/response payloads and intentionally use
  * snake_case fields to match the wire format.
  */
+export type WirePayload = any;
+export type WireObject = Record<string, WirePayload>;
+export type AgentTaskUpdateType = 'task_started' | 'task_progress' | 'task_completed' | 'task_error';
+export type AgentTaskStatus = 'completed' | 'error';
+export type StreamContentType = 'text' | 'tool_result' | 'thinking';
+export type ModelContentType = StreamContentType | 'tool_call';
+export type ModelRoundStatus = 'completed' | 'pending_confirmation' | 'error';
+
+export interface TaskScopedEvent {
+  task_id: string;
+  timestamp?: number;
+}
+
+export interface DialogScopedEvent extends TaskScopedEvent {
+  dialog_turn_id: string;
+}
+
+export interface ModelRoundScopedEvent extends DialogScopedEvent {
+  model_round_id: string;
+}
+
 export interface AgentExecutionRequest {
   agent_type: string;
   prompt: string;
@@ -18,7 +39,7 @@ export interface AgentExecutionRequest {
 export interface AgentExecutionResponse {
   id: string;
   status: string;
-  result?: any;
+  result?: WirePayload;
   error?: string;
   progress?: string;
   agent_type: string;
@@ -39,7 +60,7 @@ export interface AgentInfo {
 export interface ToolInfo {
   name: string;
   description: string;
-  input_schema: any;
+  input_schema: WirePayload;
   is_readonly: boolean;
   is_concurrency_safe: boolean;
   needs_permissions: boolean;
@@ -47,7 +68,7 @@ export interface ToolInfo {
 
 export interface ToolExecutionRequest {
   tool_name: string;
-  input: any;
+  input: WirePayload;
   context?: Record<string, string>;
   safe_mode?: boolean;
 }
@@ -55,7 +76,7 @@ export interface ToolExecutionRequest {
 export interface ToolExecutionResponse {
   tool_name: string;
   success: boolean;
-  result?: any;
+  result?: WirePayload;
   error?: string;
   validation_error?: string;
   duration_ms: number;
@@ -63,7 +84,7 @@ export interface ToolExecutionResponse {
 
 export interface ToolValidationRequest {
   tool_name: string;
-  input: any;
+  input: WirePayload;
 }
 
 export interface ToolValidationResponse {
@@ -71,14 +92,13 @@ export interface ToolValidationResponse {
   valid: boolean;
   message?: string;
   error_code?: number;
-  meta?: any;
+  meta?: WirePayload;
 }
 
 
-export interface AgentTaskUpdateEvent {
-  type: 'task_started' | 'task_progress' | 'task_completed' | 'task_error';
-  task_id: string;
-  data?: any;
+export interface AgentTaskUpdateEvent extends TaskScopedEvent {
+  type: AgentTaskUpdateType;
+  data?: WirePayload;
   error?: string;
   progress?: string;
   agent_type?: string;
@@ -89,41 +109,32 @@ export interface AgentTaskUpdateEvent {
 
 
 
-export interface DialogTurnStartEvent {
-  task_id: string;
+export interface DialogTurnStartEvent extends DialogScopedEvent {
   dialog_turn_id: string;
   user_message: string;
   timestamp: number;
 }
 
-export interface DialogTurnCompleteEvent {
-  task_id: string;
-  dialog_turn_id: string;
-  status: 'completed' | 'error';
+export interface DialogTurnCompleteEvent extends DialogScopedEvent {
+  status: AgentTaskStatus;
   total_model_rounds: number;
   timestamp: number;
 }
 
 
-export interface ModelRoundStartEvent {
-  task_id: string;
-  dialog_turn_id: string;
-  model_round_id: string;
+export interface ModelRoundStartEvent extends ModelRoundScopedEvent {
   model_round_index: number;
   timestamp: number;
 }
 
-export interface ModelRoundContentEvent {
-  task_id: string;
-  dialog_turn_id: string;
-  model_round_id: string;
+export interface ModelRoundContentEvent extends ModelRoundScopedEvent {
   content_id: string;
-  content_type: 'text' | 'tool_call' | 'tool_result' | 'thinking';
+  content_type: ModelContentType;
   content: string;
   metadata?: {
     tool_name?: string;
     tool_use_id?: string;
-    tool_input?: any;
+    tool_input?: WirePayload;
     is_streaming?: boolean;
     chunk_index?: number;
     total_chunks?: number;
@@ -131,25 +142,20 @@ export interface ModelRoundContentEvent {
   timestamp: number;
 }
 
-export interface ModelRoundEndEvent {
-  task_id: string;
-  dialog_turn_id: string;
-  model_round_id: string;
-  round_status: 'completed' | 'pending_confirmation' | 'error';
+export interface ModelRoundEndEvent extends ModelRoundScopedEvent {
+  round_status: ModelRoundStatus;
   timestamp: number;
 }
 
 
-export interface TaskCompleteEvent {
-  task_id: string;
-  status: 'completed' | 'error';
+export interface TaskCompleteEvent extends TaskScopedEvent {
+  status: AgentTaskStatus;
   total_dialog_turns: number;
-  result?: any;
+  result?: WirePayload;
   timestamp: number;
 }
 
-export interface TaskErrorEvent {
-  task_id: string;
+export interface TaskErrorEvent extends TaskScopedEvent {
   dialog_turn_id?: string;
   model_round_id?: string;
   error: string;
@@ -158,9 +164,8 @@ export interface TaskErrorEvent {
 
 
  
-export interface StreamChunkEvent {
-  task_id: string;
-  type: 'text' | 'tool_result' | 'thinking';
+export interface StreamChunkEvent extends TaskScopedEvent {
+  type: StreamContentType;
   content: string;
   model_round_id?: string;    
   dialog_turn_id?: string;    
@@ -170,19 +175,17 @@ export interface StreamChunkEvent {
 }
 
  
-export interface StreamToolUseEvent {
-  task_id: string;
+export interface StreamToolUseEvent extends TaskScopedEvent {
   tool_use_id: string;
   tool_name: string;
-  input: any;
+  input: WirePayload;
   model_round_id?: string;    
   dialog_turn_id?: string;    
   timestamp: number;
 }
 
  
-export interface StreamToolResultEvent {
-  task_id: string;
+export interface StreamToolResultEvent extends TaskScopedEvent {
   type: 'tool_result';
   content: string;
   timestamp: number;
@@ -199,7 +202,7 @@ export interface StreamStartEvent {
 export interface StreamCompleteEvent {
   task_id: string;
   status: 'completed';
-  result?: any;
+  result?: WirePayload;
 }
 
  
@@ -220,7 +223,7 @@ export interface ToolCallConfirmationEvent {
   request: {
     call_id: string;
     name: string;
-    args: Record<string, any>;
+    args: WireObject;
     is_client_initiated: boolean;
     prompt_id: string;
   };

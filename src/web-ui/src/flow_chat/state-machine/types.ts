@@ -68,6 +68,28 @@ export interface TodoItem {
   status: 'pending' | 'in_progress' | 'completed';
 }
 
+export type PlannerContext = {
+  todos: TodoItem[];
+  isActive: boolean;
+} | null;
+
+export interface SessionRuntimeStats {
+  startTime: number | null;
+  textCharsGenerated: number;
+  toolsExecuted: number;
+}
+
+export interface SessionErrorRecovery {
+  errorCount: number;
+  lastErrorTime: number | null;
+  errorType: string | null;
+  recoverable: boolean;
+}
+
+export type SendButtonMode = 'send' | 'cancel' | 'split' | 'confirm' | 'retry';
+export type ProgressBarMode = 'indeterminate' | 'determinate' | 'segmented';
+export type SessionErrorType = 'network' | 'model' | 'permission' | 'unknown';
+
 /**
  * State machine context (runtime data)
  */
@@ -81,26 +103,14 @@ export interface SessionStateMachineContext {
   
   processingPhase: ProcessingPhase | null;
   
-  planner: {
-    todos: TodoItem[];
-    isActive: boolean;
-  } | null;
+  planner: PlannerContext;
   
-  stats: {
-    startTime: number | null;
-    textCharsGenerated: number;
-    toolsExecuted: number;
-  };
+  stats: SessionRuntimeStats;
   
   version: number;
   lastUpdateTime: number;
   backendSyncedAt: number | null;
-  errorRecovery: {
-    errorCount: number;
-    lastErrorTime: number | null;
-    errorType: string | null;
-    recoverable: boolean;
-  };
+  errorRecovery: SessionErrorRecovery;
 }
 
 export interface SessionStateMachine {
@@ -126,19 +136,15 @@ export interface SessionDerivedState {
   isInputDisabled: boolean;
   showSendButton: boolean;
   showCancelButton: boolean;
-  sendButtonMode: 'send' | 'cancel' | 'split' | 'confirm' | 'retry';
+  sendButtonMode: SendButtonMode;
   inputPlaceholder: string;
   
   showPlanner: boolean;
   plannerProgress: number;
-  plannerStats: {
-    completed: number;
-    inProgress: number;
-    pending: number;
-  } | null;
+  plannerStats: PlannerSummary | null;
   
   showProgressBar: boolean;
-  progressBarMode: 'indeterminate' | 'determinate' | 'segmented';
+  progressBarMode: ProgressBarMode;
   progressBarValue: number;
   progressBarLabel: string;
   progressBarColor: string;
@@ -150,8 +156,14 @@ export interface SessionDerivedState {
   queuedInput: string | null;
 
   hasError: boolean;
-  errorType: 'network' | 'model' | 'permission' | 'unknown' | null;
+  errorType: SessionErrorType | null;
   canRetry: boolean;
+}
+
+export interface PlannerSummary {
+  completed: number;
+  inProgress: number;
+  pending: number;
 }
 
 export type StateTransitionTable = Record<

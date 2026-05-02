@@ -6,6 +6,15 @@ import { useI18n } from '@/infrastructure/i18n';
 import { DiffEditor } from '../../../tools/editor';
 import './DiffFullscreenViewer.css';
 
+type HeaderAction = {
+  key: 'accept' | 'reject';
+  className: string;
+  icon: React.ReactNode;
+  tooltipKey: string;
+  labelKey: string;
+  onClick: () => void;
+};
+
 interface DiffFullscreenViewerProps {
   isOpen: boolean;
   onClose: () => void;
@@ -17,6 +26,15 @@ interface DiffFullscreenViewerProps {
   onAcceptBlock: (blockId: string) => void;
   onRejectBlock: (blockId: string) => void;
   loading?: boolean;
+}
+
+function DiffFileIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14,2 14,8 20,8" />
+    </svg>
+  );
 }
 
 export const DiffFullscreenViewer: React.FC<DiffFullscreenViewerProps> = ({
@@ -32,7 +50,26 @@ export const DiffFullscreenViewer: React.FC<DiffFullscreenViewerProps> = ({
   loading = false
 }) => {
   const { t } = useI18n('components');
-  // Close on Escape
+  const fileName = filePath.split(/[/\\]/).pop() || filePath;
+  const fileActions: HeaderAction[] = [
+    {
+      key: 'accept',
+      className: 'accept-btn',
+      icon: <CheckCircle size={16} />,
+      tooltipKey: 'diffFullscreen.acceptFileTooltip',
+      labelKey: 'diffFullscreen.acceptFile',
+      onClick: onAcceptFile,
+    },
+    {
+      key: 'reject',
+      className: 'reject-btn',
+      icon: <XCircle size={16} />,
+      tooltipKey: 'diffFullscreen.rejectFileTooltip',
+      labelKey: 'diffFullscreen.rejectFile',
+      onClick: onRejectFile,
+    },
+  ];
+
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isOpen) {
@@ -60,8 +97,6 @@ export const DiffFullscreenViewer: React.FC<DiffFullscreenViewerProps> = ({
 
   if (!isOpen) return null;
 
-  const fileName = filePath.split(/[/\\]/).pop() || filePath;
-
   const fullscreenContent = (
     <div className="diff-fullscreen-overlay" onClick={handleBackdropClick}>
       <div className="diff-fullscreen-container">
@@ -69,10 +104,7 @@ export const DiffFullscreenViewer: React.FC<DiffFullscreenViewerProps> = ({
         <div className="diff-fullscreen-header">
           <div className="file-info">
             <div className="file-icon">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                <polyline points="14,2 14,8 20,8"/>
-              </svg>
+              <DiffFileIcon />
             </div>
             <div className="file-details">
               <div className="file-name">{fileName}</div>
@@ -81,27 +113,18 @@ export const DiffFullscreenViewer: React.FC<DiffFullscreenViewerProps> = ({
           </div>
 
           <div className="header-actions">
-            <Tooltip content={t('diffFullscreen.acceptFileTooltip')}>
-              <button
-                className="header-btn accept-btn"
-                onClick={onAcceptFile}
-                disabled={loading}
-              >
-                <CheckCircle size={16} />
-                <span>{t('diffFullscreen.acceptFile')}</span>
-              </button>
-            </Tooltip>
-            
-            <Tooltip content={t('diffFullscreen.rejectFileTooltip')}>
-              <button
-                className="header-btn reject-btn"
-                onClick={onRejectFile}
-                disabled={loading}
-              >
-                <XCircle size={16} />
-                <span>{t('diffFullscreen.rejectFile')}</span>
-              </button>
-            </Tooltip>
+            {fileActions.map((action) => (
+              <Tooltip key={action.key} content={t(action.tooltipKey)}>
+                <button
+                  className={`header-btn ${action.className}`}
+                  onClick={action.onClick}
+                  disabled={loading}
+                >
+                  {action.icon}
+                  <span>{t(action.labelKey)}</span>
+                </button>
+              </Tooltip>
+            ))}
 
             <div className="header-divider" />
 
