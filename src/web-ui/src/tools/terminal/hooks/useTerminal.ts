@@ -1,8 +1,4 @@
-/**
- * Terminal hook for state and event handling.
- */
-
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { getTerminalService, TerminalService } from '../services';
 import { createLogger } from '@/shared/utils/logger';
 import type {
@@ -21,7 +17,6 @@ export interface UseTerminalOptions {
   onReady?: () => void;
   onExit?: (exitCode?: number) => void;
   onError?: (message: string) => void;
-  /** Called with the PTY dimensions stored alongside history, before onOutput. */
   onHistoryDims?: (cols: number, rows: number) => void;
 }
 
@@ -38,17 +33,86 @@ export interface UseTerminalReturn {
   refresh: () => Promise<void>;
 }
 
-export function useTerminal(options: UseTerminalOptions): UseTerminalReturn {
-  const {
-    sessionId,
-    autoConnect = true,
+type CallbackRefs = {
+  onEvent: React.MutableRefObject<UseTerminalOptions['onEvent']>;
+  onOutput: React.MutableRefObject<UseTerminalOptions['onOutput']>;
+  onReady: React.MutableRefObject<UseTerminalOptions['onReady']>;
+  onExit: React.MutableRefObject<UseTerminalOptions['onExit']>;
+  onError: React.MutableRefObject<UseTerminalOptions['onError']>;
+  onHistoryDims: React.MutableRefObject<UseTerminalOptions['onHistoryDims']>;
+};
+
+const toErrorMessage = (error: unknown): string => (
+  error instanceof Error ? error.message : 'Connection failed'
+);
+
+const disposeSubscription = (unsubscribeRef: React.MutableRefObject<(() => void) | null>): void => {
+  unsubscribeRef.current?.();
+  unsubscribeRef.current = null;
+};
+
+const runTerminalAction = async (
+  label: string,
+  sessionId: string,
+  action: () => Promise<void>,
+  extra: Record<string, unknown> = {}
+): Promise<void> => {
+  try {
+    await action();
+  } catch (error) {
+    log.error(label, { sessionId, ...extra, error });
+    throw error;
+  }
+};
+
+function useTerminalCallbackRefs(options: UseTerminalOptions): CallbackRefs {
+  const onEvent = useRef(options.onEvent);
+  const onOutput = useRef(options.onOutput);
+  const onReady = useRef(options.onReady);
+  const onExit = useRef(options.onExit);
+  const onError = useRef(options.onError);
+  const onHistoryDims = useRef(options.onHistoryDims);
+  const refs = useMemo<CallbackRefs>(() => ({
     onEvent,
     onOutput,
     onReady,
     onExit,
     onError,
     onHistoryDims,
-  } = options;
+  }), []);
+
+  useEffect(() => {
+    onEvent.current = options.onEvent;
+    onOutput.current = options.onOutput;
+    onReady.current = options.onReady;
+    onExit.current = options.onExit;
+    onError.current = options.onError;
+    onHistoryDims.current = options.onHistoryDims;
+  }, [options.onEvent, options.onOutput, options.onReady, options.onExit, options.onError, options.onHistoryDims]);
+
+  return refs;
+}
+
+async function replayTerminalHistory(
+  service: TerminalService,
+  sessionId: string,
+  refs: CallbackRefs,
+  isCancelled: () => boolean
+): Promise<void> {
+  try {
+    const history = await service.getHistory(sessionId);
+    if (!isCancelled() && history.data) {
+      refs.onHistoryDims.current?.(history.cols, history.rows);
+      refs.onOutput.current?.(history.data);
+    }
+  } catch (error) {
+    log.warn('Failed to fetch terminal history', { sessionId, error });
+  }
+}
+
+export function useTerminal(options: UseTerminalOptions): UseTerminalReturn {
+  const { sessionId, autoConnect = true } = options;
+  const callbacks = useTerminalCallbackRefs(options);
 
   const [session, setSession] = useState<SessionResponse | null>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -58,53 +122,38 @@ export function useTerminal(options: UseTerminalOptions): UseTerminalReturn {
   const serviceRef = useRef<TerminalService>(getTerminalService());
   const unsubscribeRef = useRef<(() => void) | null>(null);
 
-  // Use refs for callbacks to avoid re-creating handleEvent and re-triggering useEffect
-  const onEventRef = useRef(onEvent);
-  const onOutputRef = useRef(onOutput);
-  const onReadyRef = useRef(onReady);
-  const onExitRef = useRef(onExit);
-  const onErrorRef = useRef(onError);
-  const onHistoryDimsRef = useRef(onHistoryDims);
-
-  // Keep refs updated
-  useEffect(() => {
-    onEventRef.current = onEvent;
-    onOutputRef.current = onOutput;
-    onReadyRef.current = onReady;
-    onExitRef.current = onExit;
-    onErrorRef.current = onError;
-    onHistoryDimsRef.current = onHistoryDims;
-  });
-
-  // Stable event handler that uses refs
   const handleEvent = useCallback((event: TerminalEvent) => {
-    if (event.sessionId !== sessionId) return;
+    if (event.sessionId !== sessionId) {
+      return;
+    }
 
-    onEventRef.current?.(event);
+    callbacks.onEvent.current?.(event);
 
     switch (event.type) {
       case 'output':
-        onOutputRef.current?.((event as any).data);
+        callbacks.onOutput.current?.((event as any).data);
         break;
       case 'ready':
-        onReadyRef.current?.();
+        callbacks.onReady.current?.();
         break;
       case 'exit':
-        onExitRef.current?.((event as any).exitCode);
+        callbacks.onExit.current?.((event as any).exitCode);
         break;
-      case 'error':
-        onErrorRef.current?.((event as any).message);
-        setError((event as any).message);
+      case 'error': {
+        const message = (event as any).message;
+        callbacks.onError.current?.(message);
+        setError(message);
         break;
+      }
       case 'resize':
-        // Backend resize confirmation requires no extra UI work.
         break;
     }
-  }, [sessionId]); // Only depend on sessionId, not the callbacks
+  }, [callbacks, sessionId]);
 
   useEffect(() => {
     const service = serviceRef.current;
     let cancelled = false;
+    const isCancelled = () => cancelled;
 
     const connect = async () => {
       try {
@@ -116,108 +165,71 @@ export function useTerminal(options: UseTerminalOptions): UseTerminalReturn {
         }
 
         if (cancelled) return;
-
         setIsConnected(service.isConnected());
 
-        // Get session info
         const sessionInfo = await service.getSession(sessionId);
         if (cancelled) return;
-
         setSession(sessionInfo);
 
-        // Replay output history BEFORE subscribing to live events.
-        // This prevents overlap: history covers [past → now], events cover [now → future].
-        // If we subscribed first, events arriving between subscribe and getHistory would
-        // appear in both the event stream and the history buffer, causing duplicate output.
-        try {
-          const historyResponse = await service.getHistory(sessionId);
-          if (!cancelled && historyResponse.data) {
-            // Notify before queuing data so the terminal can resize to the correct
-            // dimensions before history is written to the buffer.
-            onHistoryDimsRef.current?.(historyResponse.cols, historyResponse.rows);
-            onOutputRef.current?.(historyResponse.data);
-          }
-        } catch (histErr) {
-          // History replay is optional — a failed fetch must not break the terminal.
-          log.warn('Failed to fetch terminal history', { sessionId, error: histErr });
-        }
-
+        await replayTerminalHistory(service, sessionId, callbacks, isCancelled);
         if (cancelled) return;
 
-        // Subscribe to live events AFTER history replay to eliminate overlap.
         const unsubscribe = service.onSessionEvent(sessionId, handleEvent);
         if (cancelled) {
           unsubscribe();
-          return;
+        } else {
+          unsubscribeRef.current = unsubscribe;
+          setIsLoading(false);
         }
-        unsubscribeRef.current = unsubscribe;
-
-        setIsLoading(false);
-      } catch (err) {
+      } catch (connectError) {
         if (cancelled) return;
-        const message = err instanceof Error ? err.message : 'Connection failed';
+        const message = toErrorMessage(connectError);
         setError(message);
         setIsLoading(false);
-        log.error('Failed to connect', { sessionId, error: err });
+        log.error('Failed to connect', { sessionId, error: connectError });
       }
     };
 
-    connect();
+    void connect();
 
     return () => {
       cancelled = true;
-      // Clean up the subscription
-      if (unsubscribeRef.current) {
-        unsubscribeRef.current();
-        unsubscribeRef.current = null;
-      }
+      disposeSubscription(unsubscribeRef);
     };
-  }, [sessionId, autoConnect, handleEvent]);
+  }, [sessionId, autoConnect, handleEvent, callbacks]);
 
-  const write = useCallback(async (data: string) => {
-    try {
-      await serviceRef.current.write(sessionId, data);
-    } catch (err) {
-      log.error('Failed to write', { sessionId, error: err });
-      throw err;
-    }
-  }, [sessionId]);
+  const write = useCallback((data: string) => (
+    runTerminalAction('Failed to write', sessionId, () => serviceRef.current.write(sessionId, data))
+  ), [sessionId]);
 
-  const resize = useCallback(async (cols: number, rows: number) => {
-    try {
-      await serviceRef.current.resize(sessionId, cols, rows);
-    } catch (err) {
-      log.error('Failed to resize', { sessionId, cols, rows, error: err });
-      throw err;
-    }
-  }, [sessionId]);
+  const resize = useCallback((cols: number, rows: number) => (
+    runTerminalAction(
+      'Failed to resize',
+      sessionId,
+      () => serviceRef.current.resize(sessionId, cols, rows),
+      { cols, rows }
+    )
+  ), [sessionId]);
 
-  const sendCtrlC = useCallback(async () => {
-    try {
-      await serviceRef.current.sendCtrlC(sessionId);
-    } catch (err) {
-      log.error('Failed to send Ctrl+C', { sessionId, error: err });
-      throw err;
-    }
-  }, [sessionId]);
+  const sendCtrlC = useCallback(() => (
+    runTerminalAction('Failed to send Ctrl+C', sessionId, () => serviceRef.current.sendCtrlC(sessionId))
+  ), [sessionId]);
 
   const close = useCallback(async () => {
-    try {
-      await serviceRef.current.closeSession(sessionId);
-      setSession(null);
-    } catch (err) {
-      log.error('Failed to close session', { sessionId, error: err });
-      throw err;
-    }
+    await runTerminalAction(
+      'Failed to close session',
+      sessionId,
+      () => serviceRef.current.closeSession(sessionId)
+    );
+    setSession(null);
   }, [sessionId]);
 
   const refresh = useCallback(async () => {
     try {
-      const sessionInfo = await serviceRef.current.getSession(sessionId);
-      setSession(sessionInfo);
-    } catch (err) {
-      log.error('Failed to refresh session', { sessionId, error: err });
-      throw err;
+      setSession(await serviceRef.current.getSession(sessionId));
+    } catch (refreshError) {
+      log.error('Failed to refresh session', { sessionId, error: refreshError });
+      throw refreshError;
     }
   }, [sessionId]);
 
