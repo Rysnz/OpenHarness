@@ -18,9 +18,17 @@ const execAsync = promisify(execCallback);
 const policy = JSON.parse(process.argv[2] || '{}');
 const appDir = process.cwd();
 const storagePath = path.join(appDir, 'storage.json');
+const READY_MESSAGE_ID = '__ready';
+const JSON_RPC_INTERNAL_ERROR = -32603;
+const FS_WRITE_METHODS = new Set(['writeFile', 'mkdir', 'rm', 'appendFile', 'rename', 'copyFile']);
+const NO_USER_HANDLER = Symbol('NO_USER_HANDLER');
 
-function rpcSend(obj) {
-  process.stderr.write(JSON.stringify(obj) + '\n');
+function writeRpcMessage(message) {
+  process.stderr.write(JSON.stringify(message) + '\n');
+}
+
+function rpcSend(message) {
+  writeRpcMessage(message);
 }
 
 /**
@@ -31,7 +39,7 @@ function rpcSend(obj) {
  * @param {any} data - Event payload
  */
 function rpcEmit(event, data) {
-  process.stderr.write(JSON.stringify({ event, data }) + '\n');
+  writeRpcMessage({ event, data });
 }
 
 // Make rpcEmit available globally so source/worker.js can use it.
@@ -57,6 +65,41 @@ function saveStorage(obj) {
   fs.writeFileSync(storagePath, JSON.stringify(obj, null, 2), 'utf8');
 }
 
+function getRequestPath(params) {
+  return params.path || params.p;
+}
+
+function assertFileAccess(name, params) {
+  const targetPath = getRequestPath(params);
+  if (targetPath === undefined || name === 'access' || isPathAllowed(targetPath, 'read')) {
+    return;
+  }
+
+  if (FS_WRITE_METHODS.has(name) && isPathAllowed(targetPath, 'write')) {
+    return;
+  }
+
+  throw new Error('Path not allowed');
+}
+
+function getAllowedShellCommand(command) {
+  const rawCommand = (command || '').trim().split(/\s+/)[0];
+  return path.basename(rawCommand, path.extname(rawCommand));
+}
+
+function isHostAllowed(host, allowList) {
+  return allowList.includes('*') || allowList.some((domain) => host === domain || host.endsWith('.' + domain));
+}
+
+async function runUserHandler(method, params) {
+  const handler = userHandlers[method];
+  if (typeof handler !== 'function') {
+    return NO_USER_HANDLER;
+  }
+
+  return await handler(params || {});
+}
+
 let userHandlers = {};
 let userHandlerLoadError = null;
 try {
@@ -73,111 +116,151 @@ async function dispatch(method, params) {
   if (userHandlerLoadError) {
     throw new Error('Failed to load source/worker.js: ' + (userHandlerLoadError.message || String(userHandlerLoadError)));
   }
-  if (userHandlers[method] && typeof userHandlers[method] === 'function') {
-    return await userHandlers[method](params || {});
+
+  const userResult = await runUserHandler(method, params);
+  if (userResult !== NO_USER_HANDLER) {
+    return userResult;
   }
 
   const [ns, name] = method.split('.');
   if (ns === 'fs') {
-    const p = params.path || params.p;
-    if (p !== undefined && !isPathAllowed(p, 'read') && name !== 'access') {
-      if (name === 'writeFile' || name === 'mkdir' || name === 'rm' || name === 'appendFile' || name === 'rename' || name === 'copyFile') {
-        if (!isPathAllowed(p, 'write')) throw new Error('Path not allowed');
-      } else if (!isPathAllowed(p, 'read')) throw new Error('Path not allowed');
-    }
-    switch (name) {
-      case 'readFile': {
-        const enc = params.encoding || 'utf8';
-        const data = fs.readFileSync(p, enc === 'base64' ? undefined : enc);
-        return enc === 'base64' ? data.toString('base64') : data;
-      }
-      case 'writeFile':
-        fs.writeFileSync(p, params.data, params.encoding || 'utf8');
-        return null;
-      case 'readdir': {
-        const entries = fs.readdirSync(p, { withFileTypes: true });
-        return entries.map((e) => ({ name: e.name, path: path.join(p, e.name), isDirectory: e.isDirectory() }));
-      }
-      case 'stat': {
-        const s = fs.statSync(p);
-        return { size: s.size, isDirectory: s.isDirectory(), isFile: s.isFile() };
-      }
-      case 'mkdir':
-        fs.mkdirSync(p, { recursive: !!params.recursive });
-        return null;
-      case 'rm':
-        fs.rmSync(p, { recursive: !!params.recursive, force: !!params.force });
-        return null;
-      case 'copyFile':
-        fs.copyFileSync(params.src, params.dst);
-        return null;
-      case 'rename':
-        fs.renameSync(params.oldPath, params.newPath);
-        return null;
-      case 'appendFile':
-        fs.appendFileSync(p, params.data);
-        return null;
-      case 'access':
-        fs.accessSync(p);
-        return null;
-      default:
-        throw new Error('Unknown fs method: ' + method);
-    }
+    return dispatchFs(name, method, params);
   }
 
   if (ns === 'shell') {
-    if (name === 'exec') {
-      const allow = (policy.shell && policy.shell.allow) || [];
-      const cmd = (params.command || '').trim().split(/\s+/)[0];
-      const base = path.basename(cmd, path.extname(cmd));
-      if (allow.length > 0 && !allow.some((a) => a.toLowerCase() === base.toLowerCase())) {
-        throw new Error('Command not in allowlist');
-      }
-      const opts = { cwd: params.cwd || appDir, timeout: params.timeout || 30000 };
-      const { stdout, stderr } = await execAsync(params.command || '', opts);
-      return { stdout, stderr, exit_code: 0 };
-    }
+    return dispatchShell(name, params);
   }
 
   if (ns === 'net' && name === 'fetch') {
-    const allow = (policy.net && policy.net.allow) || [];
-    let url;
-    try {
-      url = new URL(params.url);
-    } catch {
-      throw new Error('Invalid URL');
-    }
-    const host = url.hostname;
-    if (allow.length > 0 && !allow.includes('*') && !allow.some((d) => host === d || host.endsWith('.' + d))) {
-      throw new Error('Domain not in allowlist');
-    }
-    const fetch = globalThis.fetch;
-    const res = await fetch(params.url, { method: params.method || 'GET', headers: params.headers, body: params.body });
-    const body = await res.text();
-    const headers = {};
-    for (const [k, v] of res.headers.entries()) headers[k] = v;
-    return { status: res.status, headers, body };
+    return dispatchFetch(params);
   }
 
   if (ns === 'os' && name === 'info') {
-    const os = require('os');
-    return { platform: process.platform, homedir: os.homedir(), tmpdir: os.tmpdir(), cpus: os.cpus().length, totalmem: os.totalmem(), freemem: os.freemem() };
+    return dispatchOsInfo();
   }
 
   if (ns === 'storage') {
-    const store = loadStorage();
-    if (name === 'get') return store[params.key];
-    if (name === 'set') {
-      store[params.key] = params.value;
-      saveStorage(store);
-      return null;
-    }
+    return dispatchStorage(name, params);
   }
 
   throw new Error('Unknown method: ' + method);
 }
 
-rpcSend({ id: '__ready', result: { pid: process.pid, version: process.version } });
+function dispatchFs(name, method, params) {
+  const p = getRequestPath(params);
+  assertFileAccess(name, params);
+
+  switch (name) {
+    case 'readFile': {
+      const enc = params.encoding || 'utf8';
+      const data = fs.readFileSync(p, enc === 'base64' ? undefined : enc);
+      return enc === 'base64' ? data.toString('base64') : data;
+    }
+    case 'writeFile':
+      fs.writeFileSync(p, params.data, params.encoding || 'utf8');
+      return null;
+    case 'readdir': {
+      const entries = fs.readdirSync(p, { withFileTypes: true });
+      return entries.map((entry) => ({
+        name: entry.name,
+        path: path.join(p, entry.name),
+        isDirectory: entry.isDirectory()
+      }));
+    }
+    case 'stat': {
+      const fileStat = fs.statSync(p);
+      return { size: fileStat.size, isDirectory: fileStat.isDirectory(), isFile: fileStat.isFile() };
+    }
+    case 'mkdir':
+      fs.mkdirSync(p, { recursive: !!params.recursive });
+      return null;
+    case 'rm':
+      fs.rmSync(p, { recursive: !!params.recursive, force: !!params.force });
+      return null;
+    case 'copyFile':
+      fs.copyFileSync(params.src, params.dst);
+      return null;
+    case 'rename':
+      fs.renameSync(params.oldPath, params.newPath);
+      return null;
+    case 'appendFile':
+      fs.appendFileSync(p, params.data);
+      return null;
+    case 'access':
+      fs.accessSync(p);
+      return null;
+    default:
+      throw new Error('Unknown fs method: ' + method);
+  }
+}
+
+async function dispatchShell(name, params) {
+  if (name !== 'exec') {
+    throw new Error('Unknown method: shell.' + name);
+  }
+
+  const allow = (policy.shell && policy.shell.allow) || [];
+  const base = getAllowedShellCommand(params.command);
+  if (allow.length > 0 && !allow.some((allowed) => allowed.toLowerCase() === base.toLowerCase())) {
+    throw new Error('Command not in allowlist');
+  }
+
+  const opts = { cwd: params.cwd || appDir, timeout: params.timeout || 30000 };
+  const { stdout, stderr } = await execAsync(params.command || '', opts);
+  return { stdout, stderr, exit_code: 0 };
+}
+
+async function dispatchFetch(params) {
+  const allow = (policy.net && policy.net.allow) || [];
+  let url;
+  try {
+    url = new URL(params.url);
+  } catch {
+    throw new Error('Invalid URL');
+  }
+
+  if (allow.length > 0 && !isHostAllowed(url.hostname, allow)) {
+    throw new Error('Domain not in allowlist');
+  }
+
+  const res = await globalThis.fetch(params.url, {
+    method: params.method || 'GET',
+    headers: params.headers,
+    body: params.body
+  });
+  const body = await res.text();
+  const headers = {};
+  for (const [key, value] of res.headers.entries()) {
+    headers[key] = value;
+  }
+  return { status: res.status, headers, body };
+}
+
+function dispatchOsInfo() {
+  const os = require('os');
+  return {
+    platform: process.platform,
+    homedir: os.homedir(),
+    tmpdir: os.tmpdir(),
+    cpus: os.cpus().length,
+    totalmem: os.totalmem(),
+    freemem: os.freemem()
+  };
+}
+
+function dispatchStorage(name, params) {
+  const store = loadStorage();
+  if (name === 'get') return store[params.key];
+  if (name === 'set') {
+    store[params.key] = params.value;
+    saveStorage(store);
+    return null;
+  }
+
+  throw new Error('Unknown method: storage.' + name);
+}
+
+rpcSend({ id: READY_MESSAGE_ID, result: { pid: process.pid, version: process.version } });
 
 const readline = require('readline');
 const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
@@ -196,6 +279,6 @@ rl.on('line', async (line) => {
     const result = await dispatch(method, params || {});
     rpcSend({ id, result });
   } catch (err) {
-    rpcSend({ id, error: { code: -32603, message: err.message || String(err) } });
+    rpcSend({ id, error: { code: JSON_RPC_INTERNAL_ERROR, message: err.message || String(err) } });
   }
 });
