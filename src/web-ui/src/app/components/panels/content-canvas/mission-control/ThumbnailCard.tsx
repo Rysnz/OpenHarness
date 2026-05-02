@@ -11,6 +11,8 @@ import type { CanvasTab, EditorGroupId } from '../types';
 import { isFileViewerType } from '../types';
 import './ThumbnailCard.scss';
 
+const PREVIEW_LINE_LIMIT = 5;
+
 export interface ThumbnailCardProps {
   /** Tab data */
   tab: CanvasTab;
@@ -30,52 +32,46 @@ export interface ThumbnailCardProps {
   onDragEnd: () => void;
 }
 
-/**
- * Get icon for content type.
- */
-const getContentIcon = (type: string) => {
-  if (type.includes('code') || type.includes('editor')) {
-    return <FileCode size={16} />;
-  }
-  if (type.includes('markdown') || type.includes('text')) {
-    return <FileText size={16} />;
-  }
-  if (type.includes('image')) {
-    return <Image size={16} />;
-  }
-  if (type === 'terminal') {
-    return <Terminal size={16} />;
-  }
-  if (type.includes('git')) {
-    return <GitBranch size={16} />;
-  }
-  return <FileCode size={16} />;
+const CONTENT_ICON_RULES: Array<[(type: string) => boolean, React.ReactNode]> = [
+  [(type) => type.includes('code') || type.includes('editor'), <FileCode size={16} />],
+  [(type) => type.includes('markdown') || type.includes('text'), <FileText size={16} />],
+  [(type) => type.includes('image'), <Image size={16} />],
+  [(type) => type === 'terminal', <Terminal size={16} />],
+  [(type) => type.includes('git'), <GitBranch size={16} />],
+];
+
+const getContentIcon = (type: string): React.ReactNode => {
+  return CONTENT_ICON_RULES.find(([matches]) => matches(type))?.[1] ?? <FileCode size={16} />;
 };
 
-/**
- * Get preview content (first few lines).
- */
-const getPreviewContent = (tab: CanvasTab, noPreviewText: string): string[] => {
-  const data = tab.content.data;
-  
-  // Try to resolve content
-  let content = '';
-  if (typeof data === 'string') {
-    content = data;
-  } else if (data?.content) {
-    content = data.content;
-  } else if (data?.sourceCode) {
-    content = data.sourceCode;
-  } else if (data?.initialContent) {
-    content = data.initialContent;
+const readPreviewText = (tab: CanvasTab): string => {
+  const payload = tab.content.data;
+
+  if (typeof payload === 'string') {
+    return payload;
   }
-  
-  if (!content) {
+
+  return payload?.content ?? payload?.sourceCode ?? payload?.initialContent ?? '';
+};
+
+const getPreviewContent = (tab: CanvasTab, noPreviewText: string): string[] => {
+  const content = readPreviewText(tab);
+
+  if (content.length === 0) {
     return [noPreviewText];
   }
-  
-  // Take first 5 lines
-  return content.split('\n').slice(0, 5);
+
+  return content.split('\n').slice(0, PREVIEW_LINE_LIMIT);
+};
+
+const getGroupLabelKey = (groupId: EditorGroupId): string => {
+  const labels: Record<EditorGroupId, string> = {
+    primary: 'canvas.groupPrimary',
+    secondary: 'canvas.groupSecondary',
+    tertiary: 'canvas.groupTertiary',
+  };
+
+  return labels[groupId] ?? 'canvas.groupTertiary';
 };
 
 export const ThumbnailCard: React.FC<ThumbnailCardProps> = ({
@@ -90,42 +86,29 @@ export const ThumbnailCard: React.FC<ThumbnailCardProps> = ({
 }) => {
   const { t } = useTranslation('components');
 
-  // Preview content
   const previewLines = useMemo(() => getPreviewContent(tab, t('canvas.noPreview')), [tab, t]);
-  
-  // Whether file type
   const isFileType = useMemo(() => isFileViewerType(tab.content.type), [tab.content.type]);
-  
-  // Group label text
-  const groupLabel = useMemo(() => {
-    if (groupId === 'primary') return t('canvas.groupPrimary');
-    if (groupId === 'secondary') return t('canvas.groupSecondary');
-    return t('canvas.groupTertiary');
-  }, [groupId, t]);
+  const groupLabel = useMemo(() => t(getGroupLabelKey(groupId)), [groupId, t]);
 
   const titleWithDeleted = useMemo(() => {
     const suffix = tab.fileDeletedFromDisk ? ` - ${t('tabs.fileDeleted')}` : '';
     return `${tab.title}${suffix}`;
   }, [tab.fileDeletedFromDisk, tab.title, t]);
 
-  // Handle close
   const handleClose = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     onClose();
   }, [onClose]);
 
-  // Handle pin
   const handlePin = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     onPin();
   }, [onPin]);
 
-  // Handle context menu
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
   }, []);
 
-  // Handle drag start
   const handleDragStart = useCallback((e: React.DragEvent) => {
     e.dataTransfer.setData('application/json', JSON.stringify({
       tabId: tab.id,
@@ -135,12 +118,18 @@ export const ThumbnailCard: React.FC<ThumbnailCardProps> = ({
     onDragStart(e);
   }, [tab.id, groupId, onDragStart]);
 
-  // State class
-  const stateClass = tab.state === 'pinned' ? 'is-pinned' : tab.state === 'preview' ? 'is-preview' : '';
+  const classNames = [
+    'canvas-thumbnail-card',
+    isActive ? 'is-active' : '',
+    tab.state === 'pinned' ? 'is-pinned' : '',
+    tab.state === 'preview' ? 'is-preview' : '',
+    tab.isDirty ? 'is-dirty' : '',
+    tab.fileDeletedFromDisk ? 'is-file-deleted' : '',
+  ].filter(Boolean).join(' ');
 
   return (
     <div
-      className={`canvas-thumbnail-card ${isActive ? 'is-active' : ''} ${stateClass} ${tab.isDirty ? 'is-dirty' : ''} ${tab.fileDeletedFromDisk ? 'is-file-deleted' : ''}`}
+      className={classNames}
       onClick={onClick}
       onContextMenu={handleContextMenu}
       draggable
