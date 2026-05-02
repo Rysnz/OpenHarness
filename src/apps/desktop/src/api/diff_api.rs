@@ -56,6 +56,101 @@ pub struct SaveMergedContentRequest {
     pub content: String,
 }
 
+#[derive(Default)]
+struct HunkBuilder {
+    old_start: usize,
+    new_start: usize,
+    old_lines: usize,
+    new_lines: usize,
+    lines: Vec<DiffLine>,
+}
+
+impl HunkBuilder {
+    fn mark_old_start(&mut self, old_index: usize) {
+        if self.old_start == 0 {
+            self.old_start = old_index + 1;
+        }
+    }
+
+    fn mark_new_start(&mut self, new_index: usize) {
+        if self.new_start == 0 {
+            self.new_start = new_index + 1;
+        }
+    }
+
+    fn push_context(&mut self, old_lines: &[&str], old_index: usize, new_index: usize, len: usize) {
+        self.mark_old_start(old_index);
+        self.mark_new_start(new_index);
+
+        for offset in 0..len {
+            self.lines.push(diff_line(
+                "context",
+                old_lines.get(old_index + offset).unwrap_or(&""),
+                Some(old_index + offset + 1),
+                Some(new_index + offset + 1),
+            ));
+            self.old_lines += 1;
+            self.new_lines += 1;
+        }
+    }
+
+    fn push_deleted(&mut self, old_lines: &[&str], old_index: usize, len: usize) -> usize {
+        self.mark_old_start(old_index);
+
+        for offset in 0..len {
+            self.lines.push(diff_line(
+                "delete",
+                old_lines.get(old_index + offset).unwrap_or(&""),
+                Some(old_index + offset + 1),
+                None,
+            ));
+            self.old_lines += 1;
+        }
+
+        len
+    }
+
+    fn push_inserted(&mut self, new_lines: &[&str], new_index: usize, len: usize) -> usize {
+        self.mark_new_start(new_index);
+
+        for offset in 0..len {
+            self.lines.push(diff_line(
+                "add",
+                new_lines.get(new_index + offset).unwrap_or(&""),
+                None,
+                Some(new_index + offset + 1),
+            ));
+            self.new_lines += 1;
+        }
+
+        len
+    }
+
+    fn finish(self) -> Option<DiffHunk> {
+        (!self.lines.is_empty()).then_some(DiffHunk {
+            old_start: self.old_start,
+            old_lines: self.old_lines,
+            new_start: self.new_start,
+            new_lines: self.new_lines,
+            lines: self.lines,
+        })
+    }
+}
+
+fn diff_line(
+    line_type: &str,
+    content: &str,
+    old_line_number: Option<usize>,
+    new_line_number: Option<usize>,
+) -> DiffLine {
+    DiffLine {
+        line_type: line_type.to_string(),
+        content: content.to_string(),
+        old_line_number,
+        new_line_number,
+    }
+}
+
 #[tauri::command]
 pub async fn compute_diff(request: ComputeDiffRequest) -> Result<DiffResult, String> {
     let old_lines: Vec<&str> = request.old_content.lines().collect();
@@ -73,11 +168,7 @@ pub async fn compute_diff(request: ComputeDiffRequest) -> Result<DiffResult, Str
             .and_then(|o| o.context_lines)
             .unwrap_or(3),
     ) {
-        let mut hunk_lines = Vec::new();
-        let mut old_start = 0;
-        let mut new_start = 0;
-        let mut old_count = 0;
-        let mut new_count = 0;
+        let mut hunk = HunkBuilder::default();
 
         for op in &group {
             match op {
@@ -86,56 +177,17 @@ pub async fn compute_diff(request: ComputeDiffRequest) -> Result<DiffResult, Str
                     new_index,
                     len,
                 } => {
-                    if old_start == 0 {
-                        old_start = *old_index + 1;
-                    }
-                    if new_start == 0 {
-                        new_start = *new_index + 1;
-                    }
-                    for i in 0..*len {
-                        hunk_lines.push(DiffLine {
-                            line_type: "context".to_string(),
-                            content: old_lines.get(*old_index + i).unwrap_or(&"").to_string(),
-                            old_line_number: Some(*old_index + i + 1),
-                            new_line_number: Some(*new_index + i + 1),
-                        });
-                        old_count += 1;
-                        new_count += 1;
-                    }
+                    hunk.push_context(&old_lines, *old_index, *new_index, *len);
                 }
                 similar::DiffOp::Delete {
                     old_index, old_len, ..
                 } => {
-                    if old_start == 0 {
-                        old_start = *old_index + 1;
-                    }
-                    for i in 0..*old_len {
-                        hunk_lines.push(DiffLine {
-                            line_type: "delete".to_string(),
-                            content: old_lines.get(*old_index + i).unwrap_or(&"").to_string(),
-                            old_line_number: Some(*old_index + i + 1),
-                            new_line_number: None,
-                        });
-                        old_count += 1;
-                        deletions += 1;
-                    }
+                    deletions += hunk.push_deleted(&old_lines, *old_index, *old_len);
                 }
                 similar::DiffOp::Insert {
                     new_index, new_len, ..
                 } => {
-                    if new_start == 0 {
-                        new_start = *new_index + 1;
-                    }
-                    for i in 0..*new_len {
-                        hunk_lines.push(DiffLine {
-                            line_type: "add".to_string(),
-                            content: new_lines.get(*new_index + i).unwrap_or(&"").to_string(),
-                            old_line_number: None,
-                            new_line_number: Some(*new_index + i + 1),
-                        });
-                        new_count += 1;
-                        additions += 1;
-                    }
+                    additions += hunk.push_inserted(&new_lines, *new_index, *new_len);
                 }
                 similar::DiffOp::Replace {
                     old_index,
@@ -143,44 +195,14 @@ pub async fn compute_diff(request: ComputeDiffRequest) -> Result<DiffResult, Str
                     new_index,
                     new_len,
                 } => {
-                    if old_start == 0 {
-                        old_start = *old_index + 1;
-                    }
-                    if new_start == 0 {
-                        new_start = *new_index + 1;
-                    }
-                    for i in 0..*old_len {
-                        hunk_lines.push(DiffLine {
-                            line_type: "delete".to_string(),
-                            content: old_lines.get(*old_index + i).unwrap_or(&"").to_string(),
-                            old_line_number: Some(*old_index + i + 1),
-                            new_line_number: None,
-                        });
-                        old_count += 1;
-                        deletions += 1;
-                    }
-                    for i in 0..*new_len {
-                        hunk_lines.push(DiffLine {
-                            line_type: "add".to_string(),
-                            content: new_lines.get(*new_index + i).unwrap_or(&"").to_string(),
-                            old_line_number: None,
-                            new_line_number: Some(*new_index + i + 1),
-                        });
-                        new_count += 1;
-                        additions += 1;
-                    }
+                    deletions += hunk.push_deleted(&old_lines, *old_index, *old_len);
+                    additions += hunk.push_inserted(&new_lines, *new_index, *new_len);
                 }
             }
         }
 
-        if !hunk_lines.is_empty() {
-            hunks.push(DiffHunk {
-                old_start,
-                old_lines: old_count,
-                new_start,
-                new_lines: new_count,
-                lines: hunk_lines,
-            });
+        if let Some(hunk) = hunk.finish() {
+            hunks.push(hunk);
         }
     }
 
