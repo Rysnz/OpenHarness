@@ -1,10 +1,33 @@
- 
-
 @use '../../../component-library/styles/tokens' as *;
 
-.notification-item {
+@mixin notification-inline($align: center) {
   display: flex;
-  align-items: flex-start;
+  align-items: $align;
+}
+
+@mixin notification-center-box($size) {
+  @include notification-inline(center);
+  justify-content: center;
+  width: $size;
+  height: $size;
+  flex-shrink: 0;
+}
+
+@mixin notification-icon-tone($color, $background) {
+  .notification-item__icon {
+    color: $color;
+    background: $background;
+  }
+}
+
+@mixin notification-press($scale) {
+  &:active {
+    transform: scale($scale);
+  }
+}
+
+.notification-item {
+  @include notification-inline(flex-start);
   gap: $size-gap-2;
   padding: $size-gap-3;
   background: var(--color-bg-primary);
@@ -16,50 +39,29 @@
   animation: slideIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   font-family: $font-family-sans;
 
-  
   &--success {
-    
-    .notification-item__icon {
-      color: var(--color-success);
-      background: var(--color-success-bg);
-    }
+    @include notification-icon-tone(var(--color-success), var(--color-success-bg));
   }
 
   &--error {
-    .notification-item__icon {
-      color: var(--color-error);
-      background: var(--color-error-bg);
-    }
+    @include notification-icon-tone(var(--color-error), var(--color-error-bg));
   }
 
   &--warning {
-    .notification-item__icon {
-      color: var(--color-warning);
-      background: var(--color-warning-bg);
-    }
+    @include notification-icon-tone(var(--color-warning), var(--color-warning-bg));
   }
 
   &--info {
-    .notification-item__icon {
-      color: #ca8a04;
-      background: rgba(234, 179, 8, 0.18);
-    }
+    @include notification-icon-tone(#ca8a04, rgba(234, 179, 8, 0.18));
   }
 
-  
   &__icon {
-    flex-shrink: 0;
-    width: 24px;
-    height: 24px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    @include notification-center-box(24px);
     border-radius: 50%;
     font-weight: $font-weight-semibold;
     font-size: 12px;
   }
 
-  
   &__content {
     flex: 1;
     min-width: 0;
@@ -119,52 +121,37 @@
     &--primary {
       background: var(--color-accent-600);
       color: var(--color-text-primary);
+      @include notification-press(0.98);
 
       &:hover {
         background: var(--color-accent-500);
-      }
-      
-      &:active {
-        transform: scale(0.98);
       }
     }
 
     &--secondary {
       background: $element-bg-base;
       color: var(--color-text-secondary);
+      @include notification-press(0.98);
 
       &:hover {
         background: $element-bg-medium;
         color: var(--color-text-primary);
-      }
-      
-      &:active {
-        transform: scale(0.98);
       }
     }
 
     &--danger {
       background: var(--color-error);
       color: var(--color-text-primary);
+      @include notification-press(0.98);
 
       &:hover {
         background: $git-color-deleted;
       }
-      
-      &:active {
-        transform: scale(0.98);
-      }
     }
   }
 
-  
   &__close {
-    flex-shrink: 0;
-    width: 20px;
-    height: 20px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    @include notification-center-box(20px);
     background: transparent;
     border: none;
     border-radius: $size-radius-sm;
@@ -176,13 +163,10 @@
       background: $element-bg-base;
       color: var(--color-text-primary);
     }
-    
-    &:active {
-      transform: scale(0.95);
-    }
+
+    @include notification-press(0.95);
   }
 }
-
 
 @keyframes slideIn {
   from {
@@ -194,7 +178,6 @@
     transform: translateX(0);
   }
 }
-
 
 @keyframes slideOut {
   from {

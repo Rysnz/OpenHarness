@@ -3,8 +3,11 @@
 use serde::{Deserialize, Serialize};
 
 pub const CRON_JOBS_VERSION: u32 = 1;
-
 pub const DEFAULT_RETRY_DELAY_MS: i64 = 5_000;
+
+fn empty_jobs() -> Vec<CronJob> {
+    Vec::new()
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -17,7 +20,7 @@ impl Default for CronJobsFile {
     fn default() -> Self {
         Self {
             version: CRON_JOBS_VERSION,
-            jobs: Vec::new(),
+            jobs: empty_jobs(),
         }
     }
 }
@@ -41,7 +44,11 @@ pub struct CronJob {
 
 impl CronJob {
     pub fn is_one_shot(&self) -> bool {
-        matches!(self.schedule, CronSchedule::At { .. })
+        self.schedule.is_one_shot()
+    }
+
+    pub fn is_runnable(&self) -> bool {
+        self.enabled && self.state.active_turn_id.is_none()
     }
 }
 
@@ -64,10 +71,29 @@ pub enum CronSchedule {
     },
 }
 
+impl CronSchedule {
+    pub fn is_one_shot(&self) -> bool {
+        matches!(self, Self::At { .. })
+    }
+
+    pub fn timezone(&self) -> Option<&str> {
+        match self {
+            Self::Cron { tz, .. } => tz.as_deref(),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CronJobPayload {
     pub text: String,
+}
+
+impl CronJobPayload {
+    pub fn new(text: impl Into<String>) -> Self {
+        Self { text: text.into() }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -78,6 +104,12 @@ pub enum CronJobRunStatus {
     Ok,
     Error,
     Cancelled,
+}
+
+impl CronJobRunStatus {
+    pub fn is_terminal(self) -> bool {
+        matches!(self, Self::Ok | Self::Error | Self::Cancelled)
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -109,6 +141,19 @@ pub struct CronJobState {
     pub consecutive_failures: u32,
     #[serde(default)]
     pub coalesced_run_count: u32,
+}
+
+impl CronJobState {
+    pub fn clear_pending_trigger(&mut self) {
+        self.pending_trigger_at_ms = None;
+    }
+
+    pub fn mark_enqueued(&mut self, queued_at_ms: i64, active_turn_id: String) {
+        self.last_enqueued_at_ms = Some(queued_at_ms);
+        self.pending_trigger_at_ms = None;
+        self.active_turn_id = Some(active_turn_id);
+        self.last_run_status = Some(CronJobRunStatus::Queued);
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -1,42 +1,45 @@
-/**
- * TOML Language Definition for Monaco Editor
- * 
- * Supports syntax highlighting for TOML config files (including Cargo.toml).
- * @module languages/toml
- */
-
 import type * as Monaco from 'monaco-editor';
 import { createLogger } from '@/shared/utils/logger';
 
 const log = createLogger('toml.language');
 
-/** TOML language configuration */
+const TOML_LANGUAGE_ID = 'toml';
+const TOML_BRACKET_PAIRS: [string, string][] = [
+  ['{', '}'],
+  ['[', ']'],
+  ['(', ')'],
+];
+const TOML_QUOTES: [string, string][] = [
+  ['"', '"'],
+  ["'", "'"],
+];
+const TOML_PAIR_CHARS = [...TOML_BRACKET_PAIRS, ...TOML_QUOTES].map(([open, close]) => ({ open, close }));
+
 export const tomlLanguageConfig: Monaco.languages.LanguageConfiguration = {
   comments: {
     lineComment: '#',
   },
-  brackets: [
-    ['{', '}'],
-    ['[', ']'],
-    ['(', ')'],
-  ],
-  autoClosingPairs: [
-    { open: '{', close: '}' },
-    { open: '[', close: ']' },
-    { open: '(', close: ')' },
-    { open: '"', close: '"' },
-    { open: "'", close: "'" },
-  ],
-  surroundingPairs: [
-    { open: '{', close: '}' },
-    { open: '[', close: ']' },
-    { open: '(', close: ')' },
-    { open: '"', close: '"' },
-    { open: "'", close: "'" },
-  ],
+  brackets: TOML_BRACKET_PAIRS,
+  autoClosingPairs: TOML_PAIR_CHARS,
+  surroundingPairs: TOML_PAIR_CHARS,
 };
 
-/** TOML language Monarch tokenizer definition */
+const numberRules: Monaco.languages.IMonarchLanguageRule[] = [
+  [/\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?)?/, 'number.date'],
+  [/[+-]?\d+\.\d+([eE][+-]?\d+)?/, 'number.float'],
+  [/[+-]?\d+([eE][+-]?\d+)?/, 'number'],
+  [/0x[0-9a-fA-F_]+/, 'number.hex'],
+  [/0o[0-7_]+/, 'number.octal'],
+  [/0b[01_]+/, 'number.binary'],
+];
+
+const keyRules: Monaco.languages.IMonarchLanguageRule[] = [
+  [/^\s*([a-zA-Z_][a-zA-Z0-9_.-]*)(\s*)(=)/, ['key', '', 'operator']],
+  [/([a-zA-Z_][a-zA-Z0-9_.-]*)(\s*)(=)/, ['key', '', 'operator']],
+  [/"([^"\\]|\\.)*"(\s*)(=)/, ['key', '', 'operator']],
+  [/'([^'\\]|\\.)*'(\s*)(=)/, ['key', '', 'operator']],
+];
+
 export const tomlLanguageTokens: Monaco.languages.IMonarchLanguage = {
   defaultToken: '',
   keywords: ['true', 'false'],
@@ -46,22 +49,14 @@ export const tomlLanguageTokens: Monaco.languages.IMonarchLanguage = {
     { open: '[', close: ']', token: 'delimiter.square' },
     { open: '(', close: ')', token: 'delimiter.parenthesis' },
   ],
-  
+
   tokenizer: {
     root: [
       [/#.*$/, 'comment'],
       [/^\s*\[([^\]]+)\]/, 'type.identifier'],
-      [/\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?)?/, 'number.date'],
-      [/[+-]?\d+\.\d+([eE][+-]?\d+)?/, 'number.float'],
-      [/[+-]?\d+([eE][+-]?\d+)?/, 'number'],
-      [/0x[0-9a-fA-F_]+/, 'number.hex'],
-      [/0o[0-7_]+/, 'number.octal'],
-      [/0b[01_]+/, 'number.binary'],
+      ...numberRules,
       [/\b(true|false)\b/, 'keyword'],
-      [/^\s*([a-zA-Z_][a-zA-Z0-9_.-]*)(\s*)(=)/, ['key', '', 'operator']],
-      [/([a-zA-Z_][a-zA-Z0-9_.-]*)(\s*)(=)/, ['key', '', 'operator']],
-      [/"([^"\\]|\\.)*"(\s*)(=)/, ['key', '', 'operator']],
-      [/'([^'\\]|\\.)*'(\s*)(=)/, ['key', '', 'operator']],
+      ...keyRules,
       [/"""/, { token: 'string.quote', next: '@multiLineString' }],
       [/'''/, { token: 'string.quote', next: '@multiLineLiteralString' }],
       [/"([^"\\]|\\.)*$/, 'string.invalid'],
@@ -97,26 +92,21 @@ export const tomlLanguageTokens: Monaco.languages.IMonarchLanguage = {
   },
 };
 
-/** Register TOML language to Monaco Editor */
 export function registerTomlLanguage(monaco: typeof Monaco): void {
   try {
-    const languages = monaco.languages.getLanguages();
-    const tomlLangExists = languages.some(lang => lang.id === 'toml');
-    
-    if (!tomlLangExists) {
+    if (!monaco.languages.getLanguages().some(lang => lang.id === TOML_LANGUAGE_ID)) {
       monaco.languages.register({
-        id: 'toml',
+        id: TOML_LANGUAGE_ID,
         extensions: ['.toml'],
         aliases: ['TOML', 'toml'],
         mimetypes: ['text/x-toml'],
       });
     }
-    
-    monaco.languages.setLanguageConfiguration('toml', tomlLanguageConfig);
-    monaco.languages.setMonarchTokensProvider('toml', tomlLanguageTokens);
+
+    monaco.languages.setLanguageConfiguration(TOML_LANGUAGE_ID, tomlLanguageConfig);
+    monaco.languages.setMonarchTokensProvider(TOML_LANGUAGE_ID, tomlLanguageTokens);
   } catch (error) {
     log.error('Failed to register TOML language', error);
     throw error;
   }
 }
-

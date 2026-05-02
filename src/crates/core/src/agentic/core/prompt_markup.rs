@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 pub const USER_QUERY_TAG: &str = "user_query";
 pub const SYSTEM_REMINDER_TAG: &str = "system_reminder";
 const LEGACY_SYSTEM_REMINDER_TAG: &str = "system-reminder";
+const SYSTEM_REMINDER_TAGS: [&str; 2] = [SYSTEM_REMINDER_TAG, LEGACY_SYSTEM_REMINDER_TAG];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -81,15 +82,20 @@ pub fn render_system_reminder(text: &str) -> String {
 
 pub fn has_prompt_markup(raw: &str) -> bool {
     let trimmed = raw.trim_start();
-    trimmed.starts_with(&opening_tag(USER_QUERY_TAG))
-        || trimmed.starts_with(&opening_tag(SYSTEM_REMINDER_TAG))
-        || trimmed.starts_with(&opening_tag(LEGACY_SYSTEM_REMINDER_TAG))
+    [
+        USER_QUERY_TAG,
+        SYSTEM_REMINDER_TAG,
+        LEGACY_SYSTEM_REMINDER_TAG,
+    ]
+    .iter()
+    .any(|tag| starts_with_tag(trimmed, tag))
 }
 
 pub fn is_system_reminder_only(raw: &str) -> bool {
     let trimmed = raw.trim();
-    trimmed.starts_with(&opening_tag(SYSTEM_REMINDER_TAG))
-        || trimmed.starts_with(&opening_tag(LEGACY_SYSTEM_REMINDER_TAG))
+    SYSTEM_REMINDER_TAGS
+        .iter()
+        .any(|tag| starts_with_tag(trimmed, tag))
 }
 
 pub fn strip_prompt_markup(raw: &str) -> String {
@@ -112,6 +118,10 @@ fn closing_tag(tag: &str) -> String {
     format!("</{tag}>")
 }
 
+fn starts_with_tag(text: &str, tag: &str) -> bool {
+    text.starts_with(&opening_tag(tag))
+}
+
 fn extract_tag_content<'a>(text: &'a str, tag: &str) -> Option<&'a str> {
     let open = opening_tag(tag);
     let close = closing_tag(tag);
@@ -122,12 +132,10 @@ fn extract_tag_content<'a>(text: &'a str, tag: &str) -> Option<&'a str> {
 }
 
 fn strip_after_first_system_reminder(text: &str) -> &str {
-    let underscore = text.find(&opening_tag(SYSTEM_REMINDER_TAG));
-    let legacy = text.find(&opening_tag(LEGACY_SYSTEM_REMINDER_TAG));
-    match (underscore, legacy) {
-        (Some(a), Some(b)) => &text[..a.min(b)],
-        (Some(a), None) => &text[..a],
-        (None, Some(b)) => &text[..b],
-        (None, None) => text,
-    }
+    SYSTEM_REMINDER_TAGS
+        .iter()
+        .filter_map(|tag| text.find(&opening_tag(tag)))
+        .min()
+        .map(|idx| &text[..idx])
+        .unwrap_or(text)
 }

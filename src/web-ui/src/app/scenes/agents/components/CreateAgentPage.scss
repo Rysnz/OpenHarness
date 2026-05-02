@@ -1,25 +1,67 @@
 @use '../../../../component-library/styles/tokens' as *;
 
+@mixin th-scrollbar($width: 4px) {
+  &::-webkit-scrollbar {
+    width: $width;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: var(--border-subtle);
+    border-radius: calc($width / 2);
+  }
+}
+
+@mixin th-stack($gap) {
+  display: flex;
+  flex-direction: column;
+  gap: $gap;
+}
+
+@mixin th-inline($gap) {
+  display: inline-flex;
+  align-items: center;
+  gap: $gap;
+}
+
+@mixin th-choice-pill {
+  border: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition:
+    background $motion-fast $easing-standard,
+    border-color $motion-fast $easing-standard,
+    color $motion-fast $easing-standard;
+
+  &:hover:not(:disabled) {
+    border-color: var(--border-medium);
+    color: var(--color-text-primary);
+  }
+
+  &.is-active,
+  &.is-on {
+    border-color: var(--color-primary);
+    background: rgba(var(--color-primary-rgb, 99 102 241) / 0.08);
+    color: var(--color-text-primary);
+  }
+}
+
 .th__list-body {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
   padding: $size-gap-5 clamp(16px, 2.2vw, 28px);
-
-  &::-webkit-scrollbar { width: 4px; }
-  &::-webkit-scrollbar-track { background: transparent; }
-  &::-webkit-scrollbar-thumb {
-    background: var(--border-subtle);
-    border-radius: 2px;
-  }
+  @include th-scrollbar;
 }
 
 .th__list-inner {
   width: min(100%, 600px);
   margin-inline: auto;
-  display: flex;
-  flex-direction: column;
-  gap: $size-gap-4;
+  @include th-stack($size-gap-4);
 }
 
 .th__title {
@@ -42,9 +84,7 @@
 }
 
 .th-create-page__form {
-  display: flex;
-  flex-direction: column;
-  gap: $size-gap-4;
+  @include th-stack($size-gap-4);
   width: min(100%, 560px);
 }
 
@@ -59,9 +99,7 @@
 }
 
 .th-create-panel__field {
-  display: flex;
-  flex-direction: column;
-  gap: $size-gap-1;
+  @include th-stack($size-gap-1);
 
   &--row {
     flex-direction: row;
@@ -96,36 +134,19 @@
 }
 
 .th-create-panel__level-group {
-  display: inline-flex;
-  gap: $size-gap-2;
+  @include th-inline($size-gap-2);
 }
 
 .th-create-panel__level-btn {
-  display: inline-flex;
-  align-items: center;
+  @include th-inline(0);
   height: 26px;
   padding: 0 $size-gap-3;
-  border: 1px solid var(--border-subtle);
+  @include th-choice-pill;
   border-radius: $size-radius-full;
-  background: transparent;
   font-size: var(--font-size-xs);
   font-weight: $font-weight-medium;
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  transition:
-    border-color $motion-fast $easing-standard,
-    background $motion-fast $easing-standard,
-    color $motion-fast $easing-standard;
-
-  &:hover:not(:disabled) {
-    border-color: var(--border-medium);
-    color: var(--color-text-primary);
-  }
 
   &.is-active {
-    border-color: var(--color-primary);
-    background: rgba(var(--color-primary-rgb, 99 102 241) / 0.08);
-    color: var(--color-text-primary);
     font-weight: $font-weight-semibold;
   }
 
@@ -142,31 +163,19 @@
 }
 
 .th-list__tool-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+  @include th-inline(4px);
   padding: 3px 8px;
   border-radius: $size-radius-sm;
-  border: 1px solid var(--border-subtle);
+  @include th-choice-pill;
   background: var(--element-bg-base);
   font-size: var(--font-size-xs);
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  transition:
-    background $motion-fast $easing-standard,
-    border-color $motion-fast $easing-standard,
-    color $motion-fast $easing-standard;
 
   &:hover {
     background: var(--element-bg-medium);
-    border-color: var(--border-medium);
-    color: var(--color-text-primary);
   }
 
   &.is-on {
-    border-color: var(--color-primary);
     background: rgba(var(--color-primary-rgb, 99 102 241) / 0.08);
-    color: var(--color-text-primary);
   }
 }
 

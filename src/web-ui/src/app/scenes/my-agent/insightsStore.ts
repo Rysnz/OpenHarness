@@ -1,11 +1,17 @@
 import { create } from 'zustand';
 import { listen } from '@tauri-apps/api/event';
-import { insightsApi, type InsightsReport, type InsightsReportMeta, type InsightsProgressEvent } from '@/infrastructure/api/insightsApi';
+import {
+  insightsApi,
+  type InsightsReport,
+  type InsightsReportMeta,
+  type InsightsProgressEvent,
+} from '@/infrastructure/api/insightsApi';
 import { createLogger } from '@/shared/utils/logger';
 
 const log = createLogger('InsightsStore');
 
 const RETRY_STAGES = new Set(['facet_retry', 'recommendations_retry']);
+const DEFAULT_SELECTED_DAYS = 30;
 
 export type InsightsView = 'list' | 'report';
 
@@ -44,13 +50,33 @@ const defaultProgress: InsightsProgress = {
   isRetrying: false,
 };
 
+const freshProgress = (message = ''): InsightsProgress => ({
+  ...defaultProgress,
+  message,
+});
+
+function eventToProgress(event: InsightsProgressEvent): InsightsProgress {
+  const { message, stage, current, total } = event;
+  return {
+    stage,
+    message,
+    current,
+    total,
+    isRetrying: RETRY_STAGES.has(stage),
+  };
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 export const useInsightsStore = create<InsightsState>((set, get) => ({
   view: 'list',
   reportMetas: [],
   currentReport: null,
   generating: false,
-  progress: { ...defaultProgress },
-  selectedDays: 30,
+  progress: freshProgress(),
+  selectedDays: DEFAULT_SELECTED_DAYS,
   error: '',
   loadingMetas: false,
 
@@ -73,7 +99,7 @@ export const useInsightsStore = create<InsightsState>((set, get) => ({
       set({ currentReport: report, view: 'report', error: '' });
     } catch (err) {
       log.error('Failed to load report', err);
-      set({ error: String(err) });
+      set({ error: errorMessage(err) });
     }
   },
 
@@ -84,20 +110,11 @@ export const useInsightsStore = create<InsightsState>((set, get) => ({
     set({
       generating: true,
       error: '',
-      progress: { ...defaultProgress, message: 'Starting...' },
+      progress: freshProgress('Starting...'),
     });
 
     const unlisten = await listen<InsightsProgressEvent>('insights-progress', (event) => {
-      const { message, stage, current, total } = event.payload;
-      set({
-        progress: {
-          stage,
-          message,
-          current,
-          total,
-          isRetrying: RETRY_STAGES.has(stage),
-        },
-      });
+      set({ progress: eventToProgress(event.payload) });
     });
 
     try {
@@ -110,16 +127,16 @@ export const useInsightsStore = create<InsightsState>((set, get) => ({
         currentReport: report,
         view: 'report',
         generating: false,
-        progress: { ...defaultProgress },
+        progress: freshProgress(),
       });
-      get().fetchReportMetas();
+      void get().fetchReportMetas();
     } catch (err) {
       log.error('Failed to generate insights', err);
       set({
         generating: false,
         view: 'list',
-        error: String(err),
-        progress: { ...defaultProgress },
+        error: errorMessage(err),
+        progress: freshProgress(),
       });
     } finally {
       unlisten();
@@ -135,7 +152,7 @@ export const useInsightsStore = create<InsightsState>((set, get) => ({
     }
     set({
       generating: false,
-      progress: { ...defaultProgress },
+      progress: freshProgress(),
     });
   },
 
