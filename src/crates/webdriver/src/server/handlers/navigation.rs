@@ -45,12 +45,7 @@ pub async fn navigate(
     Json(request): Json<UrlRequest>,
 ) -> WebDriverResult {
     ensure_session(&state, &session_id).await?;
-    {
-        let mut sessions = state.sessions.write().await;
-        let session = sessions.get_mut(&session_id)?;
-        session.frame_context.clear();
-        session.action_state = Default::default();
-    }
+    reset_navigation_state(&state, &session_id).await?;
 
     let executor = BridgeExecutor::from_session_id(state, &session_id).await?;
     executor.navigate_to(&request.url).await?;
@@ -63,12 +58,7 @@ pub async fn back(
     Path(session_id): Path<String>,
 ) -> WebDriverResult {
     ensure_session(&state, &session_id).await?;
-    {
-        let mut sessions = state.sessions.write().await;
-        let session = sessions.get_mut(&session_id)?;
-        session.frame_context.clear();
-        session.action_state = Default::default();
-    }
+    reset_navigation_state(&state, &session_id).await?;
 
     let executor = BridgeExecutor::from_session_id(state, &session_id).await?;
     executor.go_back().await?;
@@ -81,12 +71,7 @@ pub async fn forward(
     Path(session_id): Path<String>,
 ) -> WebDriverResult {
     ensure_session(&state, &session_id).await?;
-    {
-        let mut sessions = state.sessions.write().await;
-        let session = sessions.get_mut(&session_id)?;
-        session.frame_context.clear();
-        session.action_state = Default::default();
-    }
+    reset_navigation_state(&state, &session_id).await?;
 
     let executor = BridgeExecutor::from_session_id(state, &session_id).await?;
     executor.go_forward().await?;
@@ -99,12 +84,7 @@ pub async fn refresh(
     Path(session_id): Path<String>,
 ) -> WebDriverResult {
     ensure_session(&state, &session_id).await?;
-    {
-        let mut sessions = state.sessions.write().await;
-        let session = sessions.get_mut(&session_id)?;
-        session.frame_context.clear();
-        session.action_state = Default::default();
-    }
+    reset_navigation_state(&state, &session_id).await?;
 
     let executor = BridgeExecutor::from_session_id(state, &session_id).await?;
     executor.refresh_page().await?;
@@ -134,4 +114,15 @@ pub async fn get_source(
         .get_source()
         .await?;
     Ok(WebDriverResponse::success(source))
+}
+
+async fn reset_navigation_state(
+    state: &AppState,
+    session_id: &str,
+) -> Result<(), WebDriverErrorResponse> {
+    let mut sessions = state.sessions.write().await;
+    let session = sessions.get_mut(session_id)?;
+    session.frame_context.clear();
+    session.action_state = Default::default();
+    Ok(())
 }
