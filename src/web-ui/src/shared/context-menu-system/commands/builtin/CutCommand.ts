@@ -9,6 +9,22 @@ import { i18nService } from '@/infrastructure/i18n';
 
 const log = createLogger('CutCommand');
 
+async function writeClipboardText(text: string): Promise<void> {
+  if (navigator.clipboard) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand('copy');
+  document.body.removeChild(textarea);
+}
+
 export class CutCommand extends BaseCommand {
   constructor() {
     const t = i18nService.getT();
@@ -23,7 +39,6 @@ export class CutCommand extends BaseCommand {
   }
 
   canExecute(context: MenuContext): boolean {
-    
     if (context.type === ContextType.SELECTION) {
       const selectionContext = context as SelectionContext;
       return !!selectionContext.selectedText && selectionContext.isEditable;
@@ -44,8 +59,7 @@ export class CutCommand extends BaseCommand {
       if (context.type === ContextType.EDITOR) {
         return await this.executeForEditor(context as EditorContext);
       }
-      
-      
+
       const selectionContext = context as SelectionContext;
       const text = selectionContext.selectedText;
 
@@ -57,21 +71,7 @@ export class CutCommand extends BaseCommand {
         return this.failure(t('errors:contextMenu.notEditable'));
       }
 
-      
-      if (navigator.clipboard) {
-        await navigator.clipboard.writeText(text);
-      } else {
-        const textarea = document.createElement('textarea');
-        textarea.value = text;
-        textarea.style.position = 'fixed';
-        textarea.style.opacity = '0';
-        document.body.appendChild(textarea);
-        textarea.select();
-        document.execCommand('copy');
-        document.body.removeChild(textarea);
-      }
-
-      
+      await writeClipboardText(text);
       document.execCommand('delete');
 
       return this.success(t('common:contextMenu.status.cutSuccess'), { text });
@@ -94,35 +94,17 @@ export class CutCommand extends BaseCommand {
       if (context.isReadOnly) {
         return this.failure(t('errors:contextMenu.readOnlyEditor'));
       }
-      
-      
+
       const editor = MonacoHelper.getEditorFromElement(context.targetElement);
       
       if (!editor) {
         log.warn('Editor instance not found, using fallback method');
-        
-        if (navigator.clipboard) {
-          await navigator.clipboard.writeText(text);
-        }
+        await writeClipboardText(text);
         document.execCommand('delete');
         return this.success(t('common:contextMenu.status.cutSuccess'), { text });
       }
-      
-      
-      if (navigator.clipboard) {
-        await navigator.clipboard.writeText(text);
-      } else {
-        const textarea = document.createElement('textarea');
-        textarea.value = text;
-        textarea.style.position = 'fixed';
-        textarea.style.opacity = '0';
-        document.body.appendChild(textarea);
-        textarea.select();
-        document.execCommand('copy');
-        document.body.removeChild(textarea);
-      }
-      
-      
+
+      await writeClipboardText(text);
       const selection = editor.getSelection();
       if (selection) {
         editor.executeEdits('cut', [{
