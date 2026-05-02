@@ -1,13 +1,26 @@
- 
-
 import { createLogger } from '../../../shared/utils/logger';
 import { agentAPI } from '../../api';
 import { i18nService } from '@/infrastructure/i18n';
 
 const logger = createLogger('AgentService');
 
-
 type AgentType = 'project_qa' | 'requirement_clarification' | 'core';
+type AgentEventCallbacks = {
+  onModelRoundStart?: (event: any) => void;
+  onTextChunk?: (event: any) => void;
+  onToolCall?: (event: any) => void;
+  onToolResult?: (event: any) => void;
+  onToolConfirmation?: (event: any) => void;
+  onProgress?: (event: any) => void;
+  onComplete?: (event: any) => void;
+  onError?: (error: any) => void;
+};
+
+type AgentHealth = {
+  healthy: boolean;
+  name: string;
+  description: string;
+};
 
 export interface AgentResponse {
   content: string;
@@ -17,10 +30,9 @@ export interface AgentResponse {
 export interface AgentCallOptions {
   agentType: AgentType;
   message: string;
-  workspacePath?: string; 
+  workspacePath?: string;
 }
 
- 
 export interface AgentExecutionRequest {
   agent_type: string;
   prompt: string;
@@ -30,44 +42,134 @@ export interface AgentExecutionRequest {
   verbose?: boolean;
 }
 
- 
-class SessionManager {
-  private sessions = new Map<string, string>(); // workspacePath::agentType -> sessionId
+class SessionRegistry {
+  private readonly sessions = new Map<string, string>();
 
-  private buildKey(agentType: string, workspacePath: string): string {
-    return `${workspacePath}::${agentType}`;
+  get(agentType: string, workspacePath: string): string | undefined {
+    return this.sessions.get(this.key(agentType, workspacePath));
   }
 
-  getSession(agentType: string, workspacePath: string): string | undefined {
-    return this.sessions.get(this.buildKey(agentType, workspacePath));
+  set(agentType: string, workspacePath: string, sessionId: string): void {
+    this.sessions.set(this.key(agentType, workspacePath), sessionId);
   }
 
-  setSession(agentType: string, workspacePath: string, sessionId: string): void {
-    this.sessions.set(this.buildKey(agentType, workspacePath), sessionId);
-  }
-
-  deleteSession(agentType: string, workspacePath: string): void {
-    this.sessions.delete(this.buildKey(agentType, workspacePath));
+  delete(agentType: string, workspacePath: string): void {
+    this.sessions.delete(this.key(agentType, workspacePath));
   }
 
   clear(): void {
     this.sessions.clear();
   }
+
+  private key(agentType: string, workspacePath: string): string {
+    return `${workspacePath}::${agentType}`;
+  }
 }
 
-export class AgentService {
-  private static sessionManager = new SessionManager();
+class SubscriptionGroup {
+  private readonly disposers: Array<() => void> = [];
 
-   
-  static async getOrCreateSession(agentType: string, workspacePath: string, modelName?: string): Promise<string> {
-    
-    const existingSessionId = this.sessionManager.getSession(agentType, workspacePath);
+  add(disposer: () => void): void {
+    this.disposers.push(disposer);
+  }
+
+  dispose(): void {
+    this.disposers.splice(0).forEach((dispose) => dispose());
+  }
+}
+
+const AGENT_TEXT_KEYS: Record<AgentType, { name: string; description: string }> = {
+  project_qa: {
+    name: 'common:agents.projectQa.name',
+    description: 'common:agents.projectQa.description'
+  },
+  requirement_clarification: {
+    name: 'common:agents.requirementClarification.name',
+    description: 'common:agents.requirementClarification.description'
+  },
+  core: {
+    name: 'common:agents.core.name',
+    description: 'common:agents.core.description'
+  }
+};
+
+const requireWorkspacePath = (request: AgentExecutionRequest): string => {
+  if (!request.workspace_path) {
+    throw new Error('Workspace path is required to start an agent task');
+  }
+
+  return request.workspace_path;
+};
+
+const dispatchToolEvent = (toolEvent: any, callbacks: AgentEventCallbacks): void => {
+  if (toolEvent.Started || toolEvent.EarlyDetected) {
+    callbacks.onToolCall?.(toolEvent);
+  } else if (toolEvent.Completed || toolEvent.Failed) {
+    callbacks.onToolResult?.(toolEvent);
+  } else if (toolEvent.ConfirmationNeeded) {
+    callbacks.onToolConfirmation?.(toolEvent);
+  } else if (toolEvent.Progress || toolEvent.StreamChunk) {
+    callbacks.onProgress?.(toolEvent);
+  }
+};
+
+const subscribeToSessionEvents = async (
+  sessionId: string,
+  callbacks: AgentEventCallbacks
+): Promise<SubscriptionGroup> => {
+  const subscriptions = new SubscriptionGroup();
+  const belongsToSession = (event: any) => event.sessionId === sessionId;
+
+  if (callbacks.onTextChunk) {
+    subscriptions.add(await agentAPI.onTextChunk((event) => {
+      if (belongsToSession(event)) {
+        callbacks.onTextChunk?.(event);
+      }
+    }));
+  }
+
+  if (callbacks.onModelRoundStart) {
+    subscriptions.add(await agentAPI.onModelRoundStarted((event) => {
+      if (belongsToSession(event)) {
+        callbacks.onModelRoundStart?.(event);
+      }
+    }));
+  }
+
+  if (callbacks.onToolCall || callbacks.onToolResult || callbacks.onToolConfirmation || callbacks.onProgress) {
+    subscriptions.add(await agentAPI.onToolEvent((event) => {
+      if (belongsToSession(event)) {
+        dispatchToolEvent(event.toolEvent, callbacks);
+      }
+    }));
+  }
+
+  if (callbacks.onComplete) {
+    subscriptions.add(await agentAPI.onDialogTurnCompleted((event) => {
+      if (belongsToSession(event)) {
+        callbacks.onComplete?.(event);
+        subscriptions.dispose();
+      }
+    }));
+  }
+
+  return subscriptions;
+};
+
+export class AgentService {
+  private static readonly sessionRegistry = new SessionRegistry();
+
+  static async getOrCreateSession(
+    agentType: string,
+    workspacePath: string,
+    modelName?: string
+  ): Promise<string> {
+    const existingSessionId = this.sessionRegistry.get(agentType, workspacePath);
     if (existingSessionId) {
       logger.debug(`Using existing session: ${existingSessionId}`);
       return existingSessionId;
     }
 
-    
     logger.info(`Creating new session: ${agentType}`);
 
     try {
@@ -83,7 +185,8 @@ export class AgentService {
           enableContextCompression: true,
         }
       });
-      this.sessionManager.setSession(agentType, workspacePath, response.sessionId);
+
+      this.sessionRegistry.set(agentType, workspacePath, response.sessionId);
       logger.info(`Session created: ${response.sessionId}`);
       return response.sessionId;
     } catch (error) {
@@ -92,90 +195,24 @@ export class AgentService {
     }
   }
 
-   
   static async executeAgentTaskStream(
     request: AgentExecutionRequest,
-    callbacks: {
-      onModelRoundStart?: (event: any) => void;
-      onTextChunk?: (event: any) => void;
-      onToolCall?: (event: any) => void;
-      onToolResult?: (event: any) => void;
-      onToolConfirmation?: (event: any) => void;
-      onProgress?: (event: any) => void;
-      onComplete?: (event: any) => void;
-      onError?: (error: any) => void;
-    }
+    callbacks: AgentEventCallbacks
   ): Promise<string> {
     logger.info('Executing agent task flow', {
       agentType: request.agent_type,
-      hasContext: !!request.context
+      hasContext: Boolean(request.context)
     });
 
     try {
-      
-      const workspacePath = request.workspace_path;
-      if (!workspacePath) {
-        throw new Error('Workspace path is required to start an agent task');
-      }
-      const sessionId = await this.getOrCreateSession(request.agent_type, workspacePath, request.model_name);
+      const workspacePath = requireWorkspacePath(request);
+      const sessionId = await this.getOrCreateSession(
+        request.agent_type,
+        workspacePath,
+        request.model_name
+      );
 
-      
-      const unlistenFunctions: Array<() => void> = [];
-
-      
-      if (callbacks.onTextChunk) {
-        const unlisten = await agentAPI.onTextChunk((event) => {
-          if (event.sessionId === sessionId) {
-            callbacks.onTextChunk?.(event);
-          }
-        });
-        unlistenFunctions.push(unlisten);
-      }
-
-      
-      if (callbacks.onModelRoundStart) {
-        const unlisten = await agentAPI.onModelRoundStarted((event) => {
-          if (event.sessionId === sessionId) {
-            callbacks.onModelRoundStart?.(event);
-          }
-        });
-        unlistenFunctions.push(unlisten);
-      }
-
-      
-      if (callbacks.onToolCall || callbacks.onToolResult || callbacks.onToolConfirmation) {
-        const unlisten = await agentAPI.onToolEvent((event) => {
-          if (event.sessionId === sessionId) {
-            const toolEvent = event.toolEvent;
-            
-            
-            if (toolEvent.Started || toolEvent.EarlyDetected) {
-              callbacks.onToolCall?.(toolEvent);
-            } else if (toolEvent.Completed || toolEvent.Failed) {
-              callbacks.onToolResult?.(toolEvent);
-            } else if (toolEvent.ConfirmationNeeded) {
-              callbacks.onToolConfirmation?.(toolEvent);
-            } else if (toolEvent.Progress || toolEvent.StreamChunk) {
-              callbacks.onProgress?.(toolEvent);
-            }
-          }
-        });
-        unlistenFunctions.push(unlisten);
-      }
-
-      
-      if (callbacks.onComplete) {
-        const unlisten = await agentAPI.onDialogTurnCompleted((event) => {
-          if (event.sessionId === sessionId) {
-            callbacks.onComplete?.(event);
-            
-            unlistenFunctions.forEach(fn => fn());
-          }
-        });
-        unlistenFunctions.push(unlisten);
-      }
-
-      
+      await subscribeToSessionEvents(sessionId, callbacks);
       await agentAPI.startDialogTurn({
         sessionId,
         userInput: request.prompt,
@@ -183,7 +220,6 @@ export class AgentService {
         workspacePath,
       });
 
-      
       return sessionId;
     } catch (error) {
       logger.error('Agent task flow failed', error);
@@ -192,7 +228,6 @@ export class AgentService {
     }
   }
 
-   
   static async cancelAgentTask(taskId: string): Promise<void> {
     try {
       await agentAPI.cancelSession(taskId);
@@ -203,8 +238,7 @@ export class AgentService {
     }
   }
 
-   
-  static async getAgentHealth(agentType: AgentType): Promise<{ healthy: boolean; name: string; description: string }> {
+  static async getAgentHealth(agentType: AgentType): Promise<AgentHealth> {
     return {
       healthy: true,
       name: this.getAgentDisplayName(agentType),
@@ -212,37 +246,23 @@ export class AgentService {
     };
   }
 
-   
-  private static getAgentDisplayName(agentType: AgentType): string {
-    const nameMap: Record<AgentType, string> = {
-      'project_qa': i18nService.t('common:agents.projectQa.name'),
-      'requirement_clarification': i18nService.t('common:agents.requirementClarification.name'),
-      'core': i18nService.t('common:agents.core.name')
-    };
-    return nameMap[agentType] || agentType;
-  }
-
-   
-  private static getAgentDescription(agentType: AgentType): string {
-    const descMap: Record<AgentType, string> = {
-      'project_qa': i18nService.t('common:agents.projectQa.description'),
-      'requirement_clarification': i18nService.t('common:agents.requirementClarification.description'),
-      'core': i18nService.t('common:agents.core.description')
-    };
-    return descMap[agentType] || i18nService.t('common:agents.general.description');
-  }
-
-   
-   
   static requiresSpecialVisualization(agentType: AgentType, metadata?: Record<string, any>): boolean {
-    if (agentType === 'requirement_clarification') {
-      
-      return !!(metadata?.interactive_sections && Array.isArray(metadata.interactive_sections));
-    }
-    
-    return false;
+    return (
+      agentType === 'requirement_clarification' &&
+      Array.isArray(metadata?.interactive_sections)
+    );
   }
 
+  private static getAgentDisplayName(agentType: AgentType): string {
+    return i18nService.t(AGENT_TEXT_KEYS[agentType]?.name) || agentType;
+  }
 
+  private static getAgentDescription(agentType: AgentType): string {
+    return (
+      i18nService.t(AGENT_TEXT_KEYS[agentType]?.description) ||
+      i18nService.t('common:agents.general.description')
+    );
+  }
 }
+
 export default AgentService;
