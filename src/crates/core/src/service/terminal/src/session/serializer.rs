@@ -77,41 +77,54 @@ pub struct ReplayEvent {
 /// Session serializer
 pub struct SessionSerializer;
 
+fn serialization_error(error: serde_json::Error) -> TerminalError {
+    TerminalError::Serialization(error.to_string())
+}
+
+fn serialized_session_from(
+    session: &TerminalSession,
+    replay_events: Vec<ReplayEvent>,
+) -> SerializedSession {
+    SerializedSession {
+        id: session.id.clone(),
+        name: session.name.clone(),
+        shell_type: session.shell_type.clone(),
+        cwd: session.cwd.clone(),
+        initial_cwd: session.initial_cwd.clone(),
+        cols: session.cols,
+        rows: session.rows,
+        env: session.env.clone(),
+        metadata: session.metadata.clone(),
+        source: session.source.clone(),
+        replay_events,
+        created_at: session.created_at.timestamp(),
+    }
+}
+
+fn current_state(sessions: Vec<SerializedSession>) -> SerializedTerminalState {
+    SerializedTerminalState {
+        version: SERIALIZATION_VERSION,
+        sessions,
+        timestamp: chrono::Utc::now().timestamp(),
+    }
+}
+
 impl SessionSerializer {
     /// Serialize sessions to a string
     pub fn serialize(sessions: &[TerminalSession]) -> TerminalResult<String> {
         let serialized_sessions: Vec<SerializedSession> = sessions
             .iter()
             .filter(|s| s.should_persist && !s.has_exited())
-            .map(|s| SerializedSession {
-                id: s.id.clone(),
-                name: s.name.clone(),
-                shell_type: s.shell_type.clone(),
-                cwd: s.cwd.clone(),
-                initial_cwd: s.initial_cwd.clone(),
-                cols: s.cols,
-                rows: s.rows,
-                env: s.env.clone(),
-                metadata: s.metadata.clone(),
-                source: s.source.clone(),
-                replay_events: Vec::new(), // TODO: Capture replay events
-                created_at: s.created_at.timestamp(),
-            })
+            .map(|session| serialized_session_from(session, Vec::new()))
             .collect();
 
-        let state = SerializedTerminalState {
-            version: SERIALIZATION_VERSION,
-            sessions: serialized_sessions,
-            timestamp: chrono::Utc::now().timestamp(),
-        };
-
-        serde_json::to_string(&state).map_err(|e| TerminalError::Serialization(e.to_string()))
+        serde_json::to_string(&current_state(serialized_sessions)).map_err(serialization_error)
     }
 
     /// Deserialize sessions from a string
     pub fn deserialize(data: &str) -> TerminalResult<Vec<SerializedSession>> {
         let state: SerializedTerminalState =
-            serde_json::from_str(data).map_err(|e| TerminalError::Serialization(e.to_string()))?;
+            serde_json::from_str(data).map_err(serialization_error)?;
 
         if state.version != SERIALIZATION_VERSION {
             return Err(TerminalError::Serialization(format!(
@@ -149,28 +162,13 @@ impl SessionSerializer {
         session: &TerminalSession,
         replay_data: &str,
     ) -> TerminalResult<String> {
-        let replay_event = ReplayEvent {
+        let serialized = serialized_session_from(session, vec![ReplayEvent {
             cols: session.cols,
             rows: session.rows,
             data: replay_data.to_string(),
-        };
+        }]);
 
-        let serialized = SerializedSession {
-            id: session.id.clone(),
-            name: session.name.clone(),
-            shell_type: session.shell_type.clone(),
-            cwd: session.cwd.clone(),
-            initial_cwd: session.initial_cwd.clone(),
-            cols: session.cols,
-            rows: session.rows,
-            env: session.env.clone(),
-            metadata: session.metadata.clone(),
-            source: session.source.clone(),
-            replay_events: vec![replay_event],
-            created_at: session.created_at.timestamp(),
-        };
-
-        serde_json::to_string(&serialized).map_err(|e| TerminalError::Serialization(e.to_string()))
+        serde_json::to_string(&serialized).map_err(serialization_error)
     }
 }
 
