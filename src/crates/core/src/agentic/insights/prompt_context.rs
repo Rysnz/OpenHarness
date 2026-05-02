@@ -71,32 +71,34 @@ pub fn aggregate_stats_json_for_prompt(aggregate: &InsightsAggregate) -> String 
     serde_json::to_string_pretty(&stats).unwrap_or_else(|_| "{}".to_string())
 }
 
-/// Bullet list for templates that embed `{summaries}` after a label.
-pub fn summaries_block(aggregate: &InsightsAggregate) -> String {
-    let lines: Vec<&str> = aggregate
-        .session_summaries
-        .iter()
-        .take(MAX_PROMPT_SESSION_SUMMARIES)
-        .map(|s| s.as_str())
-        .collect();
+fn bullet_block<'a>(lines: impl IntoIterator<Item = &'a str>) -> String {
+    let lines: Vec<&str> = lines.into_iter().collect();
     if lines.is_empty() {
         return String::new();
     }
     format!("- {}", lines.join("\n- "))
 }
 
+/// Bullet list for templates that embed `{summaries}` after a label.
+pub fn summaries_block(aggregate: &InsightsAggregate) -> String {
+    bullet_block(
+        aggregate
+            .session_summaries
+            .iter()
+            .take(MAX_PROMPT_SESSION_SUMMARIES)
+            .map(|s| s.as_str()),
+    )
+}
+
 pub fn friction_block(aggregate: &InsightsAggregate) -> String {
-    let lines: Vec<&str> = aggregate
-        .friction_details
-        .iter()
-        .filter(|s| !s.trim().is_empty())
-        .take(MAX_PROMPT_FRICTION_DETAILS)
-        .map(|s| s.as_str())
-        .collect();
-    if lines.is_empty() {
-        return String::new();
-    }
-    format!("- {}", lines.join("\n- "))
+    bullet_block(
+        aggregate
+            .friction_details
+            .iter()
+            .filter(|s| !s.trim().is_empty())
+            .take(MAX_PROMPT_FRICTION_DETAILS)
+            .map(|s| s.as_str()),
+    )
 }
 
 pub fn user_instructions_block(aggregate: &InsightsAggregate) -> String {
@@ -113,6 +115,6 @@ pub fn user_instructions_block(aggregate: &InsightsAggregate) -> String {
     if lines.is_empty() {
         "None captured".to_string()
     } else {
-        format!("- {}", lines.join("\n- "))
+        bullet_block(lines)
     }
 }
