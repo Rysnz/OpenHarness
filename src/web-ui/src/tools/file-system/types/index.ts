@@ -18,6 +18,11 @@ export interface FileSystemNode {
   hasFixResult?: boolean;
 }
 
+export type FileNodeSelectHandler<TNode = FileSystemNode> = (node: TNode) => void;
+export type FileRenameHandler = (oldPath: string, newName: string) => void;
+export type FolderExpandHandler = (path: string, expanded: boolean) => void;
+export type FileActionHandler = (filePath: string) => void;
+export type NewEntryHandler = (data: { parentPath: string }) => void;
 
 export interface FileExplorerProps {
   fileTree: FileSystemNode[];
@@ -30,22 +35,22 @@ export interface FileExplorerProps {
   
   expandedFolders?: Set<string>;
   loadingPaths?: Set<string>;
-  onNodeExpand?: (path: string, expanded: boolean) => void;
+  onNodeExpand?: FolderExpandHandler;
   
-  onFileDoubleClick?: (filePath: string) => void;
+  onFileDoubleClick?: FileActionHandler;
   onContextMenu?: (filePath: string, event: React.MouseEvent) => void;
   
   searchQuery?: string;
   fileFilter?: (node: FileSystemNode) => boolean;
   
   renamingPath?: string | null;
-  onRename?: (oldPath: string, newName: string) => void;
+  onRename?: FileRenameHandler;
   onCancelRename?: () => void;
   
   workspacePath?: string;
   
-  onNewFile?: (data: { parentPath: string }) => void;
-  onNewFolder?: (data: { parentPath: string }) => void;
+  onNewFile?: NewEntryHandler;
+  onNewFolder?: NewEntryHandler;
   onRefresh?: () => void;
 
   /** When true, the floating toolbar is not rendered (e.g. actions live in a parent header). */
@@ -65,8 +70,8 @@ export interface FileTreeProps {
   selectedFile?: string;
   expandedFolders?: Set<string>;
   loadingPaths?: Set<string>;
-  onNodeSelect?: (node: FileSystemNode) => void;
-  onNodeExpand?: (path: string, expanded: boolean) => void;
+  onNodeSelect?: FileNodeSelectHandler;
+  onNodeExpand?: FolderExpandHandler;
   className?: string;
   level?: number;
   
@@ -76,7 +81,7 @@ export interface FileTreeProps {
   renderNodeActions?: (node: FileSystemNode) => React.ReactNode;
   
   renamingPath?: string | null;
-  onRename?: (oldPath: string, newName: string) => void;
+  onRename?: FileRenameHandler;
   onCancelRename?: () => void;
 }
 
@@ -87,14 +92,14 @@ export interface FileTreeNodeProps {
   isSelected?: boolean;
   isExpanded?: boolean;
   loadingPaths?: Set<string>;
-  onSelect?: (node: FileSystemNode) => void;
+  onSelect?: FileNodeSelectHandler;
   onToggleExpand?: (path: string) => void;
   className?: string;
   
   workspacePath?: string;
   
   renamingPath?: string | null;
-  onRename?: (path: string, newName: string) => void;
+  onRename?: FileRenameHandler;
   onCancelRename?: () => void;
   
   renderContent?: (node: FileSystemNode, level: number) => React.ReactNode;
@@ -197,13 +202,13 @@ export interface VirtualFileTreeProps {
   flatNodes: FlatFileNode[];
   selectedFile?: string;
   expandedFolders: Set<string>;
-  onNodeSelect?: (node: FlatFileNode) => void;
+  onNodeSelect?: FileNodeSelectHandler<FlatFileNode>;
   onToggleExpand?: (path: string) => void;
   height?: number | string;
   className?: string;
   workspacePath?: string;
   renamingPath?: string | null;
-  onRename?: (oldPath: string, newName: string) => void;
+  onRename?: FileRenameHandler;
   onCancelRename?: () => void;
   renderNodeContent?: (node: FileSystemNode, level: number) => React.ReactNode;
   renderNodeActions?: (node: FileSystemNode) => React.ReactNode;
