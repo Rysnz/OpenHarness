@@ -27,6 +27,13 @@ export interface BtwSessionPanelMetadata {
 type AgentCanvasState = ReturnType<typeof useAgentCanvasStore.getState>;
 
 const getBtwSessionDuplicateKey = (childSessionId: string) => `btw-session-${childSessionId}`;
+const EXPAND_RIGHT_PANEL_EVENT = 'expand-right-panel';
+
+const selectAgentGroup = (state: AgentCanvasState) => {
+  if (state.activeGroupId === 'primary') return state.primaryGroup;
+  if (state.activeGroupId === 'secondary') return state.secondaryGroup;
+  return state.tertiaryGroup;
+};
 
 const resolveBtwSessionTitle = (childSessionId: string): string => {
   const session = flowChatStore.getState().sessions.get(childSessionId);
@@ -59,11 +66,7 @@ export const buildBtwSessionPanelContent = (
 });
 
 export const selectActiveAgentTab = (state: AgentCanvasState) => {
-  const activeGroup = state.activeGroupId === 'primary'
-    ? state.primaryGroup
-    : state.activeGroupId === 'secondary'
-      ? state.secondaryGroup
-      : state.tertiaryGroup;
+  const activeGroup = selectAgentGroup(state);
   const activeTabId = activeGroup.activeTabId;
   if (!activeTabId) return null;
   return activeGroup.tabs.find(tab => tab.id === activeTabId && !tab.isHidden) ?? null;
@@ -99,13 +102,11 @@ export async function openMainSession(
     await options.activateWorkspace(options.workspaceId);
   }
 
-  if (flowChatStore.getState().activeSessionId === sessionId) {
-    syncSessionToModernStore(sessionId);
-  } else {
+  if (flowChatStore.getState().activeSessionId !== sessionId) {
     await flowChatManager.switchChatSession(sessionId);
-    syncSessionToModernStore(sessionId);
   }
 
+  syncSessionToModernStore(sessionId);
   useSceneStore.getState().openScene('session');
 }
 
@@ -122,7 +123,7 @@ export function openBtwSessionInAuxPane(params: {
   );
 
   if (params.expand !== false) {
-    window.dispatchEvent(new CustomEvent('expand-right-panel'));
+    window.dispatchEvent(new CustomEvent(EXPAND_RIGHT_PANEL_EVENT));
   }
 
   createTab({
