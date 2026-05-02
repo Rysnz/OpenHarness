@@ -35,6 +35,65 @@ export interface StreamTextProps {
   colorTheme?: 'blue' | 'purple' | 'green' | 'rainbow' | 'fire' | 'ocean' | 'sunset';
 }
 
+function nextCharacterDelay(effect: StreamEffect, speed: number, index: number): number {
+  if (effect === 'glitch' && Math.random() > 0.7) {
+    return speed * (Math.random() * 2 + 0.5);
+  }
+
+  if (effect === 'wave') {
+    return speed + Math.sin(index * 0.5) * 20;
+  }
+
+  return speed;
+}
+
+function clearTimer(timerRef: React.MutableRefObject<NodeJS.Timeout | null>): void {
+  if (timerRef.current) {
+    clearTimeout(timerRef.current);
+    timerRef.current = null;
+  }
+}
+
+function containerClassName(
+  effect: StreamEffect,
+  colorTheme: NonNullable<StreamTextProps['colorTheme']>,
+  isStreaming: boolean,
+  isComplete: boolean,
+  className: string
+): string {
+  return [
+    'stream-text',
+    `stream-text--${effect}`,
+    `stream-text--theme-${colorTheme}`,
+    isStreaming && 'stream-text--streaming',
+    isComplete && 'stream-text--complete',
+    className,
+  ].filter(Boolean).join(' ');
+}
+
+function renderAnimatedCharacters(
+  displayedText: string,
+  effect: StreamEffect,
+  isStreaming: boolean
+): React.ReactNode {
+  return displayedText.split('').map((char, index) => {
+    const isNewChar = index === displayedText.length - 1 && isStreaming;
+
+    return (
+      <span
+        key={`char-${index}`}
+        className={`stream-text__char stream-text__char--${effect} ${isNewChar ? 'stream-text__char--new' : ''}`}
+        style={{
+          animationDelay: `${index * 0.05}s`,
+          '--char-index': index,
+        } as React.CSSProperties}
+      >
+        {char}
+      </span>
+    );
+  });
+}
+
 const StreamTextComponent: React.FC<StreamTextProps> = ({
   text,
   effect = 'smooth',
@@ -67,12 +126,7 @@ const StreamTextComponent: React.FC<StreamTextProps> = ({
       const progress = ((index + 1) / text.length) * 100;
       onProgress?.(progress);
 
-      let nextSpeed = speed;
-      if (effect === 'glitch' && Math.random() > 0.7) {
-        nextSpeed = speed * (Math.random() * 2 + 0.5);
-      } else if (effect === 'wave') {
-        nextSpeed = speed + Math.sin(index * 0.5) * 20;
-      }
+      const nextSpeed = nextCharacterDelay(effect, speed, index);
 
       timeoutRef.current = setTimeout(() => {
         streamCharacter(index + 1);
@@ -101,10 +155,7 @@ const StreamTextComponent: React.FC<StreamTextProps> = ({
     if (isTextChanged) {
       prevTextRef.current = text;
       pausedIndexRef.current = 0;
-
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-      }
+      clearTimer(timeoutRef);
 
       if (isComplete) {
         setDisplayedText(text);
@@ -127,19 +178,13 @@ const StreamTextComponent: React.FC<StreamTextProps> = ({
       startStreaming();
     }
 
-    return () => {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-      }
-    };
+    return () => clearTimer(timeoutRef);
   }, [text, autoStart, paused, isComplete, startStreaming]);
 
   useEffect(() => {
     if (paused && isStreaming) {
       pausedIndexRef.current = currentIndex;
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-      }
+      clearTimer(timeoutRef);
       setIsStreaming(false);
     } else if (!paused && pausedIndexRef.current > 0) {
       streamCharacter(pausedIndexRef.current);
@@ -151,38 +196,11 @@ const StreamTextComponent: React.FC<StreamTextProps> = ({
       return <span className={`stream-text__content stream-text__content--${effect}`}>{displayedText}</span>;
     }
 
-    return displayedText.split('').map((char, index) => {
-      const animationDelay = charAnimation ? `${index * 0.05}s` : '0s';
-      const isNewChar = index === displayedText.length - 1 && isStreaming;
-      
-      return (
-        <span
-          key={`char-${index}`}
-          className={`stream-text__char stream-text__char--${effect} ${isNewChar ? 'stream-text__char--new' : ''}`}
-          style={{
-            animationDelay,
-            '--char-index': index,
-          } as React.CSSProperties}
-        >
-          {char}
-        </span>
-      );
-    });
-  };
-
-  const getContainerClassName = () => {
-    return [
-      'stream-text',
-      `stream-text--${effect}`,
-      `stream-text--theme-${colorTheme}`,
-      isStreaming ? 'stream-text--streaming' : '',
-      isComplete ? 'stream-text--complete' : '',
-      className,
-    ].filter(Boolean).join(' ');
+    return renderAnimatedCharacters(displayedText, effect, isStreaming);
   };
 
   return (
-    <span className={getContainerClassName()}>
+    <span className={containerClassName(effect, colorTheme, isStreaming, isComplete, className)}>
       {renderText()}
       {showCursor && !isComplete && (
         <span className={`stream-cursor stream-cursor--${cursorStyle} ${isStreaming ? 'stream-cursor--active' : ''}`} />
