@@ -22,6 +22,30 @@ function getWidgetPosition(doc: ProseMirrorNode, blockId: string): number | null
   return position;
 }
 
+function createPreviewWidget(blockId: string): HTMLElement {
+  const widget = document.createElement('div');
+  widget.className = 'm-editor-inline-ai-widget';
+  widget.dataset.inlineAiPreviewWidget = blockId;
+  widget.setAttribute('contenteditable', 'false');
+  return widget;
+}
+
+function renderPreviewBlock(previewState: InlineAiPreviewWidgetState) {
+  return (
+    <InlineAiPreviewBlock
+      status={previewState.status}
+      response={previewState.response}
+      error={previewState.error}
+      basePath={previewState.basePath}
+      canAccept={previewState.canAccept}
+      labels={previewState.labels}
+      onAccept={previewState.onAccept}
+      onReject={previewState.onReject}
+      onRetry={previewState.onRetry}
+    />
+  );
+}
+
 class InlineAiPreviewPluginView {
   private container: HTMLElement | null = null;
   private root: Root | null = null;
@@ -61,19 +85,7 @@ class InlineAiPreviewPluginView {
       return;
     }
 
-    this.root.render(
-      <InlineAiPreviewBlock
-        status={previewState.status}
-        response={previewState.response}
-        error={previewState.error}
-        basePath={previewState.basePath}
-        canAccept={previewState.canAccept}
-        labels={previewState.labels}
-        onAccept={previewState.onAccept}
-        onReject={previewState.onReject}
-        onRetry={previewState.onRetry}
-      />
-    );
+    this.root.render(renderPreviewBlock(previewState));
   }
 
   private cleanup(): void {
@@ -126,13 +138,7 @@ export const InlineAiPreviewExtension = Extension.create({
             return DecorationSet.create(state.doc, [
               Decoration.widget(
                 position,
-                () => {
-                  const widget = document.createElement('div');
-                  widget.className = 'm-editor-inline-ai-widget';
-                  widget.dataset.inlineAiPreviewWidget = previewState.blockId;
-                  widget.setAttribute('contenteditable', 'false');
-                  return widget;
-                },
+                () => createPreviewWidget(previewState.blockId),
                 {
                   key: `inline-ai-preview-${previewState.blockId}`,
                   side: 1,
