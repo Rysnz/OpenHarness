@@ -10,6 +10,8 @@ import { Input } from '../Input/Input';
 import { Button } from '../Button/Button';
 import './InputDialog.scss';
 
+const INPUT_DIALOG_FOCUS_DELAY_MS = 100;
+
 export interface InputDialogProps {
   isOpen: boolean;
   onClose: () => void;
@@ -40,12 +42,10 @@ export const InputDialog: React.FC<InputDialogProps> = ({
   inputType = 'text',
 }) => {
   const { t } = useI18n('components');
-  
-  // Resolve i18n default values
   const resolvedPlaceholder = placeholder ?? t('dialog.prompt.placeholder');
   const resolvedConfirmText = confirmText ?? t('dialog.confirm.ok');
   const resolvedCancelText = cancelText ?? t('dialog.confirm.cancel');
-  
+
   const [value, setValue] = useState(defaultValue);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -57,33 +57,25 @@ export const InputDialog: React.FC<InputDialogProps> = ({
       setTimeout(() => {
         inputRef.current?.focus();
         inputRef.current?.select();
-      }, 100);
+      }, INPUT_DIALOG_FOCUS_DELAY_MS);
     }
   }, [isOpen, defaultValue]);
 
-  const validateInput = (val: string): boolean => {
-    if (required && !val.trim()) {
-      setError(t('inputDialog.emptyError'));
-      return false;
-    }
-
-    if (validator) {
-      const errorMsg = validator(val);
-      if (errorMsg) {
-        setError(errorMsg);
-        return false;
-      }
-    }
-
-    setError(null);
-    return true;
+  const getValidationError = (val: string): string | null => {
+    if (required && !val.trim()) return t('inputDialog.emptyError');
+    return validator?.(val) ?? null;
   };
 
   const handleConfirm = () => {
-    if (validateInput(value)) {
-      onConfirm(value.trim());
-      onClose();
+    const validationError = getValidationError(value);
+    if (validationError) {
+      setError(validationError);
+      return;
     }
+
+    setError(null);
+    onConfirm(value.trim());
+    onClose();
   };
 
   const handleCancel = () => {
