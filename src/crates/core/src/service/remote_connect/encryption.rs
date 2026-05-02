@@ -1,8 +1,8 @@
 //! End-to-end encryption for Remote Connect.
 //!
-//! Uses X25519 ECDH for key exchange and AES-256-GCM for authenticated encryption.
-//! Both sides generate ephemeral keypairs; the shared secret is derived via ECDH
-//! and used directly as the AES-256-GCM key (X25519 output is already 32 bytes).
+//! Uses X25519 ECDH for key exchange and AES-256-GCM for authenticated
+//! encryption. Both sides generate ephemeral keypairs. The shared secret is
+//! derived through ECDH and used as the AES-256-GCM key.
 
 use aes_gcm::aead::{Aead, KeyInit, OsRng};
 use aes_gcm::{Aes256Gcm, Nonce};
@@ -12,6 +12,7 @@ use rand::RngCore;
 use x25519_dalek::{PublicKey, StaticSecret};
 
 const NONCE_SIZE: usize = 12;
+const X25519_KEY_SIZE: usize = 32;
 
 /// Holds a keypair for X25519 ECDH key exchange.
 pub struct KeyPair {
@@ -26,7 +27,7 @@ impl KeyPair {
         Self { secret, public }
     }
 
-    pub fn public_key_bytes(&self) -> [u8; 32] {
+    pub fn public_key_bytes(&self) -> [u8; X25519_KEY_SIZE] {
         self.public.to_bytes()
     }
 
@@ -35,7 +36,7 @@ impl KeyPair {
     }
 
     /// Derive a shared secret from our secret key and the peer's public key.
-    pub fn derive_shared_secret(&self, peer_public_bytes: &[u8; 32]) -> [u8; 32] {
+    pub fn derive_shared_secret(&self, peer_public_bytes: &[u8; X25519_KEY_SIZE]) -> [u8; X25519_KEY_SIZE] {
         let peer_public = PublicKey::from(*peer_public_bytes);
         let shared = self.secret.diffie_hellman(&peer_public);
         *shared.as_bytes()
@@ -44,16 +45,14 @@ impl KeyPair {
 
 /// Encrypts plaintext using AES-256-GCM with a random nonce.
 /// Returns `(ciphertext, nonce)` both as raw bytes.
-pub fn encrypt(shared_secret: &[u8; 32], plaintext: &[u8]) -> Result<(Vec<u8>, [u8; NONCE_SIZE])> {
-    let cipher =
-        Aes256Gcm::new_from_slice(shared_secret).map_err(|e| anyhow!("cipher init: {e}"))?;
-
-    let mut nonce_bytes = [0u8; NONCE_SIZE];
-    OsRng.fill_bytes(&mut nonce_bytes);
-    let nonce = Nonce::from_slice(&nonce_bytes);
-
+pub fn encrypt(
+    shared_secret: &[u8; X25519_KEY_SIZE],
+    plaintext: &[u8],
+) -> Result<(Vec<u8>, [u8; NONCE_SIZE])> {
+    let cipher = cipher_from_secret(shared_secret)?;
+    let nonce_bytes = random_nonce();
     let ciphertext = cipher
-        .encrypt(nonce, plaintext)
+        .encrypt(Nonce::from_slice(&nonce_bytes), plaintext)
         .map_err(|e| anyhow!("encrypt: {e}"))?;
 
     Ok((ciphertext, nonce_bytes))
@@ -61,65 +60,67 @@ pub fn encrypt(shared_secret: &[u8; 32], plaintext: &[u8]) -> Result<(Vec<u8>, [
 
 /// Decrypts ciphertext using AES-256-GCM.
 pub fn decrypt(
-    shared_secret: &[u8; 32],
+    shared_secret: &[u8; X25519_KEY_SIZE],
     ciphertext: &[u8],
     nonce_bytes: &[u8; NONCE_SIZE],
 ) -> Result<Vec<u8>> {
-    let cipher =
-        Aes256Gcm::new_from_slice(shared_secret).map_err(|e| anyhow!("cipher init: {e}"))?;
-    let nonce = Nonce::from_slice(nonce_bytes);
-
-    cipher
-        .decrypt(nonce, ciphertext)
+    cipher_from_secret(shared_secret)?
+        .decrypt(Nonce::from_slice(nonce_bytes), ciphertext)
         .map_err(|e| anyhow!("decrypt: {e}"))
 }
 
 /// Convenience: encrypt a string and return base64-encoded `(data, nonce)`.
-pub fn encrypt_to_base64(shared_secret: &[u8; 32], plaintext: &str) -> Result<(String, String)> {
+pub fn encrypt_to_base64(shared_secret: &[u8; X25519_KEY_SIZE], plaintext: &str) -> Result<(String, String)> {
     let (ct, nonce) = encrypt(shared_secret, plaintext.as_bytes())?;
     Ok((BASE64.encode(ct), BASE64.encode(nonce)))
 }
 
 /// Convenience: decrypt from base64-encoded `(data, nonce)`.
 pub fn decrypt_from_base64(
-    shared_secret: &[u8; 32],
+    shared_secret: &[u8; X25519_KEY_SIZE],
     ciphertext_b64: &str,
     nonce_b64: &str,
 ) -> Result<String> {
-    let ct = BASE64
-        .decode(ciphertext_b64)
-        .map_err(|e| anyhow!("base64 decode ciphertext: {e}"))?;
-    let nonce_vec = BASE64
-        .decode(nonce_b64)
-        .map_err(|e| anyhow!("base64 decode nonce: {e}"))?;
-
-    if nonce_vec.len() != NONCE_SIZE {
-        return Err(anyhow!(
-            "invalid nonce length: expected {NONCE_SIZE}, got {}",
-            nonce_vec.len()
-        ));
-    }
-    let mut nonce = [0u8; NONCE_SIZE];
-    nonce.copy_from_slice(&nonce_vec);
-
+    let ct = decode_base64(ciphertext_b64, "ciphertext")?;
+    let nonce = decode_fixed_base64::<NONCE_SIZE>(nonce_b64, "nonce")?;
     let plaintext = decrypt(shared_secret, &ct, &nonce)?;
+
     String::from_utf8(plaintext).map_err(|e| anyhow!("utf8 decode: {e}"))
 }
 
 /// Parse a base64-encoded public key into 32-byte array.
-pub fn parse_public_key(b64: &str) -> Result<[u8; 32]> {
-    let bytes = BASE64
-        .decode(b64)
-        .map_err(|e| anyhow!("base64 decode public key: {e}"))?;
-    if bytes.len() != 32 {
+pub fn parse_public_key(b64: &str) -> Result<[u8; X25519_KEY_SIZE]> {
+    decode_fixed_base64::<X25519_KEY_SIZE>(b64, "public key")
+}
+
+fn cipher_from_secret(shared_secret: &[u8; X25519_KEY_SIZE]) -> Result<Aes256Gcm> {
+    Aes256Gcm::new_from_slice(shared_secret).map_err(|e| anyhow!("cipher init: {e}"))
+}
+
+fn random_nonce() -> [u8; NONCE_SIZE] {
+    let mut nonce_bytes = [0u8; NONCE_SIZE];
+    OsRng.fill_bytes(&mut nonce_bytes);
+    nonce_bytes
+}
+
+fn decode_base64(value: &str, label: &str) -> Result<Vec<u8>> {
+    BASE64
+        .decode(value)
+        .map_err(|e| anyhow!("base64 decode {label}: {e}"))
+}
+
+fn decode_fixed_base64<const N: usize>(value: &str, label: &str) -> Result<[u8; N]> {
+    let bytes = decode_base64(value, label)?;
+    if bytes.len() != N {
         return Err(anyhow!(
-            "invalid public key length: expected 32, got {}",
+            "invalid {label} length: expected {N}, got {}",
             bytes.len()
         ));
     }
-    let mut key = [0u8; 32];
-    key.copy_from_slice(&bytes);
-    Ok(key)
+
+    let mut output = [0u8; N];
+    output.copy_from_slice(&bytes);
+    Ok(output)
 }
 
 #[cfg(test)]
@@ -147,7 +148,7 @@ mod tests {
         let bob = KeyPair::generate();
 
         let shared = alice.derive_shared_secret(&bob.public_key_bytes());
-        let message = "加密测试消息 with unicode 🔒";
+        let message = "encrypted unicode payload \u{1f512}";
         let (ct_b64, nonce_b64) = encrypt_to_base64(&shared, message).unwrap();
         let decrypted = decrypt_from_base64(&shared, &ct_b64, &nonce_b64).unwrap();
         assert_eq!(decrypted, message);
