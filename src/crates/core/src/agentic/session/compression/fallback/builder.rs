@@ -45,79 +45,27 @@ fn build_entries_from_messages(
         }
 
         match message.content {
-            MessageContent::Text(text) => match message.role {
-                MessageRole::User => {
-                    if let Some(text) = sanitize_user_text(&text, options) {
-                        turn_messages.push(CompressedMessage {
-                            role: CompressedMessageRole::User,
-                            text: Some(text),
-                            tool_calls: Vec::new(),
-                        });
-                    }
+            MessageContent::Text(text) => {
+                if let Some(compressed) = compress_text_message(message.role, &text, options) {
+                    turn_messages.push(compressed);
                 }
-                MessageRole::Assistant => {
-                    if let Some(text) = sanitize_assistant_text(&text, options) {
-                        turn_messages.push(CompressedMessage {
-                            role: CompressedMessageRole::Assistant,
-                            text: Some(text),
-                            tool_calls: Vec::new(),
-                        });
-                    }
-                }
-                MessageRole::System | MessageRole::Tool => {}
-            },
+            }
             MessageContent::Multimodal { text, images } => {
-                if message.role == MessageRole::User {
-                    let mut rendered = sanitize_user_text(&text, options).unwrap_or_default();
-                    if !images.is_empty() {
-                        if !rendered.is_empty() {
-                            rendered.push('\n');
-                        }
-                        rendered.push_str(&format!("[{} image(s) omitted]", images.len()));
-                    }
-                    if !rendered.trim().is_empty() {
-                        turn_messages.push(CompressedMessage {
-                            role: CompressedMessageRole::User,
-                            text: Some(rendered),
-                            tool_calls: Vec::new(),
-                        });
-                    }
+                if let Some(compressed) =
+                    compress_multimodal_message(message.role, &text, images.len(), options)
+                {
+                    turn_messages.push(compressed);
                 }
             }
             MessageContent::Mixed {
                 text, tool_calls, ..
             } => {
-                if message.role != MessageRole::Assistant {
-                    continue;
-                }
-
-                let mut compressed_tool_calls = Vec::new();
-
-                for tool_call in tool_calls {
-                    if tool_call.tool_name == "TodoWrite" {
-                        latest_todo = sanitize_todo_snapshot(&tool_call.arguments);
-                        continue;
+                if message.role == MessageRole::Assistant {
+                    if let Some(compressed) =
+                        compress_mixed_assistant_message(&text, tool_calls, options, &mut latest_todo)
+                    {
+                        turn_messages.push(compressed);
                     }
-
-                    let compressed_tool_call = CompressedToolCall {
-                        tool_name: tool_call.tool_name.clone(),
-                        arguments: sanitize_tool_arguments(
-                            &tool_call.tool_name,
-                            &tool_call.arguments,
-                            options,
-                        ),
-                        is_error: tool_call.is_error,
-                    };
-                    compressed_tool_calls.push(compressed_tool_call);
-                }
-
-                let sanitized_text = sanitize_assistant_text(&text, options);
-                if sanitized_text.is_some() || !compressed_tool_calls.is_empty() {
-                    turn_messages.push(CompressedMessage {
-                        role: CompressedMessageRole::Assistant,
-                        text: sanitized_text,
-                        tool_calls: compressed_tool_calls,
-                    });
                 }
             }
             MessageContent::ToolResult { .. } => {}
@@ -125,6 +73,95 @@ fn build_entries_from_messages(
     }
 
     flush_turn_entry(output, turn_id, &mut turn_messages, &mut latest_todo);
+}
+
+fn compress_text_message(
+    role: MessageRole,
+    text: &str,
+    options: &CompressionFallbackOptions,
+) -> Option<CompressedMessage> {
+    let (role, text) = match role {
+        MessageRole::User => (CompressedMessageRole::User, sanitize_user_text(text, options)),
+        MessageRole::Assistant => (
+            CompressedMessageRole::Assistant,
+            sanitize_assistant_text(text, options),
+        ),
+        MessageRole::System | MessageRole::Tool => return None,
+    };
+
+    text.map(|text| compressed_text(role, text))
+}
+
+fn compress_multimodal_message(
+    role: MessageRole,
+    text: &str,
+    image_count: usize,
+    options: &CompressionFallbackOptions,
+) -> Option<CompressedMessage> {
+    if role != MessageRole::User {
+        return None;
+    }
+
+    let mut rendered = sanitize_user_text(text, options).unwrap_or_default();
+    if image_count > 0 {
+        if !rendered.is_empty() {
+            rendered.push('\n');
+        }
+        rendered.push_str(&format!("[{} image(s) omitted]", image_count));
+    }
+
+    (!rendered.trim().is_empty()).then(|| compressed_text(CompressedMessageRole::User, rendered))
+}
+
+fn compress_mixed_assistant_message(
+    text: &str,
+    tool_calls: Vec<crate::agentic::core::ToolCall>,
+    options: &CompressionFallbackOptions,
+    latest_todo: &mut Option<CompressedTodoSnapshot>,
+) -> Option<CompressedMessage> {
+    let compressed_tool_calls = compress_tool_calls(tool_calls, options, latest_todo);
+    let sanitized_text = sanitize_assistant_text(text, options);
+
+    (sanitized_text.is_some() || !compressed_tool_calls.is_empty()).then(|| CompressedMessage {
+        role: CompressedMessageRole::Assistant,
+        text: sanitized_text,
+        tool_calls: compressed_tool_calls,
+    })
+}
+
+fn compress_tool_calls(
+    tool_calls: Vec<crate::agentic::core::ToolCall>,
+    options: &CompressionFallbackOptions,
+    latest_todo: &mut Option<CompressedTodoSnapshot>,
+) -> Vec<CompressedToolCall> {
+    let mut compressed_tool_calls = Vec::new();
+
+    for tool_call in tool_calls {
+        if tool_call.tool_name == "TodoWrite" {
+            *latest_todo = sanitize_todo_snapshot(&tool_call.arguments);
+            continue;
+        }
+
+        compressed_tool_calls.push(CompressedToolCall {
+            tool_name: tool_call.tool_name.clone(),
+            arguments: sanitize_tool_arguments(
+                &tool_call.tool_name,
+                &tool_call.arguments,
+                options,
+            ),
+            is_error: tool_call.is_error,
+        });
+    }
+
+    compressed_tool_calls
+}
+
+fn compressed_text(role: CompressedMessageRole, text: String) -> CompressedMessage {
+    CompressedMessage {
+        role,
+        text: Some(text),
+        tool_calls: Vec::new(),
+    }
 }
 
 fn flush_turn_entry(
