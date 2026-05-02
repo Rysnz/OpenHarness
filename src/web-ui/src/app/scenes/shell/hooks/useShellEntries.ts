@@ -17,6 +17,9 @@ interface EditingTerminalState {
   entry: ShellEntry;
 }
 
+type TerminalSession = ReturnType<typeof useTerminalSessions>['sessions'][number];
+type TerminalProfile = ReturnType<typeof useManualTerminalProfiles>['profiles'][number];
+
 export interface UseShellEntriesReturn {
   manualEntries: ShellEntry[];
   agentEntries: ShellEntry[];
@@ -31,6 +34,37 @@ export interface UseShellEntriesReturn {
   deleteEntry: (entry: ShellEntry) => Promise<void>;
   openEditModal: (entry: ShellEntry) => void;
   saveEdit: (input: SaveShellEntryInput) => void;
+}
+
+function buildManualEntries(
+  profiles: TerminalProfile[],
+  sessions: TerminalSession[],
+  sessionMap: Map<string, TerminalSession>,
+  profilesBySessionId: Map<string, TerminalProfile>
+): ShellEntry[] {
+  const profileEntries = profiles.map((profile) =>
+    createManualProfileEntry(profile, sessionMap.get(profile.sessionId))
+  );
+  const ephemeralEntries = sessions
+    .filter((session) => session.source === MANUAL_SOURCE && !profilesBySessionId.has(session.id))
+    .map((session) => createSessionEntry(session, 'manual-session'));
+
+  return [...profileEntries, ...ephemeralEntries].sort(compareShellEntries);
+}
+
+function buildAgentEntries(sessions: TerminalSession[]): ShellEntry[] {
+  return sessions
+    .filter((session) => session.source === AGENT_SOURCE)
+    .map((session) => createSessionEntry(session, 'agent-session'))
+    .sort(compareShellEntries);
+}
+
+function resolveWorkingDirectory(
+  input: SaveShellEntryInput,
+  entry: ShellEntry,
+  workspacePath: string
+): string {
+  return input.workingDirectory ?? entry.workingDirectory ?? entry.cwd ?? workspacePath;
 }
 
 export function useShellEntries(): UseShellEntriesReturn {
@@ -66,25 +100,14 @@ export function useShellEntries(): UseShellEntriesReturn {
     currentConnectionId,
   });
 
-  const manualEntries = useMemo<ShellEntry[]>(() => {
-    const profileEntries = profiles.map((profile) =>
-      createManualProfileEntry(profile, sessionMap.get(profile.sessionId)),
-    );
-
-    const ephemeralEntries = sessions
-      .filter((session) => session.source === MANUAL_SOURCE && !profilesBySessionId.has(session.id))
-      .map((session) => createSessionEntry(session, 'manual-session'));
-
-    return [...profileEntries, ...ephemeralEntries].sort(compareShellEntries);
-  }, [profiles, profilesBySessionId, sessionMap, sessions]);
+  const manualEntries = useMemo<ShellEntry[]>(
+    () => buildManualEntries(profiles, sessions, sessionMap, profilesBySessionId),
+    [profiles, profilesBySessionId, sessionMap, sessions]
+  );
 
   const agentEntries = useMemo<ShellEntry[]>(
-    () =>
-      sessions
-        .filter((session) => session.source === AGENT_SOURCE)
-        .map((session) => createSessionEntry(session, 'agent-session'))
-        .sort(compareShellEntries),
-    [sessions],
+    () => buildAgentEntries(sessions),
+    [sessions]
   );
 
   const refresh = useCallback(async () => {
@@ -159,7 +182,7 @@ export function useShellEntries(): UseShellEntriesReturn {
       id: existingProfile?.id,
       sessionId: entry.sessionId,
       name: input.name,
-      workingDirectory: input.workingDirectory ?? entry.workingDirectory ?? entry.cwd ?? workspacePath,
+      workingDirectory: resolveWorkingDirectory(input, entry, workspacePath),
       startupCommand: input.startupCommand,
       shellType: entry.shellType,
     });
