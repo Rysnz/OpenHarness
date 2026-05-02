@@ -44,11 +44,11 @@ fn default_language() -> Language {
 impl Default for CommitMessageOptions {
     fn default() -> Self {
         Self {
-            format: CommitFormat::Conventional,
-            include_files: true,
-            max_title_length: 72,
-            include_body: true,
-            language: Language::Chinese,
+            format: default_commit_format(),
+            include_files: default_true(),
+            max_title_length: default_max_length(),
+            include_body: default_true(),
+            language: default_language(),
         }
     }
 }
@@ -120,7 +120,13 @@ pub enum CommitType {
 
 impl fmt::Display for CommitType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = match self {
+        f.write_str(self.as_str())
+    }
+}
+
+impl CommitType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
             CommitType::Feat => "feat",
             CommitType::Fix => "fix",
             CommitType::Docs => "docs",
@@ -131,8 +137,7 @@ impl fmt::Display for CommitType {
             CommitType::Chore => "chore",
             CommitType::CI => "ci",
             CommitType::Revert => "revert",
-        };
-        write!(f, "{}", s)
+        }
     }
 }
 
@@ -209,32 +214,27 @@ impl fmt::Display for AgentError {
 impl std::error::Error for AgentError {}
 
 impl AgentError {
-    pub fn git_error(msg: impl Into<String>) -> Self {
+    fn new(message: impl Into<String>, error_type: AgentErrorType) -> Self {
         Self {
-            message: msg.into(),
-            error_type: AgentErrorType::GitError,
+            message: message.into(),
+            error_type,
         }
+    }
+
+    pub fn git_error(msg: impl Into<String>) -> Self {
+        Self::new(msg, AgentErrorType::GitError)
     }
 
     pub fn analysis_error(msg: impl Into<String>) -> Self {
-        Self {
-            message: msg.into(),
-            error_type: AgentErrorType::AnalysisError,
-        }
+        Self::new(msg, AgentErrorType::AnalysisError)
     }
 
     pub fn invalid_input(msg: impl Into<String>) -> Self {
-        Self {
-            message: msg.into(),
-            error_type: AgentErrorType::InvalidInput,
-        }
+        Self::new(msg, AgentErrorType::InvalidInput)
     }
 
     pub fn internal_error(msg: impl Into<String>) -> Self {
-        Self {
-            message: msg.into(),
-            error_type: AgentErrorType::InternalError,
-        }
+        Self::new(msg, AgentErrorType::InternalError)
     }
 }
 
