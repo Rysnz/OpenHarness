@@ -1,5 +1,29 @@
 import { SnapshotFile, DiffBlock } from './SnapshotStateManager';
 
+const STRUCTURAL_KEYWORDS = [
+  'function',
+  'class',
+  'interface',
+  'import',
+  'export',
+  'const',
+  'let',
+  'var',
+  'if',
+  'for',
+  'while',
+];
+
+type ChangeSummary = CompactDiffResult['summary'];
+
+interface FileStats {
+  totalBlocks: number;
+  criticalBlocks: number;
+  pendingBlocks: number;
+  acceptedBlocks: number;
+  rejectedBlocks: number;
+}
+
 export interface CompactDiffResult {
   filePath: string;
   criticalBlocks: DiffBlock[];
@@ -28,54 +52,47 @@ export interface BlockNavigation {
   description: string;
 }
 
+function changedLineCount(block: DiffBlock): number {
+  return Math.abs(block.originalEndLine - block.originalStartLine + 1);
+}
+
+function hasAnyKeyword(content: string, keywords: string[]): boolean {
+  const normalizedContent = content.toLowerCase();
+  return keywords.some(keyword => normalizedContent.includes(keyword));
+}
+
 export class BlockPriorityAnalyzer {
   filterCriticalBlocks(blocks: DiffBlock[]): DiffBlock[] {
-    return blocks.filter(block => {
-      if (block.priority === 'critical' || block.priority === 'important') {
-        return true;
-      }
-
-      const lineCount = Math.abs(block.originalEndLine - block.originalStartLine);
-      if (lineCount > 5) {
-        return true;
-      }
-
-      const content = block.modifiedContent.toLowerCase();
-      const criticalKeywords = ['function', 'class', 'import', 'export', 'const', 'let', 'var', 'if', 'for', 'while'];
-      if (criticalKeywords.some(keyword => content.includes(keyword))) {
-        return true;
-      }
-
-      return false;
-    });
+    return blocks.filter(block => this.shouldPromoteBlock(block));
   }
 
   analyzePriority(block: DiffBlock): 'critical' | 'important' | 'minor' {
-    const content = block.modifiedContent.toLowerCase();
-    
-    if (content.includes('function') || content.includes('class') || content.includes('interface')) {
+    if (hasAnyKeyword(block.modifiedContent, ['function', 'class', 'interface'])) {
       return 'critical';
     }
 
-    if (content.includes('import') || content.includes('export')) {
+    if (hasAnyKeyword(block.modifiedContent, ['import', 'export', 'if', 'for', 'while'])) {
       return 'important';
     }
 
-    if (content.includes('if') || content.includes('for') || content.includes('while')) {
-      return 'important';
-    }
-
-    const lineCount = Math.abs(block.originalEndLine - block.originalStartLine);
-    if (lineCount > 10) {
+    if (changedLineCount(block) > 10) {
       return 'important';
     }
 
     return 'minor';
   }
+
+  private shouldPromoteBlock(block: DiffBlock): boolean {
+    if (block.priority === 'critical' || block.priority === 'important') {
+      return true;
+    }
+
+    return changedLineCount(block) > 5 || hasAnyKeyword(block.modifiedContent, STRUCTURAL_KEYWORDS);
+  }
 }
 
 export class DiffDisplayEngine {
-  private blockPriorityAnalyzer: BlockPriorityAnalyzer;
+  private readonly blockPriorityAnalyzer: BlockPriorityAnalyzer;
 
   constructor() {
     this.blockPriorityAnalyzer = new BlockPriorityAnalyzer();
@@ -91,7 +108,7 @@ export class DiffDisplayEngine {
       filePath: file.filePath,
       criticalBlocks,
       totalBlocks: diffBlocks.length,
-      summary
+      summary,
     };
   }
 
@@ -106,37 +123,28 @@ export class DiffDisplayEngine {
       modifiedContent: file.modifiedContent,
       diffBlocks,
       contextLines,
-      navigation
+      navigation,
     };
   }
 
-  private calculateSummary(blocks: DiffBlock[]): {
-    additions: number;
-    deletions: number;
-    modifications: number;
-  } {
-    let additions = 0;
-    let deletions = 0;
-    let modifications = 0;
-
-    blocks.forEach(block => {
+  private calculateSummary(blocks: DiffBlock[]): ChangeSummary {
+    return blocks.reduce<ChangeSummary>((summary, block) => {
       switch (block.type) {
         case 'added':
-          additions += block.modifiedEndLine - block.modifiedStartLine + 1;
+          summary.additions += block.modifiedEndLine - block.modifiedStartLine + 1;
           break;
         case 'removed':
-          deletions += block.originalEndLine - block.originalStartLine + 1;
+          summary.deletions += block.originalEndLine - block.originalStartLine + 1;
           break;
         case 'modified':
-          modifications += Math.max(
+          summary.modifications += Math.max(
             block.originalEndLine - block.originalStartLine + 1,
             block.modifiedEndLine - block.modifiedStartLine + 1
           );
           break;
       }
-    });
-
-    return { additions, deletions, modifications };
+      return summary;
+    }, { additions: 0, deletions: 0, modifications: 0 });
   }
 
   private generateContextLines(file: SnapshotFile): string[] {
@@ -150,31 +158,23 @@ export class DiffDisplayEngine {
       type: block.type,
       status: block.status,
       lineNumber: block.originalStartLine,
-      description: this.generateBlockDescription(block)
+      description: this.generateBlockDescription(block),
     }));
   }
 
   private generateBlockDescription(block: DiffBlock): string {
-    const lineCount = Math.abs(block.originalEndLine - block.originalStartLine + 1);
-    
-    switch (block.type) {
-      case 'added':
-        return `Added ${lineCount} lines`;
-      case 'removed':
-        return `Removed ${lineCount} lines`;
-      case 'modified':
-        return `Modified ${lineCount} lines`;
-      default:
-        return `Changed ${lineCount} lines`;
-    }
+    const actionByType: Record<DiffBlock['type'], string> = {
+      added: 'Added',
+      removed: 'Removed',
+      modified: 'Modified',
+    };
+    return `${actionByType[block.type] ?? 'Changed'} ${changedLineCount(block)} lines`;
   }
 
   generateDiffForMode(file: SnapshotFile, mode: 'compact' | 'full'): CompactDiffResult | FullDiffResult {
-    if (mode === 'compact') {
-      return this.generateCompactDiff(file);
-    } else {
-      return this.generateFullDiff(file);
-    }
+    return mode === 'compact'
+      ? this.generateCompactDiff(file)
+      : this.generateFullDiff(file);
   }
 
   hasCriticalChanges(file: SnapshotFile): boolean {
@@ -183,22 +183,19 @@ export class DiffDisplayEngine {
     return criticalBlocks.length > 0;
   }
 
-  getFileStats(file: SnapshotFile): {
-    totalBlocks: number;
-    criticalBlocks: number;
-    pendingBlocks: number;
-    acceptedBlocks: number;
-    rejectedBlocks: number;
-  } {
+  getFileStats(file: SnapshotFile): FileStats {
     const diffBlocks = file.diffBlocks || [];
     const criticalBlocks = this.blockPriorityAnalyzer.filterCriticalBlocks(diffBlocks);
+    const countByStatus = (status: DiffBlock['status']) =>
+      diffBlocks.filter(block => block.status === status).length;
 
-    return {
+    const stats: FileStats = {
       totalBlocks: diffBlocks.length,
       criticalBlocks: criticalBlocks.length,
-      pendingBlocks: diffBlocks.filter(b => b.status === 'pending').length,
-      acceptedBlocks: diffBlocks.filter(b => b.status === 'accepted').length,
-      rejectedBlocks: diffBlocks.filter(b => b.status === 'rejected').length
+      pendingBlocks: countByStatus('pending'),
+      acceptedBlocks: countByStatus('accepted'),
+      rejectedBlocks: countByStatus('rejected'),
     };
+    return stats;
   }
 }
