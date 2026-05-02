@@ -2,6 +2,29 @@
  * Floating toolbar styles aligned with Mermaid themes.
  * Uses CSS variables and dashed-to-solid hover feedback.
  */
+@mixin toolbar-button-skin($color, $border-color, $hover-bg, $hover-border, $hover-color: null) {
+  color: $color;
+  border-color: $border-color;
+  background: transparent;
+
+  &:hover {
+    background: $hover-bg;
+    border-color: $hover-border;
+
+    @if $hover-color != null {
+      color: $hover-color;
+    }
+  }
+
+  &:not(:hover) {
+    background: transparent;
+
+    @if $hover-color != null {
+      color: $color;
+    }
+  }
+}
+
 .floating-toolbar {
   position: fixed;
   z-index: 2000;
@@ -179,50 +202,31 @@
 }
 
 .toolbar-btn.save {
-  color: var(--mermaid-success, #34d399);
-  border-color: rgba(52, 211, 153, 0.35);
-  background: transparent;
-
-  &:hover {
-    background: rgba(52, 211, 153, 0.12);
-    border-color: var(--mermaid-success, #34d399);
-  }
-
-  &:not(:hover) {
-    background: transparent;
-  }
+  @include toolbar-button-skin(
+    var(--mermaid-success, #34d399),
+    rgba(52, 211, 153, 0.35),
+    rgba(52, 211, 153, 0.12),
+    var(--mermaid-success, #34d399)
+  );
 }
 
 .toolbar-btn.delete {
-  color: var(--mermaid-error, #ef4444);
-  border-color: rgba(239, 68, 68, 0.35);
-  background: transparent;
-
-  &:hover {
-    background: rgba(239, 68, 68, 0.12);
-    border-color: var(--mermaid-error, #ef4444);
-  }
-
-  &:not(:hover) {
-    background: transparent;
-  }
+  @include toolbar-button-skin(
+    var(--mermaid-error, #ef4444),
+    rgba(239, 68, 68, 0.35),
+    rgba(239, 68, 68, 0.12),
+    var(--mermaid-error, #ef4444)
+  );
 }
 
 .toolbar-btn.cancel {
-  color: var(--color-text-secondary, #a8adb8);
-  border-color: var(--border-medium, rgba(255, 255, 255, 0.12));
-  background: transparent;
-
-  &:hover {
-    background: rgba(255, 255, 255, 0.06);
-    color: var(--color-text-primary, #e8e8e8);
-    border-color: var(--border-strong, rgba(255, 255, 255, 0.2));
-  }
-
-  &:not(:hover) {
-    background: transparent;
-    color: var(--color-text-secondary, #a8adb8);
-  }
+  @include toolbar-button-skin(
+    var(--color-text-secondary, #a8adb8),
+    var(--border-medium, rgba(255, 255, 255, 0.12)),
+    rgba(255, 255, 255, 0.06),
+    var(--border-strong, rgba(255, 255, 255, 0.2)),
+    var(--color-text-primary, #e8e8e8)
+  );
 }
 
 // Light theme.
@@ -274,33 +278,31 @@
 
   .toolbar-btn {
     &.save {
-      color: #5b9a6f;
-      border-color: rgba(91, 154, 111, 0.35);
-
-      &:hover {
-        background: rgba(91, 154, 111, 0.10);
-        border-color: #5b9a6f;
-      }
+      @include toolbar-button-skin(
+        #5b9a6f,
+        rgba(91, 154, 111, 0.35),
+        rgba(91, 154, 111, 0.10),
+        #5b9a6f
+      );
     }
 
     &.delete {
-      color: #c26565;
-      border-color: rgba(194, 101, 101, 0.35);
-
-      &:hover {
-        background: rgba(194, 101, 101, 0.10);
-        border-color: #c26565;
-      }
+      @include toolbar-button-skin(
+        #c26565,
+        rgba(194, 101, 101, 0.35),
+        rgba(194, 101, 101, 0.10),
+        #c26565
+      );
     }
 
     &.cancel {
-      color: #64748b;
-      border-color: rgba(100, 116, 139, 0.20);
-
-      &:hover {
-        background: rgba(71, 102, 143, 0.06);
-        color: #475569;
-      }
+      @include toolbar-button-skin(
+        #64748b,
+        rgba(100, 116, 139, 0.20),
+        rgba(71, 102, 143, 0.06),
+        rgba(100, 116, 139, 0.20),
+        #475569
+      );
     }
   }
 }

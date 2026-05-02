@@ -1,23 +1,120 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Tooltip } from '@/component-library';
 import { useI18n } from '@/infrastructure/i18n';
 import './FloatingToolbar.scss';
 
+type ToolbarType = 'node' | 'edge';
+
+type ToolbarData = {
+  id: string;
+  text: string;
+  fromNode?: string;
+  toNode?: string;
+};
+
 export interface FloatingToolbarProps {
   isVisible: boolean;
   position: { x: number; y: number };
-  type: 'node' | 'edge';
-  data: {
-    id: string;
-    text: string;
-    fromNode?: string;
-    toNode?: string;
-  };
+  type: ToolbarType;
+  data: ToolbarData;
   onSave: (data: any) => void;
   onDelete: () => void;
   onClose: () => void;
 }
+
+const PORTAL_ROOT_ID = 'floating-toolbar-root';
+const TOOLBAR_EDGE_PADDING = 100;
+const TOOLBAR_WIDTH_BY_TYPE: Record<ToolbarType, number> = {
+  node: 300,
+  edge: 400
+};
+
+const clamp = (value: number, min: number, max: number): number => (
+  Math.max(min, Math.min(value, max))
+);
+
+const buildToolbarStyle = (
+  position: FloatingToolbarProps['position'],
+  type: ToolbarType
+): React.CSSProperties => ({
+  left: clamp(position.x, 0, window.innerWidth - TOOLBAR_WIDTH_BY_TYPE[type]),
+  top: clamp(position.y, 0, window.innerHeight - TOOLBAR_EDGE_PADDING),
+  position: 'fixed',
+  zIndex: 2000
+});
+
+const syncPortalTheme = (container: HTMLElement): void => {
+  const theme = document.documentElement.getAttribute('data-theme');
+  if (theme) {
+    container.setAttribute('data-theme', theme);
+  } else {
+    container.removeAttribute('data-theme');
+  }
+};
+
+const getToolbarPortalContainer = (): HTMLElement => {
+  let container = document.getElementById(PORTAL_ROOT_ID);
+  if (!container) {
+    container = document.createElement('div');
+    container.id = PORTAL_ROOT_ID;
+    container.style.position = 'absolute';
+    container.style.top = '0';
+    container.style.left = '0';
+    container.style.pointerEvents = 'none';
+    container.style.zIndex = '2000';
+    document.body.appendChild(container);
+  }
+
+  syncPortalTheme(container);
+  return container;
+};
+
+const cleanupToolbarPortal = (): void => {
+  window.setTimeout(() => {
+    const container = document.getElementById(PORTAL_ROOT_ID);
+    if (container && container.children.length === 0) {
+      container.remove();
+    }
+  }, 100);
+};
+
+const SaveIcon: React.FC = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="20 6 9 17 4 12" />
+  </svg>
+);
+
+const DeleteIcon: React.FC = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="3 6 5 6 21 6" />
+    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+    <line x1="10" y1="11" x2="10" y2="17" />
+    <line x1="14" y1="11" x2="14" y2="17" />
+  </svg>
+);
+
+const CancelIcon: React.FC = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="18" y1="6" x2="6" y2="18" />
+    <line x1="6" y1="6" x2="18" y2="18" />
+  </svg>
+);
+
+interface ToolbarButtonProps {
+  title: string;
+  className: string;
+  onClick: () => void;
+  children: React.ReactNode;
+}
+
+const ToolbarButton: React.FC<ToolbarButtonProps> = ({ title, className, onClick, children }) => (
+  <Tooltip content={title} placement="top">
+    <button className={`toolbar-btn ${className}`} onClick={onClick}>
+      {children}
+    </button>
+  </Tooltip>
+);
 
 export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
   isVisible,
@@ -34,6 +131,7 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
   const [toNode, setToNode] = useState(data.toNode || '');
   const inputRef = useRef<HTMLInputElement>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
+  const toolbarStyle = useMemo(() => buildToolbarStyle(position, type), [position, type]);
 
   useEffect(() => {
     setText(data.text);
@@ -58,7 +156,6 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
   }, [type, data.id, text, fromNode, toNode, onSave, onClose]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    // Only stop Enter/Escape to preserve text shortcuts.
     if (e.key === 'Enter') {
       e.preventDefault();
       e.stopPropagation();
@@ -75,64 +172,22 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
     onClose();
   }, [onDelete, onClose]);
 
-  // Use a dedicated portal container for theme and cleanup.
-  const getPortalContainer = useCallback(() => {
-    let container = document.getElementById('floating-toolbar-root');
-    if (!container) {
-      container = document.createElement('div');
-      container.id = 'floating-toolbar-root';
-      container.style.position = 'absolute';
-      container.style.top = '0';
-      container.style.left = '0';
-      container.style.pointerEvents = 'none';
-      container.style.zIndex = '2000';
-      
-      // Inherit theme attributes from the root element.
-      const rootElement = document.documentElement;
-      const theme = rootElement.getAttribute('data-theme');
-      if (theme) {
-        container.setAttribute('data-theme', theme);
-      }
-      
-      document.body.appendChild(container);
-    }
-    return container;
-  }, []);
-
-  // Clean up when the last toolbar unmounts.
-  useEffect(() => {
-    return () => {
-      // Delay cleanup so other toolbars can mount.
-      setTimeout(() => {
-        const container = document.getElementById('floating-toolbar-root');
-        if (container && container.children.length === 0) {
-          container.remove();
-        }
-      }, 100);
-    };
-  }, []);
+  useEffect(() => cleanupToolbarPortal, []);
 
   if (!isVisible) return null;
 
   const portalContent = (
-    <>
-      <div
-        ref={toolbarRef}
-        className="floating-toolbar"
-        data-type={type}
-        style={{
-          left: Math.max(0, Math.min(position.x, window.innerWidth - (type === 'edge' ? 400 : 300))),
-          top: Math.max(0, Math.min(position.y, window.innerHeight - 100)),
-          position: 'fixed',
-          zIndex: 2000
-        }}
-        onClick={(e) => {
-          // Stop clicks on the container without blocking text selection.
-          if (e.target === e.currentTarget) {
-            e.stopPropagation();
-          }
-        }}
-      >
+    <div
+      ref={toolbarRef}
+      className="floating-toolbar"
+      data-type={type}
+      style={toolbarStyle}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          e.stopPropagation();
+        }
+      }}
+    >
       <div className="toolbar-content">
         {type === 'node' ? (
           <div className="toolbar-row">
@@ -159,7 +214,7 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
                 placeholder={t('floatingToolbar.startNodePlaceholder')}
                 className="toolbar-input node-input"
               />
-              <span className="toolbar-arrow">→</span>
+              <span className="toolbar-arrow">{'->'}</span>
               <input
                 type="text"
                 value={toNode}
@@ -183,47 +238,21 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
             </div>
           </>
         )}
-        
+
         <div className="toolbar-buttons">
-          <Tooltip content={t('floatingToolbar.saveEnter')} placement="top">
-            <button 
-              className="toolbar-btn save" 
-              onClick={handleSave}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
-            </button>
-          </Tooltip>
-          <Tooltip content={t('floatingToolbar.delete')} placement="top">
-            <button 
-              className="toolbar-btn delete" 
-              onClick={handleDelete}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="3 6 5 6 21 6" />
-                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                <line x1="10" y1="11" x2="10" y2="17" />
-                <line x1="14" y1="11" x2="14" y2="17" />
-              </svg>
-            </button>
-          </Tooltip>
-          <Tooltip content={t('floatingToolbar.cancelEsc')} placement="top">
-            <button 
-              className="toolbar-btn cancel" 
-              onClick={onClose}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="18" y1="6" x2="6" y2="18" />
-                <line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </button>
-          </Tooltip>
+          <ToolbarButton title={t('floatingToolbar.saveEnter')} className="save" onClick={handleSave}>
+            <SaveIcon />
+          </ToolbarButton>
+          <ToolbarButton title={t('floatingToolbar.delete')} className="delete" onClick={handleDelete}>
+            <DeleteIcon />
+          </ToolbarButton>
+          <ToolbarButton title={t('floatingToolbar.cancelEsc')} className="cancel" onClick={onClose}>
+            <CancelIcon />
+          </ToolbarButton>
         </div>
       </div>
-      </div>
-    </>
+    </div>
   );
 
-  return createPortal(portalContent, getPortalContainer());
+  return createPortal(portalContent, getToolbarPortalContainer());
 };
