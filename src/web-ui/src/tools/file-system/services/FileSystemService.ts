@@ -5,36 +5,129 @@ import { createLogger } from '@/shared/utils/logger';
 
 const log = createLogger('FileSystemService');
 
-interface FileWatchEvent {
+type RawFileNode = {
+  path: string;
+  name: string;
+  isDirectory: boolean;
+  size?: number | null;
+  extension?: string | null;
+  lastModified?: string | number | Date | null;
+  children?: RawFileNode[];
+};
+
+type FileWatchEvent = {
   path: string;
   kind: string;
   timestamp: number;
   from?: string;
   to?: string;
-}
+};
+
+type DirectoryPage = {
+  children: FileSystemNode[];
+  total: number;
+  hasMore: boolean;
+  offset: number;
+  limit: number;
+};
+
+const DEFAULT_SORT_BY: NonNullable<FileSystemOptions['sortBy']> = 'name';
+const DEFAULT_SORT_ORDER: NonNullable<FileSystemOptions['sortOrder']> = 'asc';
+const FILE_EVENT_TYPE_BY_KIND: Record<string, FileSystemChangeEvent['type']> = {
+  create: 'created',
+  modify: 'modified',
+  remove: 'deleted',
+  rename: 'renamed'
+};
+
+const normalizePathForWatch = (path: string): string => (
+  path.replace(/\\/g, '/').replace(/\/+$/, '')
+);
+
+const isPathWithinRoot = (path: string, root: string): boolean => (
+  path === root || path.startsWith(`${root}/`)
+);
+
+const mapWatchEvent = (event: FileWatchEvent): FileSystemChangeEvent => ({
+  type: FILE_EVENT_TYPE_BY_KIND[event.kind] ?? 'modified',
+  path: event.path,
+  oldPath: event.from,
+  timestamp: new Date(event.timestamp * 1000)
+});
+
+const toFileNode = (rawNode: RawFileNode): FileSystemNode => {
+  const node: FileSystemNode = {
+    path: rawNode.path,
+    name: rawNode.name,
+    isDirectory: rawNode.isDirectory,
+    size: rawNode.size ?? undefined,
+    extension: rawNode.extension ?? undefined,
+    lastModified: rawNode.lastModified ? new Date(rawNode.lastModified) : undefined
+  };
+
+  if (Array.isArray(rawNode.children)) {
+    node.children = rawNode.children.map(toFileNode);
+  }
+
+  return node;
+};
+
+const compareFileNodes = (
+  first: FileSystemNode,
+  second: FileSystemNode,
+  sortBy: NonNullable<FileSystemOptions['sortBy']>
+): number => {
+  if (first.isDirectory !== second.isDirectory) {
+    return first.isDirectory ? -1 : 1;
+  }
+
+  const comparisons: Record<NonNullable<FileSystemOptions['sortBy']>, () => number> = {
+    name: () => first.name.localeCompare(second.name, 'zh-CN', { numeric: true }),
+    size: () => (first.size || 0) - (second.size || 0),
+    lastModified: () => (first.lastModified?.getTime() || 0) - (second.lastModified?.getTime() || 0),
+    type: () => (first.extension || '').localeCompare(second.extension || '')
+  };
+
+  return comparisons[sortBy]();
+};
+
+const sortFileTree = (
+  nodes: FileSystemNode[],
+  sortBy: FileSystemOptions['sortBy'] = DEFAULT_SORT_BY,
+  sortOrder: FileSystemOptions['sortOrder'] = DEFAULT_SORT_ORDER
+): FileSystemNode[] => {
+  const direction = sortOrder === 'desc' ? -1 : 1;
+  const activeSort = sortBy ?? DEFAULT_SORT_BY;
+
+  return [...nodes]
+    .sort((first, second) => compareFileNodes(first, second, activeSort) * direction)
+    .map((node) => ({
+      ...node,
+      children: node.children ? sortFileTree(node.children, activeSort, sortOrder) : undefined
+    }));
+};
 
 class FileSystemService implements IFileSystemService {
   async loadFileTree(rootPath: string, options: FileSystemOptions = {}): Promise<FileSystemNode[]> {
     try {
-      const rawFileTree = await workspaceAPI.getFileTree(rootPath);
-      const fileTree = this.transformRawFileTree(rawFileTree);
-      return this.sortFileTree(fileTree, options.sortBy, options.sortOrder);
+      const rawTree = await workspaceAPI.getFileTree(rootPath);
+      return sortFileTree(rawTree.map(toFileNode), options.sortBy, options.sortOrder);
     } catch (error) {
       log.error('Failed to load file tree', { rootPath, error });
       throw new Error(`Failed to load file tree: ${error}`);
     }
   }
 
-  async searchFiles(_rootPath: string, _query: string): Promise<FileSystemNode[]> {
+  async searchFiles(rootPath: string, query: string): Promise<FileSystemNode[]> {
     try {
-      const results = await workspaceAPI.searchFilenamesOnly(_rootPath, _query);
+      const results = await workspaceAPI.searchFilenamesOnly(rootPath, query);
       return results.map((result) => ({
         path: result.path,
         name: result.name,
         isDirectory: result.isDirectory,
       }));
     } catch (error) {
-      log.error('Failed to search files', { rootPath: _rootPath, query: _query, error });
+      log.error('Failed to search files', { rootPath, query, error });
       throw new Error(`Failed to search files: ${error}`);
     }
   }
@@ -42,8 +135,7 @@ class FileSystemService implements IFileSystemService {
   async getDirectoryChildren(dirPath: string): Promise<FileSystemNode[]> {
     try {
       const rawChildren = await workspaceAPI.getDirectoryChildren(dirPath);
-      const children = rawChildren.map((node: any) => this.transformRawNode(node));
-      return this.sortFileTree(children);
+      return sortFileTree(rawChildren.map(toFileNode));
     } catch (error) {
       log.error('Failed to get directory children', { dirPath, error });
       throw new Error(`Failed to get directory contents: ${error}`);
@@ -51,22 +143,15 @@ class FileSystemService implements IFileSystemService {
   }
 
   async getDirectoryChildrenPaginated(
-    dirPath: string, 
-    offset: number = 0, 
-    limit: number = 100
-  ): Promise<{
-    children: FileSystemNode[];
-    total: number;
-    hasMore: boolean;
-    offset: number;
-    limit: number;
-  }> {
+    dirPath: string,
+    offset = 0,
+    limit = 100
+  ): Promise<DirectoryPage> {
     try {
       const result = await workspaceAPI.getDirectoryChildrenPaginated(dirPath, offset, limit);
-      const children = result.children.map((node: any) => this.transformRawNode(node));
-      
+
       return {
-        children: this.sortFileTree(children),
+        children: sortFileTree(result.children.map(toFileNode)),
         total: result.total,
         hasMore: result.hasMore,
         offset: result.offset,
@@ -81,76 +166,43 @@ class FileSystemService implements IFileSystemService {
   watchFileChanges(rootPath: string, callback: (event: FileSystemChangeEvent) => void): () => void {
     let unlisten: UnlistenFn | null = null;
     let isActive = true;
+    const normalizedRoot = normalizePathForWatch(rootPath);
 
-    // Normalize separators and trailing slash for robust cross-platform comparison.
-    // Case is preserved intentionally: paths are case-sensitive.
-    const normalizeForCompare = (p: string) =>
-      p.replace(/\\/g, '/').replace(/\/+$/, '');
+    const isRelevantEvent = (event: FileWatchEvent): boolean => {
+      const currentPath = normalizePathForWatch(event.path);
+      const previousPath = event.from ? normalizePathForWatch(event.from) : null;
 
-    const normalizedRoot = normalizeForCompare(rootPath);
-
-    const initWatcher = async () => {
-      try {
-        unlisten = await listen<FileWatchEvent[]>('file-system-changed', (event) => {
-          if (!isActive) return;
-
-          const events = event.payload;
-
-          const isUnderRoot = (absPath: string) =>
-            absPath === normalizedRoot || absPath.startsWith(`${normalizedRoot}/`);
-
-          events.forEach((fileEvent) => {
-            const normalizedEventPath = normalizeForCompare(fileEvent.path);
-            const normalizedFrom = fileEvent.from
-              ? normalizeForCompare(fileEvent.from)
-              : '';
-
-            const relevant =
-              isUnderRoot(normalizedEventPath) ||
-              (fileEvent.kind === 'rename' && normalizedFrom !== '' && isUnderRoot(normalizedFrom));
-
-            if (!relevant) {
-              return;
-            }
-
-            const fsEvent: FileSystemChangeEvent = {
-              type: this.mapEventKind(fileEvent.kind),
-              path: fileEvent.path,
-              oldPath: fileEvent.from,
-              timestamp: new Date(fileEvent.timestamp * 1000)
-            };
-
-            callback(fsEvent);
-          });
-        });
-      } catch (error) {
-        log.error('Failed to start file watcher', { rootPath, error });
-      }
+      return (
+        isPathWithinRoot(currentPath, normalizedRoot) ||
+        (event.kind === 'rename' && previousPath !== null && isPathWithinRoot(previousPath, normalizedRoot))
+      );
     };
 
-    initWatcher();
+    listen<FileWatchEvent[]>('file-system-changed', (event) => {
+      if (!isActive) {
+        return;
+      }
+
+      event.payload
+        .filter(isRelevantEvent)
+        .map(mapWatchEvent)
+        .forEach(callback);
+    })
+      .then((dispose) => {
+        if (isActive) {
+          unlisten = dispose;
+        } else {
+          dispose();
+        }
+      })
+      .catch((error) => {
+        log.error('Failed to start file watcher', { rootPath, error });
+      });
 
     return () => {
       isActive = false;
-      if (unlisten) {
-        unlisten();
-      }
+      unlisten?.();
     };
-  }
-
-  private mapEventKind(kind: string): FileSystemChangeEvent['type'] {
-    switch (kind) {
-      case 'create':
-        return 'created';
-      case 'modify':
-        return 'modified';
-      case 'remove':
-        return 'deleted';
-      case 'rename':
-        return 'renamed';
-      default:
-        return 'modified';
-    }
   }
 
   async getFileContent(filePath: string): Promise<string> {
@@ -167,71 +219,6 @@ class FileSystemService implements IFileSystemService {
       size: 0,
       lastModified: new Date()
     };
-  }
-
-  private transformRawFileTree(rawNodes: any[]): FileSystemNode[] {
-    return rawNodes.map(node => this.transformRawNode(node));
-  }
-
-  private transformRawNode(rawNode: any): FileSystemNode {
-    const node: FileSystemNode = {
-      path: rawNode.path,
-      name: rawNode.name,
-      isDirectory: rawNode.isDirectory,
-      size: rawNode.size,
-      extension: rawNode.extension,
-      lastModified: rawNode.lastModified ? new Date(rawNode.lastModified) : undefined
-    };
-
-    if (rawNode.children && Array.isArray(rawNode.children)) {
-      node.children = rawNode.children.map((child: any) => this.transformRawNode(child));
-    }
-
-    return node;
-  }
-
-  private sortFileTree(
-    nodes: FileSystemNode[], 
-    sortBy: FileSystemOptions['sortBy'] = 'name',
-    sortOrder: FileSystemOptions['sortOrder'] = 'asc'
-  ): FileSystemNode[] {
-    const sortedNodes = [...nodes].sort((a, b) => {
-      if (a.isDirectory && !b.isDirectory) return -1;
-      if (!a.isDirectory && b.isDirectory) return 1;
-
-      let comparison = 0;
-
-      switch (sortBy) {
-        case 'name':
-          comparison = a.name.localeCompare(b.name, 'zh-CN', { numeric: true });
-          break;
-        case 'size': {
-          comparison = (a.size || 0) - (b.size || 0);
-          break;
-        }
-        case 'lastModified': {
-          const aTime = a.lastModified?.getTime() || 0;
-          const bTime = b.lastModified?.getTime() || 0;
-          comparison = aTime - bTime;
-          break;
-        }
-        case 'type': {
-          const aExt = a.extension || '';
-          const bExt = b.extension || '';
-          comparison = aExt.localeCompare(bExt);
-          break;
-        }
-        default:
-          comparison = a.name.localeCompare(b.name, 'zh-CN', { numeric: true });
-      }
-
-      return sortOrder === 'desc' ? -comparison : comparison;
-    });
-
-    return sortedNodes.map(node => ({
-      ...node,
-      children: node.children ? this.sortFileTree(node.children, sortBy, sortOrder) : undefined
-    }));
   }
 }
 
