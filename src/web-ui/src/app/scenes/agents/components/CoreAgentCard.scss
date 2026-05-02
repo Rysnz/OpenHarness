@@ -1,9 +1,33 @@
 @use '../../../../component-library/styles/tokens' as *;
 
+$core-card-width: 360px;
+$core-card-height: 200px;
+$core-card-radius: 15px;
+$core-card-overlay-bottom: 40px;
+$core-card-icon-size: 40px;
+$core-card-icon-radius: 10px;
+$core-card-stagger: calc(var(--card-index, 0) * 60ms);
+
+@mixin core-inline-row {
+  display: inline-flex;
+  align-items: center;
+}
+
+@mixin core-flex-row {
+  display: flex;
+  align-items: center;
+}
+
+@mixin core-ellipsis {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .core-agent-card {
-  width: 360px;
-  height: 200px;
-  border-radius: 15px;
+  width: $core-card-width;
+  height: $core-card-height;
+  border-radius: $core-card-radius;
   background: var(--element-bg-soft);
   display: flex;
   flex-direction: column;
@@ -11,7 +35,7 @@
   overflow: hidden;
   cursor: pointer;
   animation: core-card-in 0.28s $easing-decelerate both;
-  animation-delay: calc(var(--card-index, 0) * 60ms);
+  animation-delay: $core-card-stagger;
   transition:
     transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1),
     box-shadow 0.35s ease;
@@ -23,7 +47,7 @@
     top: 0;
     left: 0;
     right: 0;
-    bottom: 40px;
+    bottom: $core-card-overlay-bottom;
     background: var(--core-card-gradient);
     opacity: 0;
     transition: opacity 0.35s ease;
@@ -56,8 +80,8 @@
   // ── Header ────────────────────────────────────────────────────────
 
   &__top {
-    display: flex;
-    align-items: center;
+    @include core-flex-row;
+
     gap: $size-gap-3;
     padding: $size-gap-3;
     padding-bottom: 0;
@@ -67,13 +91,12 @@
 
   &__icon-wrap {
     flex-shrink: 0;
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
+    width: $core-card-icon-size;
+    height: $core-card-icon-size;
+    border-radius: $core-card-icon-radius;
     background: rgba(255, 255, 255, 0.12);
     backdrop-filter: blur(8px);
-    display: flex;
-    align-items: center;
+    @include core-flex-row;
     justify-content: center;
     color: var(--core-accent, var(--color-accent-500));
     transition: transform $motion-fast $easing-decelerate;
@@ -93,14 +116,12 @@
     font-weight: 900;
     color: var(--color-text-primary);
     line-height: $line-height-base;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    @include core-ellipsis;
   }
 
   &__role {
-    display: inline-flex;
-    align-items: center;
+    @include core-inline-row;
+
     gap: 4px;
     font-size: var(--font-size-xs);
     font-weight: $font-weight-medium;
@@ -138,7 +159,7 @@
     justify-content: space-between;
     gap: $size-gap-2;
     padding: $size-gap-2 $size-gap-3;
-    border-radius: 0 0 15px 15px;
+    border-radius: 0 0 $core-card-radius $core-card-radius;
     overflow: hidden;
     position: relative;
     z-index: 1;
@@ -163,8 +184,8 @@
   }
 
   &__tag {
-    display: inline-flex;
-    align-items: center;
+    @include core-inline-row;
+
     gap: 5px;
     font-size: 10px;
     color: var(--color-text-muted);
@@ -179,16 +200,16 @@
   }
 
   &__meta {
-    display: inline-flex;
-    align-items: center;
+    @include core-inline-row;
+
     gap: $size-gap-2;
     position: relative;
     z-index: 1;
   }
 
   &__meta-item {
-    display: inline-flex;
-    align-items: center;
+    @include core-inline-row;
+
     gap: 3px;
     font-size: 10px;
     color: var(--color-text-muted);
@@ -199,7 +220,7 @@
 
 .core-agents-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax($core-card-width, 1fr));
   gap: $size-gap-2;
   width: 100%;
 }
@@ -229,7 +250,7 @@
 
 @media (max-width: 1080px) {
   .core-agents-grid {
-    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax($core-card-width, 1fr));
   }
 }
 

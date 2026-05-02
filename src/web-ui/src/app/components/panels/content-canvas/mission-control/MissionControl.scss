@@ -3,6 +3,37 @@
  * Mission control overlay in the right panel area.
  */
 
+$mission-header-height: 36px;
+$mission-edge-pad: 16px;
+$mission-gap: 8px;
+$mission-control-size: 22px;
+$mission-filter-size: 28px;
+$mission-grid-min: 200px;
+$mission-scrollbar-width: 6px;
+
+@mixin mission-row($justify: null) {
+  display: flex;
+  align-items: center;
+
+  @if $justify != null {
+    justify-content: $justify;
+  }
+}
+
+@mixin mission-button-frame($size: null) {
+  @include mission-row(center);
+
+  @if $size != null {
+    width: $size;
+    height: $size;
+  }
+
+  padding: 0;
+  cursor: pointer;
+  border-radius: 3px;
+  transition: all 0.15s ease;
+}
+
 .canvas-mission-control {
   position: absolute;
   inset: 0;
@@ -29,11 +60,10 @@
 
   // Header - match TabBar height (36px)
   &__header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    height: 36px;
-    padding: 0 16px;
+    @include mission-row(space-between);
+
+    height: $mission-header-height;
+    padding: 0 $mission-edge-pad;
     flex-shrink: 0;
     border-bottom: 1px dashed var(--border-base);
   }
@@ -46,25 +76,22 @@
   }
 
   &__header-actions {
-    display: flex;
-    align-items: center;
-    gap: 8px;
+    @include mission-row;
+
+    gap: $mission-gap;
   }
 
   &__merge-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    @include mission-button-frame;
+
     gap: 4px;
-    height: 22px;
+    height: $mission-control-size;
     padding: 0 8px;
     background: var(--element-bg-soft, var(--color-bg-secondary));
     border: 1px solid var(--border-base);
     color: var(--color-text-secondary);
-    cursor: pointer;
     border-radius: 3px;
     font-size: 11px;
-    transition: all 0.15s ease;
 
     &:hover {
       background: var(--element-bg-base, var(--element-bg-medium));
@@ -82,18 +109,11 @@
   }
 
   &__close-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 22px;
-    height: 22px;
-    padding: 0;
+    @include mission-button-frame($mission-control-size);
+
     background: none;
     border: none;
     color: var(--color-text-tertiary);
-    cursor: pointer;
-    border-radius: 3px;
-    transition: all 0.15s ease;
 
     &:hover {
       background: var(--element-bg-soft, var(--element-bg-base));
@@ -103,15 +123,15 @@
 
   // Search and filter area
   &__filters {
-    padding: 8px 16px;
+    padding: $mission-gap $mission-edge-pad;
     flex-shrink: 0;
     border-bottom: 1px dashed var(--border-base);
   }
 
   &__filters-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
+    @include mission-row;
+
+    gap: $mission-gap;
   }
 
   &__search-wrapper {
@@ -121,8 +141,8 @@
 
   // Group filters - compact icon buttons
   &__group-filters {
-    display: flex;
-    align-items: center;
+    @include mission-row;
+
     gap: 4px;
     flex-shrink: 0;
     padding: 2px;
@@ -133,20 +153,13 @@
 
   &__group-filter {
     position: relative;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    padding: 0;
+    @include mission-button-frame($mission-filter-size);
+
     background: transparent;
     border: none;
     color: var(--color-text-tertiary);
-    cursor: pointer;
-    border-radius: 3px;
     font-size: 11px;
     font-weight: 500;
-    transition: all 0.15s ease;
 
     &:hover {
       background: var(--element-bg-soft, var(--element-bg-base));
@@ -186,14 +199,14 @@
   &__grid {
     flex: 1;
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax($mission-grid-min, 1fr));
     gap: 10px;
-    padding: 8px 16px 16px;
+    padding: $mission-gap $mission-edge-pad $mission-edge-pad;
     overflow-y: auto;
     align-content: start;
     
     &::-webkit-scrollbar {
-      width: 6px;
+      width: $mission-scrollbar-width;
     }
 
     &::-webkit-scrollbar-track {
@@ -213,10 +226,9 @@
   // Empty state
   &__empty {
     grid-column: 1 / -1;
-    display: flex;
+    @include mission-row(center);
+
     flex-direction: column;
-    align-items: center;
-    justify-content: center;
     padding: 40px 30px;
     color: var(--color-text-tertiary);
     font-size: 12px;
@@ -226,9 +238,8 @@
 
   // Footer hint
   &__footer {
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    @include mission-row(center);
+
     gap: 12px;
     padding: 6px 16px;
     font-size: 10px;
@@ -237,9 +248,9 @@
     flex-shrink: 0;
 
     kbd {
+      @include mission-row(center);
+
       display: inline-flex;
-      align-items: center;
-      justify-content: center;
       min-width: 16px;
       height: 14px;
       padding: 0 4px;
