@@ -48,6 +48,8 @@ const iconMap: Record<ConfirmDialogType, React.ReactNode> = {
   success: <CheckCircle size={24} />,
 };
 
+const CONFIRM_FOCUS_DELAY_MS = 100;
+
 export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   isOpen,
   onClose,
@@ -66,18 +68,18 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   const { t } = useI18n('components');
   const titleId = useId();
   const hasMessage = message !== null && message !== undefined && message !== '';
-  
-  // Resolve i18n default values
   const resolvedConfirmText = confirmText ?? t('dialog.confirm.ok');
   const resolvedCancelText = cancelText ?? t('dialog.confirm.cancel');
-  
+  const titleClassName = `confirm-dialog__title${hasMessage ? '' : ' confirm-dialog__title--compact'}`;
+  const confirmVariant = confirmDanger ? 'danger' : 'primary';
+  const previewStyle = { maxHeight: previewMaxHeight };
   const confirmButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (isOpen) {
       setTimeout(() => {
         confirmButtonRef.current?.focus();
-      }, 100);
+      }, CONFIRM_FOCUS_DELAY_MS);
     }
   }, [isOpen]);
 
@@ -105,7 +107,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
 
         <div className="confirm-dialog__content">
           <h3
-            className={`confirm-dialog__title${hasMessage ? '' : ' confirm-dialog__title--compact'}`}
+            className={titleClassName}
             id={titleId}
           >
             {title}
@@ -119,7 +121,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
           {preview && (
             <div
               className="confirm-dialog__preview"
-              style={{ maxHeight: previewMaxHeight }}
+              style={previewStyle}
             >
               <pre>{preview}</pre>
             </div>
@@ -138,7 +140,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
           )}
           <Button
             ref={confirmButtonRef}
-            variant={confirmDanger ? 'danger' : 'primary'}
+            variant={confirmVariant}
             size="medium"
             onClick={handleConfirm}
           >
