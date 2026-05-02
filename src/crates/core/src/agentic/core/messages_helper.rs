@@ -4,6 +4,23 @@ use log::warn;
 pub struct MessageHelper;
 
 impl MessageHelper {
+    fn set_keep_thinking(message: &mut Message, keep_thinking: bool) {
+        if message.metadata.keep_thinking != keep_thinking {
+            message.metadata.keep_thinking = keep_thinking;
+            message.metadata.tokens = None;
+        }
+    }
+
+    fn apply_keep_thinking(messages: &mut [Message], keep_thinking: bool) {
+        messages
+            .iter_mut()
+            .for_each(|message| Self::set_keep_thinking(message, keep_thinking));
+    }
+
+    fn last_user_turn_start(messages: &[Message]) -> Option<usize> {
+        messages.iter().rposition(|m| m.is_actual_user_message())
+    }
+
     pub fn compute_keep_thinking_flags(
         messages: &mut [Message],
         enable_thinking: bool,
@@ -13,19 +30,9 @@ impl MessageHelper {
             return;
         }
         if !enable_thinking {
-            messages.iter_mut().for_each(|m| {
-                if m.metadata.keep_thinking {
-                    m.metadata.keep_thinking = false;
-                    m.metadata.tokens = None;
-                }
-            });
+            Self::apply_keep_thinking(messages, false);
         } else if support_preserved_thinking {
-            messages.iter_mut().for_each(|m| {
-                if !m.metadata.keep_thinking {
-                    m.metadata.keep_thinking = true;
-                    m.metadata.tokens = None;
-                }
-            });
+            Self::apply_keep_thinking(messages, true);
         } else {
             let last_message_turn_id = messages.last().and_then(|m| m.metadata.turn_id.clone());
             if let Some(last_turn_id) = last_message_turn_id {
@@ -35,34 +42,19 @@ impl MessageHelper {
                         .turn_id
                         .as_ref()
                         .is_some_and(|cur_turn_id| cur_turn_id == &last_turn_id);
-                    if m.metadata.keep_thinking != keep_thinking {
-                        m.metadata.keep_thinking = keep_thinking;
-                        m.metadata.tokens = None;
-                    }
+                    Self::set_keep_thinking(m, keep_thinking);
                 })
             } else {
                 // Find the last actual user-turn boundary from back to front.
-                let last_user_message_index =
-                    messages.iter().rposition(|m| m.is_actual_user_message());
-                if let Some(last_user_message_index) = last_user_message_index {
+                if let Some(last_user_message_index) = Self::last_user_turn_start(messages) {
                     // Messages from the last user message onwards are messages for this turn
                     messages.iter_mut().enumerate().for_each(|(index, m)| {
-                        let keep_thinking = index >= last_user_message_index;
-                        if m.metadata.keep_thinking != keep_thinking {
-                            m.metadata.keep_thinking = keep_thinking;
-                            m.metadata.tokens = None;
-                        }
+                        Self::set_keep_thinking(m, index >= last_user_message_index);
                     })
                 } else {
                     // No user message found, should not reach here in practice
                     warn!("compute_keep_thinking_flags: no user message found");
-
-                    messages.iter_mut().for_each(|m| {
-                        if m.metadata.keep_thinking {
-                            m.metadata.keep_thinking = false;
-                            m.metadata.tokens = None;
-                        }
-                    });
+                    Self::apply_keep_thinking(messages, false);
                 }
             }
         }
@@ -73,10 +65,11 @@ impl MessageHelper {
     }
 
     pub fn group_messages_by_turns(mut messages: Vec<Message>) -> Vec<Vec<Message>> {
-        let mut turns = Vec::new();
         if messages.is_empty() {
-            return turns;
+            return Vec::new();
         }
+
+        let mut turns = Vec::new();
         let mut turn = Vec::new();
         // Regardless of whether the first message is a user message, treat it as the start of a turn
         let remaining_messages = messages.split_off(1);
@@ -93,18 +86,17 @@ impl MessageHelper {
         turns
     }
 
-    /// Split messages at a middle assistant, return two message lists
-    /// If cannot split at assistant, split at middle message
-    pub fn split_messages_in_middle(
-        mut messages: Vec<Message>,
-    ) -> Option<(Vec<Message>, Vec<Message>)> {
-        let messages_tokens: Vec<usize> = messages.iter_mut().map(|m| m.get_tokens()).collect();
-        let total_tokens = messages_tokens.iter().sum::<usize>();
+    fn select_middle_split_index(
+        messages: &[Message],
+        messages_tokens: &[usize],
+        total_tokens: usize,
+    ) -> Option<usize> {
         let half_tokens = total_tokens / 2;
         let mut sum = 0usize;
         let mut mid_assistant_msg_idx = None;
         let mut mid_idx = None;
         let (mut min_delta0, mut min_delta1) = (total_tokens, total_tokens);
+
         for (idx, (message, tokens)) in messages.iter().zip(messages_tokens.iter()).enumerate() {
             let delta = sum.abs_diff(half_tokens);
             if delta < min_delta1 {
@@ -117,21 +109,49 @@ impl MessageHelper {
                 mid_assistant_msg_idx = Some(idx);
             }
 
-            // Delta will only get larger going forward, so can exit early
             if sum > half_tokens && mid_assistant_msg_idx.is_some() && mid_idx.is_some() {
                 break;
             }
 
-            // Accumulate current message's token count
             sum += tokens;
         }
-        let split_at = mid_assistant_msg_idx.or(mid_idx);
-        if let Some(split_at) = split_at {
-            let remaining_messages = messages.split_off(split_at);
-            Some((messages, remaining_messages))
-        } else {
-            None
-        }
+
+        mid_assistant_msg_idx.or(mid_idx)
+    }
+
+    /// Split messages at a middle assistant, return two message lists
+    /// If cannot split at assistant, split at middle message
+    pub fn split_messages_in_middle(
+        mut messages: Vec<Message>,
+    ) -> Option<(Vec<Message>, Vec<Message>)> {
+        let messages_tokens: Vec<usize> = messages.iter_mut().map(|m| m.get_tokens()).collect();
+        let total_tokens = messages_tokens.iter().sum::<usize>();
+        let split_at = Self::select_middle_split_index(&messages, &messages_tokens, total_tokens)?;
+        let remaining_messages = messages.split_off(split_at);
+        Some((messages, remaining_messages))
+    }
+
+    fn compressed_todo_item(todo: &serde_json::Value) -> Option<CompressedTodoItem> {
+        let todo_object = todo.as_object()?;
+        let content = todo_object
+            .get("content")
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|content| !content.is_empty())?;
+        let status = todo_object
+            .get("status")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("pending");
+        let id = todo_object
+            .get("id")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string);
+
+        Some(CompressedTodoItem {
+            id,
+            content: content.to_string(),
+            status: status.to_string(),
+        })
     }
 
     pub fn get_last_todo_snapshot(messages: &[Message]) -> Option<CompressedTodoSnapshot> {
@@ -149,36 +169,10 @@ impl MessageHelper {
                     }
 
                     let todos = tool_call.arguments.get("todos")?.as_array()?;
-                    let mut compressed_todos = Vec::new();
-
-                    for todo in todos {
-                        let Some(todo_object) = todo.as_object() else {
-                            continue;
-                        };
-                        let Some(content) = todo_object
-                            .get("content")
-                            .and_then(serde_json::Value::as_str)
-                            .map(str::trim)
-                            .filter(|content| !content.is_empty())
-                        else {
-                            continue;
-                        };
-
-                        let status = todo_object
-                            .get("status")
-                            .and_then(serde_json::Value::as_str)
-                            .unwrap_or("pending");
-                        let id = todo_object
-                            .get("id")
-                            .and_then(serde_json::Value::as_str)
-                            .map(str::to_string);
-
-                        compressed_todos.push(CompressedTodoItem {
-                            id,
-                            content: content.to_string(),
-                            status: status.to_string(),
-                        });
-                    }
+                    let compressed_todos = todos
+                        .iter()
+                        .filter_map(Self::compressed_todo_item)
+                        .collect::<Vec<_>>();
 
                     if compressed_todos.is_empty() {
                         continue;
