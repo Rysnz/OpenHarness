@@ -48,13 +48,20 @@ export const MermaidEditorHeader: React.FC<MermaidEditorHeaderProps> = ({
   onToggleEditMode,
 }) => {
   const { t } = useI18n('mermaid-editor');
+  const showFixAction = (hasError || isFixing) && onFixError;
+  const showZoomControls = onZoomIn || onZoomOut || onResetView;
+  const editModeButtonClass = `edit-mode-btn ${isEditMode ? 'active' : ''}`;
+  const saveButtonClass = `save-btn ${isDirty ? 'dirty' : ''}`;
+  const fixTooltip = isFixing
+    ? `${t('header.fixing')} (${fixProgress.current}/${fixProgress.total})`
+    : t('header.oneClickFix');
   
   return (
     <div className="mermaid-editor-header">
       <div className="header-left">
         {onToggleEditMode && (
           <IconButton
-            className={`edit-mode-btn ${isEditMode ? 'active' : ''}`}
+            className={editModeButtonClass}
             onClick={onToggleEditMode}
             tooltip={isEditMode ? t('header.exitEditMode') : t('header.enterEditMode')}
             tooltipPlacement="bottom"
@@ -83,11 +90,11 @@ export const MermaidEditorHeader: React.FC<MermaidEditorHeaderProps> = ({
 
       <div className="header-right">
         <div className="action-controls">
-          {(hasError || isFixing) && onFixError && (
+          {showFixAction && (
             <IconButton
               onClick={onFixError}
               disabled={isFixing}
-              tooltip={isFixing ? `${t('header.fixing')} (${fixProgress.current}/${fixProgress.total})` : t('header.oneClickFix')}
+              tooltip={fixTooltip}
               tooltipPlacement="bottom"
               size="small"
             >
@@ -106,7 +113,7 @@ export const MermaidEditorHeader: React.FC<MermaidEditorHeaderProps> = ({
             </IconButton>
           )}
 
-          {(onZoomIn || onZoomOut || onResetView) && (
+          {showZoomControls && (
             <div className="zoom-controls-header">
               {onZoomOut && (
                 <IconButton
@@ -149,7 +156,7 @@ export const MermaidEditorHeader: React.FC<MermaidEditorHeaderProps> = ({
           )}
 
           <IconButton
-            className={`save-btn ${isDirty ? 'dirty' : ''}`}
+            className={saveButtonClass}
             onClick={onSave}
             disabled={!isDirty}
             tooltip={isDirty ? t('header.save') : t('header.noChanges')}
