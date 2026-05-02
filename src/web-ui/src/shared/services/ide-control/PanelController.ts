@@ -15,110 +15,108 @@ import {
 import { createLogger } from '@/shared/utils/logger';
 
 const log = createLogger('PanelController');
+const PANEL_EXPAND_DELAY_MS = 300;
+const PANEL_FOCUS_DELAY_MS = 100;
+
+type TabDetail = {
+  type: PanelType;
+  title: string;
+  data: Record<string, any>;
+  metadata: {
+    duplicateCheckKey: string;
+  };
+  checkDuplicate: boolean;
+  replaceExisting: boolean;
+  duplicateCheckKey: string;
+};
+
+type PanelEventName = 'agent-create-tab' | 'project-create-tab' | 'git-create-tab';
+
+const modeEventNames: Record<NonNullable<IdeControlOptions['mode']>, PanelEventName> = {
+  agent: 'agent-create-tab',
+  project: 'project-create-tab',
+  git: 'git-create-tab',
+};
+
+function dispatchIdeEvent(eventName: string, detail?: unknown): void {
+  window.dispatchEvent(new CustomEvent(eventName, detail === undefined ? undefined : { detail }));
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
  
 export class PanelController implements IdeController {
-   
   async execute(
     target: IdeControlEvent['target'],
     options?: IdeControlOptions,
     metadata?: IdeControlEvent['metadata']
   ): Promise<void> {
     const panelType = target.type as PanelType;
-    const config = target.config || {};
-    const position = target.position || 'right';
-
-    
-    const openConfig: PanelOpenConfig = {
+    await this.openPanel({
       panelType,
-      position,
-      config,
+      position: target.position || 'right',
+      config: target.config || {},
       options,
-    };
+    });
 
-    
-    await this.openPanel(openConfig);
-
-    
     if (metadata?.request_id) {
       this.sendExecutionResult(metadata.request_id, true, `Panel ${panelType} opened successfully`);
     }
   }
 
-   
   async openPanel(config: PanelOpenConfig): Promise<void> {
     const { panelType, position, config: panelConfig, options } = config;
-
-    
-    const mode = options?.mode || 'agent';
-    const eventName =
-      mode === 'project' ? 'project-create-tab' : mode === 'git' ? 'git-create-tab' : 'agent-create-tab';
-
-    
+    const eventName = this.resolveCreateEvent(options?.mode);
     const tabDetail = this.buildTabDetail(panelType, panelConfig || {}, options);
 
-    
     if (position === 'right' && options?.expand_panel !== false) {
-      window.dispatchEvent(new CustomEvent('expand-right-panel'));
-      
-      
+      dispatchIdeEvent('expand-right-panel');
       await this.waitForPanelExpansion();
     }
 
-    
-    window.dispatchEvent(
-      new CustomEvent(eventName, {
-        detail: tabDetail,
-      })
-    );
+    dispatchIdeEvent(eventName, tabDetail);
 
-    
     if (options?.auto_focus !== false) {
-      
-      setTimeout(() => {
-        this.focusPanel(panelType);
-      }, 100);
+      setTimeout(() => this.focusPanel(panelType), PANEL_FOCUS_DELAY_MS);
     }
   }
 
-   
   async closePanel(panelType: PanelType): Promise<void> {
-    
-    window.dispatchEvent(
-      new CustomEvent('ide-close-panel', {
-        detail: { panelType },
-      })
-    );
+    dispatchIdeEvent('ide-close-panel', { panelType });
   }
 
-   
   async togglePanel(panelType: PanelType): Promise<void> {
-    
-    window.dispatchEvent(
-      new CustomEvent('ide-toggle-panel', {
-        detail: { panelType },
-      })
-    );
+    dispatchIdeEvent('ide-toggle-panel', { panelType });
   }
 
-   
   focusPanel(panelType: PanelType): void {
-    
-    window.dispatchEvent(
-      new CustomEvent('ide-focus-panel', {
-        detail: { panelType },
-      })
-    );
+    dispatchIdeEvent('ide-focus-panel', { panelType });
   }
 
-   
+  private resolveCreateEvent(mode: IdeControlOptions['mode'] = 'agent'): PanelEventName {
+    return modeEventNames[mode];
+  }
+
   private buildTabDetail(
     panelType: PanelType,
     config: PanelConfig,
     options?: IdeControlOptions
-  ): any {
+  ): TabDetail {
+    const baseDetail = this.createBaseTabDetail(panelType, config, options);
+
+    return this.applyPanelSpecificConfig(baseDetail, panelType, config);
+  }
+
+  private createBaseTabDetail(
+    panelType: PanelType,
+    config: PanelConfig,
+    options?: IdeControlOptions
+  ): TabDetail {
     const duplicateCheckKey = this.getDuplicateCheckKey(panelType, config);
-    const baseDetail = {
+
+    return {
       type: panelType,
       title: this.getPanelTitle(panelType, config),
       data: config.data || {},
@@ -127,10 +125,11 @@ export class PanelController implements IdeController {
       },
       checkDuplicate: options?.check_duplicate ?? true,
       replaceExisting: options?.replace_existing ?? false,
-      duplicateCheckKey, 
+      duplicateCheckKey,
     };
+  }
 
-    
+  private applyPanelSpecificConfig(baseDetail: TabDetail, panelType: PanelType, config: PanelConfig): TabDetail {
     switch (panelType) {
       case 'git-diff':
         return {
@@ -142,26 +141,13 @@ export class PanelController implements IdeController {
           },
         };
 
-      case 'git-settings':
-        return {
-          ...baseDetail,
-          title: i18nService.getT()('common:tabs.gitSettings'),
-        };
-
-      case 'planner':
-        return {
-          ...baseDetail,
-          title: i18nService.getT()('common:tabs.taskPlanner'),
-        };
-
       case 'mermaid-editor':
         return {
           ...baseDetail,
           title: config.title || i18nService.getT()('common:tabs.mermaidChart'),
           data: {
-            
             mermaid_code: config.mermaid_code,
-            sourceCode: config.mermaid_code || config.sourceCode, 
+            sourceCode: config.mermaid_code || config.sourceCode,
             mode: config.mode || 'interactive',
             session_id: config.session_id,
             allow_mode_switch: config.allow_mode_switch !== false,
@@ -188,9 +174,9 @@ export class PanelController implements IdeController {
     }
   }
 
-   
   private getPanelTitle(panelType: PanelType, config: PanelConfig): string {
     const t = i18nService.getT();
+
     switch (panelType) {
       case 'git-settings':
         return t('common:tabs.gitSettings');
@@ -211,36 +197,30 @@ export class PanelController implements IdeController {
     }
   }
 
-   
   private getDuplicateCheckKey(panelType: PanelType, config: PanelConfig): string {
+    const timestampedKey = () => `${panelType}-${Date.now()}`;
+
     switch (panelType) {
       case 'git-diff':
         return config.file_path ? `git-diff-${config.file_path}` : 'git-diff';
       case 'code-editor':
       case 'markdown-editor':
-        return config.file_path ? config.file_path : `${panelType}-${Date.now()}`;
+        return config.file_path || timestampedKey();
       case 'mermaid-editor':
         return config.session_id ? `mermaid-${config.session_id}` : `mermaid-${Date.now()}`;
       case 'planner':
       case 'git-settings':
-        
         return panelType;
       default:
-        return `${panelType}-${Date.now()}`;
+        return timestampedKey();
     }
   }
 
-   
   private async waitForPanelExpansion(): Promise<void> {
-    return new Promise((resolve) => {
-      
-      setTimeout(resolve, 300);
-    });
+    return delay(PANEL_EXPAND_DELAY_MS);
   }
 
-   
   private sendExecutionResult(requestId: string, success: boolean, message: string): void {
-    
     import('@tauri-apps/api/core').then(({ invoke }) => {
       invoke('report_ide_control_result', {
         request_id: requestId,
