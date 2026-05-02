@@ -15,6 +15,39 @@ interface Props {
 
 const RING_FRACTIONS = [0.25, 0.5, 0.75, 1.0];
 
+type Point = { x: number; y: number };
+type TextAnchor = 'middle' | 'start' | 'end';
+
+function clampRadarValue(value: number): number {
+  return Math.min(1, Math.max(0, value / 10));
+}
+
+function polarPoint(cx: number, cy: number, angle: number, radius: number): Point {
+  return {
+    x: cx + radius * Math.cos(angle),
+    y: cy + radius * Math.sin(angle),
+  };
+}
+
+function polygonPath(points: Point[]): string {
+  return points
+    .map((point, index) => `${index === 0 ? 'M' : 'L'}${point.x.toFixed(2)},${point.y.toFixed(2)}`)
+    .join(' ') + ' Z';
+}
+
+function labelAnchorForAngle(angle: number): TextAnchor {
+  const cosA = Math.cos(angle);
+  if (cosA > 0.15) return 'start';
+  if (cosA < -0.15) return 'end';
+  return 'middle';
+}
+
+function labelHitRectX(x: number, anchor: TextAnchor): number {
+  if (anchor === 'start') return x - 2;
+  if (anchor === 'end') return x - 44;
+  return x - 23;
+}
+
 export const PersonaRadar: React.FC<Props> = ({ dims, size = 148, onDimClick, onChartClick }) => {
   const n = dims.length;
   const cx = size / 2;
@@ -27,43 +60,21 @@ export const PersonaRadar: React.FC<Props> = ({ dims, size = 148, onDimClick, on
     [n],
   );
 
-  const pt = (angle: number, radius: number) => ({
-    x: cx + radius * Math.cos(angle),
-    y: cy + radius * Math.sin(angle),
-  });
+  const pt = (angle: number, radius: number) => polarPoint(cx, cy, angle, radius);
 
-  const ringPaths = RING_FRACTIONS.map(frac =>
-    angles
-      .map((a, i) => {
-        const p = pt(a, r * frac);
-        return `${i === 0 ? 'M' : 'L'}${p.x.toFixed(2)},${p.y.toFixed(2)}`;
-      })
-      .join(' ') + ' Z',
+  const ringPaths = RING_FRACTIONS.map((frac) =>
+    polygonPath(angles.map((angle) => pt(angle, r * frac))),
   );
 
-  const scorePath =
-    angles
-      .map((a, i) => {
-        const norm = Math.min(1, Math.max(0, dims[i].value / 10));
-        const p = pt(a, r * norm);
-        return `${i === 0 ? 'M' : 'L'}${p.x.toFixed(2)},${p.y.toFixed(2)}`;
-      })
-      .join(' ') + ' Z';
+  const dots = angles.map((angle, index) => pt(angle, r * clampRadarValue(dims[index].value)));
+  const scorePath = polygonPath(dots);
 
-  const dots = angles.map((a, i) => {
-    const norm = Math.min(1, Math.max(0, dims[i].value / 10));
-    return pt(a, r * norm);
-  });
-
-  const vertices = angles.map(a => pt(a, r));
+  const vertices = angles.map((angle) => pt(angle, r));
 
   // Label hit areas: centered rect behind each label
   const labelPositions = angles.map((a, i) => {
     const lp = pt(a, labelR);
-    const cosA = Math.cos(a);
-    let anchor: 'middle' | 'start' | 'end' = 'middle';
-    if (cosA > 0.15) anchor = 'start';
-    else if (cosA < -0.15) anchor = 'end';
+    const anchor = labelAnchorForAngle(a);
     return { ...lp, anchor, label: dims[i].label };
   });
 
@@ -133,7 +144,7 @@ export const PersonaRadar: React.FC<Props> = ({ dims, size = 148, onDimClick, on
           <g key={`label-${i}`}>
             {hasClick && (
               <rect
-                x={lp.anchor === 'start' ? lp.x - 2 : lp.anchor === 'end' ? lp.x - 44 : lp.x - 23}
+                x={labelHitRectX(lp.x, lp.anchor)}
                 y={lp.y - 7}
                 width={46}
                 height={14}
