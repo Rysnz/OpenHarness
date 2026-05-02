@@ -35,9 +35,33 @@ export interface AgenticEventCallbacks {
   onSessionTitleGenerated?: (event: SessionTitleGeneratedEvent) => void;
 }
 
+type ListenerSpec<Event> = {
+  callback?: (event: Event) => void;
+  subscribe: (callback: (event: Event) => void) => UnlistenFn;
+  debugMessage?: string;
+  errorMessage?: string;
+};
+
 export class AgenticEventListener {
   private unlistenFunctions: UnlistenFn[] = [];
   private isListening = false;
+
+  private addListener<Event>(spec: ListenerSpec<Event>): void {
+    if (!spec.callback) {
+      return;
+    }
+
+    const unlisten = spec.subscribe((event) => {
+      if (spec.errorMessage) {
+        logger.error(spec.errorMessage, event);
+      } else if (spec.debugMessage) {
+        logger.debug(spec.debugMessage, event);
+      }
+      spec.callback?.(event);
+    });
+
+    this.unlistenFunctions.push(unlisten);
+  }
 
   async startListening(callbacks: AgenticEventCallbacks): Promise<void> {
     if (this.isListening) {
@@ -48,139 +72,23 @@ export class AgenticEventListener {
     logger.info('Starting Agentic event listener');
 
     try {
-      if (callbacks.onSessionCreated) {
-        const unlisten = agentAPI.onSessionCreated((event) => {
-          logger.debug('Session created:', event);
-          callbacks.onSessionCreated?.(event);
-        });
-        this.unlistenFunctions.push(unlisten);
-      }
-
-      if (callbacks.onSessionDeleted) {
-        const unlisten = agentAPI.onSessionDeleted((event) => {
-          logger.debug('Session deleted:', event);
-          callbacks.onSessionDeleted?.(event);
-        });
-        this.unlistenFunctions.push(unlisten);
-      }
-
-      if (callbacks.onSessionStateChanged) {
-        const unlisten = agentAPI.onSessionStateChanged((event) => {
-          logger.debug('Session state changed:', event);
-          callbacks.onSessionStateChanged?.(event);
-        });
-        this.unlistenFunctions.push(unlisten);
-      }
-
-      if (callbacks.onImageAnalysisStarted) {
-        const unlisten = agentAPI.onImageAnalysisStarted((event) => {
-          logger.debug('Image analysis started:', event);
-          callbacks.onImageAnalysisStarted?.(event);
-        });
-        this.unlistenFunctions.push(unlisten);
-      }
-
-      if (callbacks.onImageAnalysisCompleted) {
-        const unlisten = agentAPI.onImageAnalysisCompleted((event) => {
-          logger.debug('Image analysis completed:', event);
-          callbacks.onImageAnalysisCompleted?.(event);
-        });
-        this.unlistenFunctions.push(unlisten);
-      }
-
-      if (callbacks.onDialogTurnStarted) {
-        const unlisten = agentAPI.onDialogTurnStarted((event) => {
-          logger.debug('Dialog turn started:', event);
-          callbacks.onDialogTurnStarted?.(event);
-        });
-        this.unlistenFunctions.push(unlisten);
-      }
-
-      if (callbacks.onModelRoundStarted) {
-        const unlisten = agentAPI.onModelRoundStarted((event) => {
-          logger.debug('Model round started:', event);
-          callbacks.onModelRoundStarted?.(event);
-        });
-        this.unlistenFunctions.push(unlisten);
-      }
-
-      if (callbacks.onTextChunk) {
-        const unlisten = agentAPI.onTextChunk((event) => {
-          callbacks.onTextChunk?.(event);
-        });
-        this.unlistenFunctions.push(unlisten);
-      }
-
-      if (callbacks.onToolEvent) {
-        const unlisten = agentAPI.onToolEvent((event) => {
-          callbacks.onToolEvent?.(event);
-        });
-        this.unlistenFunctions.push(unlisten);
-      }
-
-      if (callbacks.onDialogTurnCompleted) {
-        const unlisten = agentAPI.onDialogTurnCompleted((event) => {
-          logger.debug('Dialog turn completed:', event);
-          callbacks.onDialogTurnCompleted?.(event);
-        });
-        this.unlistenFunctions.push(unlisten);
-      }
-
-      if (callbacks.onDialogTurnFailed) {
-        const unlisten = agentAPI.onDialogTurnFailed((event) => {
-          logger.error('Dialog turn failed:', event);
-          callbacks.onDialogTurnFailed?.(event);
-        });
-        this.unlistenFunctions.push(unlisten);
-      }
-
-      if (callbacks.onDialogTurnCancelled) {
-        const unlisten = agentAPI.onDialogTurnCancelled((event) => {
-          logger.debug('Dialog turn cancelled:', event);
-          callbacks.onDialogTurnCancelled?.(event);
-        });
-        this.unlistenFunctions.push(unlisten);
-      }
-
-      if (callbacks.onTokenUsageUpdated) {
-        const unlisten = agentAPI.onTokenUsageUpdated((event) => {
-          logger.debug('Token usage updated:', event);
-          callbacks.onTokenUsageUpdated?.(event);
-        });
-        this.unlistenFunctions.push(unlisten);
-      }
-
-      if (callbacks.onContextCompressionStarted) {
-        const unlisten = agentAPI.onContextCompressionStarted((event) => {
-          logger.debug('Context compression started:', event);
-          callbacks.onContextCompressionStarted?.(event);
-        });
-        this.unlistenFunctions.push(unlisten);
-      }
-
-      if (callbacks.onContextCompressionCompleted) {
-        const unlisten = agentAPI.onContextCompressionCompleted((event) => {
-          logger.debug('Context compression completed:', event);
-          callbacks.onContextCompressionCompleted?.(event);
-        });
-        this.unlistenFunctions.push(unlisten);
-      }
-
-      if (callbacks.onContextCompressionFailed) {
-        const unlisten = agentAPI.onContextCompressionFailed((event) => {
-          logger.error('Context compression failed:', event);
-          callbacks.onContextCompressionFailed?.(event);
-        });
-        this.unlistenFunctions.push(unlisten);
-      }
-
-      if (callbacks.onSessionTitleGenerated) {
-        const unlisten = agentAPI.onSessionTitleGenerated((event) => {
-          logger.debug('Session title generated:', event);
-          callbacks.onSessionTitleGenerated?.(event);
-        });
-        this.unlistenFunctions.push(unlisten);
-      }
+      this.addListener({ callback: callbacks.onSessionCreated, subscribe: agentAPI.onSessionCreated, debugMessage: 'Session created:' });
+      this.addListener({ callback: callbacks.onSessionDeleted, subscribe: agentAPI.onSessionDeleted, debugMessage: 'Session deleted:' });
+      this.addListener({ callback: callbacks.onSessionStateChanged, subscribe: agentAPI.onSessionStateChanged, debugMessage: 'Session state changed:' });
+      this.addListener({ callback: callbacks.onImageAnalysisStarted, subscribe: agentAPI.onImageAnalysisStarted, debugMessage: 'Image analysis started:' });
+      this.addListener({ callback: callbacks.onImageAnalysisCompleted, subscribe: agentAPI.onImageAnalysisCompleted, debugMessage: 'Image analysis completed:' });
+      this.addListener({ callback: callbacks.onDialogTurnStarted, subscribe: agentAPI.onDialogTurnStarted, debugMessage: 'Dialog turn started:' });
+      this.addListener({ callback: callbacks.onModelRoundStarted, subscribe: agentAPI.onModelRoundStarted, debugMessage: 'Model round started:' });
+      this.addListener({ callback: callbacks.onTextChunk, subscribe: agentAPI.onTextChunk });
+      this.addListener({ callback: callbacks.onToolEvent, subscribe: agentAPI.onToolEvent });
+      this.addListener({ callback: callbacks.onDialogTurnCompleted, subscribe: agentAPI.onDialogTurnCompleted, debugMessage: 'Dialog turn completed:' });
+      this.addListener({ callback: callbacks.onDialogTurnFailed, subscribe: agentAPI.onDialogTurnFailed, errorMessage: 'Dialog turn failed:' });
+      this.addListener({ callback: callbacks.onDialogTurnCancelled, subscribe: agentAPI.onDialogTurnCancelled, debugMessage: 'Dialog turn cancelled:' });
+      this.addListener({ callback: callbacks.onTokenUsageUpdated, subscribe: agentAPI.onTokenUsageUpdated, debugMessage: 'Token usage updated:' });
+      this.addListener({ callback: callbacks.onContextCompressionStarted, subscribe: agentAPI.onContextCompressionStarted, debugMessage: 'Context compression started:' });
+      this.addListener({ callback: callbacks.onContextCompressionCompleted, subscribe: agentAPI.onContextCompressionCompleted, debugMessage: 'Context compression completed:' });
+      this.addListener({ callback: callbacks.onContextCompressionFailed, subscribe: agentAPI.onContextCompressionFailed, errorMessage: 'Context compression failed:' });
+      this.addListener({ callback: callbacks.onSessionTitleGenerated, subscribe: agentAPI.onSessionTitleGenerated, debugMessage: 'Session title generated:' });
 
       this.isListening = true;
       logger.info(`Registered ${this.unlistenFunctions.length} event listeners`);
