@@ -1,8 +1,3 @@
-/**
- * Application hook.
- * Provides unified app state management and actions.
- */
-
 import { useState, useEffect, useCallback } from 'react';
 import {
   UseAppReturn,
@@ -17,28 +12,51 @@ import { createLogger } from '@/shared/utils/logger';
 
 const log = createLogger('useApp');
 
-export const useApp = (): UseAppReturn => {
+const PANEL_WIDTHS = {
+  leftMin: 50,
+  centerMin: 400,
+  rightMin: 200,
+  rightMax: 1200
+};
+
+const clampMin = (value: number, min: number): number => Math.max(min, value);
+const clampRange = (value: number, min: number, max: number): number => (
+  Math.min(max, Math.max(min, value))
+);
+
+const logAndThrow = (message: string, error: unknown): never => {
+  log.error(message, error);
+  throw error;
+};
+
+const useManagedAppState = (): AppState => {
   const [state, setState] = useState<AppState>(appManager.getState());
 
-  // Listen for app state changes
   useEffect(() => {
-    const unsubscribe = appManager.addEventListener(() => {
-      // Update state on each event
-      setState(appManager.getState());
-    });
+    const syncState = () => setState(appManager.getState());
+    const unsubscribe = appManager.addEventListener(syncState);
 
-    // Sync state on initialization
-    setState(appManager.getState());
-
+    syncState();
     return unsubscribe;
   }, []);
 
-  // Layout actions
+  return state;
+};
+
+export const useApp = (): UseAppReturn => {
+  const state = useManagedAppState();
+
   const toggleLeftPanel = useCallback(() => {
     appManager.updateLayout({
       leftPanelCollapsed: !state.layout.leftPanelCollapsed
     });
   }, [state.layout.leftPanelCollapsed]);
+
+  const toggleCenterPanel = useCallback(() => {
+    appManager.updateLayout({
+      centerPanelCollapsed: !state.layout.centerPanelCollapsed
+    });
+  }, [state.layout.centerPanelCollapsed]);
 
   const toggleRightPanel = useCallback(() => {
     appManager.updateLayout({
@@ -47,75 +65,54 @@ export const useApp = (): UseAppReturn => {
   }, [state.layout.rightPanelCollapsed]);
 
   const toggleChatPanel = useCallback(() => {
-    const nextChatCollapsed = !state.layout.chatCollapsed;
+    const chatCollapsed = !state.layout.chatCollapsed;
     appManager.updateLayout({
-      chatCollapsed: nextChatCollapsed,
-      // Keep behavior aligned with editor-mode layout:
-      // when chat is hidden, ensure the right panel is visible to occupy center space.
-      rightPanelCollapsed: nextChatCollapsed ? false : state.layout.rightPanelCollapsed
+      chatCollapsed,
+      rightPanelCollapsed: chatCollapsed ? false : state.layout.rightPanelCollapsed
     });
   }, [state.layout.chatCollapsed, state.layout.rightPanelCollapsed]);
 
   const switchLeftPanelTab = useCallback((tab: PanelType) => {
     appManager.updateLayout({
       leftPanelActiveTab: tab,
-      leftPanelCollapsed: false // Auto-expand panel when switching tabs
+      leftPanelCollapsed: false
     });
   }, []);
 
   const updateLeftPanelWidth = useCallback((width: number) => {
-    // Clamp width: minimum 50px, no upper bound
-    const MIN_WIDTH = 50;
-    const clampedWidth = Math.max(MIN_WIDTH, width);
-    
     appManager.updateLayout({
-      leftPanelWidth: clampedWidth
+      leftPanelWidth: clampMin(width, PANEL_WIDTHS.leftMin)
     });
   }, []);
 
   const updateCenterPanelWidth = useCallback((width: number) => {
-    // Clamp width: minimum 400px
-    const MIN_WIDTH = 400;
-    const clampedWidth = Math.max(MIN_WIDTH, width);
-    
     appManager.updateLayout({
-      centerPanelWidth: clampedWidth
+      centerPanelWidth: clampMin(width, PANEL_WIDTHS.centerMin)
     });
   }, []);
 
   const updateRightPanelWidth = useCallback((width: number) => {
-    // Clamp width: 200px min, 1200px max
-    const MIN_WIDTH = 200;
-    const MAX_WIDTH = 1200;
-    const clampedWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, width));
-    
     appManager.updateLayout({
-      rightPanelWidth: clampedWidth
+      rightPanelWidth: clampRange(width, PANEL_WIDTHS.rightMin, PANEL_WIDTHS.rightMax)
     });
   }, []);
 
-  const toggleCenterPanel = useCallback(() => {
-    appManager.updateLayout({
-      centerPanelCollapsed: !state.layout.centerPanelCollapsed
-    });
-  }, [state.layout.centerPanelCollapsed]);
-
-  const updateAgentConfig = useCallback(async (agentId: string, config: Partial<AgentConfig>): Promise<void> => {
+  const updateAgentConfig = useCallback(async (
+    agentId: string,
+    config: Partial<AgentConfig>
+  ): Promise<void> => {
     try {
       await appManager.updateAgentConfig(agentId, config);
     } catch (error) {
-      log.error('Failed to update agent config', error);
-      throw error;
+      logAndThrow('Failed to update agent config', error);
     }
   }, []);
 
-  // Chat actions
   const createChatSession = useCallback(async (agentId: string): Promise<ChatSession> => {
     try {
       return await appManager.createChatSession(agentId);
     } catch (error) {
-      log.error('Failed to create chat session', error);
-      throw error;
+      return logAndThrow('Failed to create chat session', error);
     }
   }, []);
 
@@ -128,31 +125,28 @@ export const useApp = (): UseAppReturn => {
   }, []);
 
   const sendMessage = useCallback(async (content: string): Promise<void> => {
-    if (!state.activeChatSession) {
-      // Create a new session if there is no active session
-      if (state.currentAgent) {
-        const session = await createChatSession(state.currentAgent.id);
-        await appManager.sendMessage(session.id, content);
-      } else {
-        throw new Error('No active agent or chat session');
-      }
-    } else {
+    if (state.activeChatSession) {
       try {
         await appManager.sendMessage(state.activeChatSession.id, content);
+        return;
       } catch (error) {
-        log.error('Failed to send message', error);
-        throw error;
+        logAndThrow('Failed to send message', error);
       }
     }
+
+    if (!state.currentAgent) {
+      throw new Error('No active agent or chat session');
+    }
+
+    const session = await createChatSession(state.currentAgent.id);
+    await appManager.sendMessage(session.id, content);
   }, [state.activeChatSession, state.currentAgent, createChatSession]);
 
-  // Extension actions
   const enableExtension = useCallback(async (extensionId: string): Promise<void> => {
     try {
       await appManager.enableExtension(extensionId);
     } catch (error) {
-      log.error('Failed to enable extension', error);
-      throw error;
+      logAndThrow('Failed to enable extension', error);
     }
   }, []);
 
@@ -160,18 +154,15 @@ export const useApp = (): UseAppReturn => {
     try {
       await appManager.disableExtension(extensionId);
     } catch (error) {
-      log.error('Failed to disable extension', error);
-      throw error;
+      logAndThrow('Failed to disable extension', error);
     }
   }, []);
 
-  // Tab actions
   const openTab = useCallback((tab: Omit<TabInfo, 'id'>): string => {
     try {
       return appManager.openTab(tab);
     } catch (error) {
-      log.error('Failed to open tab', error);
-      throw error;
+      return logAndThrow('Failed to open tab', error);
     }
   }, []);
 
@@ -191,16 +182,12 @@ export const useApp = (): UseAppReturn => {
     }
   }, []);
 
-  // Utility actions
   const clearError = useCallback(() => {
     appManager.clearError();
   }, []);
 
   return {
-    // State
     state,
-
-    // Layout actions
     toggleLeftPanel,
     toggleCenterPanel,
     toggleRightPanel,
@@ -209,32 +196,29 @@ export const useApp = (): UseAppReturn => {
     updateLeftPanelWidth,
     updateCenterPanelWidth,
     updateRightPanelWidth,
-
     updateAgentConfig,
-
-    // Chat actions
     createChatSession,
     selectChatSession,
     sendMessage,
-
-    // Extension actions
     enableExtension,
     disableExtension,
-
-    // Tab actions
     openTab,
     closeTab,
     selectTab,
-
-    // Utility actions
     clearError
   };
 };
 
-// Layout helper hook
 export const useLayout = () => {
-  const { state, toggleLeftPanel, toggleRightPanel, toggleChatPanel, switchLeftPanelTab, updateLeftPanelWidth } = useApp();
-  
+  const {
+    state,
+    toggleLeftPanel,
+    toggleRightPanel,
+    toggleChatPanel,
+    switchLeftPanelTab,
+    updateLeftPanelWidth
+  } = useApp();
+
   return {
     layout: state.layout,
     toggleLeftPanel,
@@ -245,10 +229,9 @@ export const useLayout = () => {
   };
 };
 
-// Chat helper hook
 export const useChat = () => {
   const { state, createChatSession, selectChatSession, sendMessage } = useApp();
-  
+
   return {
     sessions: state.chatSessions,
     activeSession: state.activeChatSession,
@@ -259,10 +242,9 @@ export const useChat = () => {
   };
 };
 
-// Tab helper hook
 export const useTabs = () => {
   const { state, openTab, closeTab, selectTab } = useApp();
-  
+
   return {
     tabs: state.layout.rightPanelTabs,
     activeTabId: state.layout.rightPanelActiveTabId,
