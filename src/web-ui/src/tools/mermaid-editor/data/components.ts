@@ -1,118 +1,27 @@
-/**
- * Mermaid component library data.
- */
-
 import { MermaidComponentCategory } from '../types';
 
-/**
- * Returns localized component categories.
- * @param t Translation function.
- */
-export const getComponentCategories = (t: (key: string) => string): MermaidComponentCategory[] => [
-  {
-    id: 'nodes',
-    name: t('componentLibrary.categories.nodes'),
-    components: [
-      {
-        id: 'rect-node',
-        name: t('componentLibrary.components.rectNode'),
-        category: 'nodes',
-        code: 'A[Node]',
-        description: t('componentLibrary.components.rectNodeDesc')
-      },
-      {
-        id: 'round-node',
-        name: t('componentLibrary.components.roundNode'),
-        category: 'nodes',
-        code: 'B(Node)',
-        description: t('componentLibrary.components.roundNodeDesc')
-      },
-      {
-        id: 'circle-node',
-        name: t('componentLibrary.components.circleNode'),
-        category: 'nodes',
-        code: 'C((Node))',
-        description: t('componentLibrary.components.circleNodeDesc')
-      },
-      {
-        id: 'diamond-node',
-        name: t('componentLibrary.components.diamondNode'),
-        category: 'nodes',
-        code: 'D{Node}',
-        description: t('componentLibrary.components.diamondNodeDesc')
-      },
-      {
-        id: 'hexagon-node',
-        name: t('componentLibrary.components.hexagonNode'),
-        category: 'nodes',
-        code: 'E{{Node}}',
-        description: t('componentLibrary.components.hexagonNodeDesc')
-      }
-    ]
-  },
-  {
-    id: 'connections',
-    name: t('componentLibrary.categories.connections'),
-    components: [
-      {
-        id: 'arrow-line',
-        name: t('componentLibrary.components.arrowLine'),
-        category: 'connections',
-        code: 'A --> B',
-        description: t('componentLibrary.components.arrowLineDesc')
-      },
-      {
-        id: 'labeled-arrow',
-        name: t('componentLibrary.components.labeledArrow'),
-        category: 'connections',
-        code: 'A -->|Label| B',
-        description: t('componentLibrary.components.labeledArrowDesc')
-      },
-      {
-        id: 'dotted-line',
-        name: t('componentLibrary.components.dottedLine'),
-        category: 'connections',
-        code: 'A -.-> B',
-        description: t('componentLibrary.components.dottedLineDesc')
-      },
-      {
-        id: 'thick-line',
-        name: t('componentLibrary.components.thickLine'),
-        category: 'connections',
-        code: 'A ==> B',
-        description: t('componentLibrary.components.thickLineDesc')
-      },
-      {
-        id: 'plain-line',
-        name: t('componentLibrary.components.plainLine'),
-        category: 'connections',
-        code: 'A --- B',
-        description: t('componentLibrary.components.plainLineDesc')
-      }
-    ]
-  },
-  {
-    id: 'templates',
-    name: t('componentLibrary.categories.templates'),
-    components: [
-      {
-        id: 'simple-flow',
-        name: t('componentLibrary.components.simpleFlow'),
-        category: 'templates',
-        code: `flowchart TD
+type Translate = (key: string) => string;
+type ComponentSpec = {
+  id: string;
+  nameKey: string;
+  descKey: string;
+  code: string;
+};
+type CategorySpec = {
+  id: string;
+  nameKey: string;
+  components: ComponentSpec[];
+};
+
+const SIMPLE_FLOW_TEMPLATE = `flowchart TD
     A[Start] --> B[Process]
     B --> C{Success?}
     C -->|Yes| D[Save]
     C -->|No| E[Error]
     D --> F[End]
-    E --> F`,
-        description: t('componentLibrary.components.simpleFlowDesc')
-      },
-      {
-        id: 'ai-ide-architecture',
-        name: t('componentLibrary.components.aiIdeArchitecture'),
-        category: 'templates',
-        code: `flowchart TD
+    E --> F`;
+
+const AI_IDE_ARCHITECTURE_TEMPLATE = `flowchart TD
 subgraph ClientLayer[Client Layer]
     A[Web IDE]
     B[Desktop App]
@@ -184,59 +93,123 @@ W --> H
 W --> I
 W --> J
 W --> K
-X --> Y`,
-        description: t('componentLibrary.components.aiIdeArchitectureDesc')
-      },
-      {
-        id: 'parallel-flow',
-        name: t('componentLibrary.components.parallelFlow'),
-        category: 'templates',
-        code: `flowchart TD
+X --> Y`;
+
+const PARALLEL_FLOW_TEMPLATE = `flowchart TD
     A[Start] --> B[Fork]
     B --> C[Task 1]
     B --> D[Task 2]
     C --> E[Join]
     D --> E
-    E --> F[End]`,
-        description: t('componentLibrary.components.parallelFlowDesc')
+    E --> F[End]`;
+
+const CATEGORY_SPECS: CategorySpec[] = [
+  {
+    id: 'nodes',
+    nameKey: 'componentLibrary.categories.nodes',
+    components: [
+      ['rect-node', 'rectNode', 'A[Node]'],
+      ['round-node', 'roundNode', 'B(Node)'],
+      ['circle-node', 'circleNode', 'C((Node))'],
+      ['diamond-node', 'diamondNode', 'D{Node}'],
+      ['hexagon-node', 'hexagonNode', 'E{{Node}}']
+    ].map(([id, key, code]) => ({
+      id,
+      code,
+      nameKey: `componentLibrary.components.${key}`,
+      descKey: `componentLibrary.components.${key}Desc`
+    }))
+  },
+  {
+    id: 'connections',
+    nameKey: 'componentLibrary.categories.connections',
+    components: [
+      ['arrow-line', 'arrowLine', 'A --> B'],
+      ['labeled-arrow', 'labeledArrow', 'A -->|Label| B'],
+      ['dotted-line', 'dottedLine', 'A -.-> B'],
+      ['thick-line', 'thickLine', 'A ==> B'],
+      ['plain-line', 'plainLine', 'A --- B']
+    ].map(([id, key, code]) => ({
+      id,
+      code,
+      nameKey: `componentLibrary.components.${key}`,
+      descKey: `componentLibrary.components.${key}Desc`
+    }))
+  },
+  {
+    id: 'templates',
+    nameKey: 'componentLibrary.categories.templates',
+    components: [
+      {
+        id: 'simple-flow',
+        nameKey: 'componentLibrary.components.simpleFlow',
+        descKey: 'componentLibrary.components.simpleFlowDesc',
+        code: SIMPLE_FLOW_TEMPLATE
+      },
+      {
+        id: 'ai-ide-architecture',
+        nameKey: 'componentLibrary.components.aiIdeArchitecture',
+        descKey: 'componentLibrary.components.aiIdeArchitectureDesc',
+        code: AI_IDE_ARCHITECTURE_TEMPLATE
+      },
+      {
+        id: 'parallel-flow',
+        nameKey: 'componentLibrary.components.parallelFlow',
+        descKey: 'componentLibrary.components.parallelFlowDesc',
+        code: PARALLEL_FLOW_TEMPLATE
       }
     ]
   }
 ];
 
-// Default export for backward compatibility (English fallback).
-export const componentCategories: MermaidComponentCategory[] = getComponentCategories((key: string) => {
-  // Simple fallback translation map.
-  const fallbackMap: Record<string, string> = {
-    'componentLibrary.categories.nodes': 'Nodes',
-    'componentLibrary.categories.connections': 'Connections',
-    'componentLibrary.categories.templates': 'Templates',
-    'componentLibrary.components.rectNode': 'Rectangle Node',
-    'componentLibrary.components.rectNodeDesc': 'Basic rectangle node',
-    'componentLibrary.components.roundNode': 'Rounded Rectangle',
-    'componentLibrary.components.roundNodeDesc': 'Rounded rectangle node',
-    'componentLibrary.components.circleNode': 'Circle Node',
-    'componentLibrary.components.circleNodeDesc': 'Circle node',
-    'componentLibrary.components.diamondNode': 'Diamond Node',
-    'componentLibrary.components.diamondNodeDesc': 'Decision diamond node',
-    'componentLibrary.components.hexagonNode': 'Hexagon Node',
-    'componentLibrary.components.hexagonNodeDesc': 'Hexagon node',
-    'componentLibrary.components.arrowLine': 'Arrow Connection',
-    'componentLibrary.components.arrowLineDesc': 'Basic arrow connection',
-    'componentLibrary.components.labeledArrow': 'Labeled Arrow',
-    'componentLibrary.components.labeledArrowDesc': 'Arrow connection with label',
-    'componentLibrary.components.dottedLine': 'Dotted Connection',
-    'componentLibrary.components.dottedLineDesc': 'Dotted arrow connection',
-    'componentLibrary.components.thickLine': 'Thick Connection',
-    'componentLibrary.components.thickLineDesc': 'Thick arrow connection',
-    'componentLibrary.components.plainLine': 'Plain Line',
-    'componentLibrary.components.plainLineDesc': 'Plain line without arrow',
-    'componentLibrary.components.simpleFlow': 'Simple Flow',
-    'componentLibrary.components.simpleFlowDesc': 'Basic flowchart template with decision branch',
-    'componentLibrary.components.aiIdeArchitecture': 'AI IDE Architecture',
-    'componentLibrary.components.aiIdeArchitectureDesc': 'AI-driven intelligent development environment architecture',
-    'componentLibrary.components.parallelFlow': 'Parallel Flow',
-    'componentLibrary.components.parallelFlowDesc': 'Parallel processing flow',
-  };
-  return fallbackMap[key] || key;
+const ENGLISH_FALLBACKS: Record<string, string> = {
+  'componentLibrary.categories.nodes': 'Nodes',
+  'componentLibrary.categories.connections': 'Connections',
+  'componentLibrary.categories.templates': 'Templates',
+  'componentLibrary.components.rectNode': 'Rectangle Node',
+  'componentLibrary.components.rectNodeDesc': 'Basic rectangle node',
+  'componentLibrary.components.roundNode': 'Rounded Rectangle',
+  'componentLibrary.components.roundNodeDesc': 'Rounded rectangle node',
+  'componentLibrary.components.circleNode': 'Circle Node',
+  'componentLibrary.components.circleNodeDesc': 'Circle node',
+  'componentLibrary.components.diamondNode': 'Diamond Node',
+  'componentLibrary.components.diamondNodeDesc': 'Decision diamond node',
+  'componentLibrary.components.hexagonNode': 'Hexagon Node',
+  'componentLibrary.components.hexagonNodeDesc': 'Hexagon node',
+  'componentLibrary.components.arrowLine': 'Arrow Connection',
+  'componentLibrary.components.arrowLineDesc': 'Basic arrow connection',
+  'componentLibrary.components.labeledArrow': 'Labeled Arrow',
+  'componentLibrary.components.labeledArrowDesc': 'Arrow connection with label',
+  'componentLibrary.components.dottedLine': 'Dotted Connection',
+  'componentLibrary.components.dottedLineDesc': 'Dotted arrow connection',
+  'componentLibrary.components.thickLine': 'Thick Connection',
+  'componentLibrary.components.thickLineDesc': 'Thick arrow connection',
+  'componentLibrary.components.plainLine': 'Plain Line',
+  'componentLibrary.components.plainLineDesc': 'Plain line without arrow',
+  'componentLibrary.components.simpleFlow': 'Simple Flow',
+  'componentLibrary.components.simpleFlowDesc': 'Basic flowchart template with decision branch',
+  'componentLibrary.components.aiIdeArchitecture': 'AI IDE Architecture',
+  'componentLibrary.components.aiIdeArchitectureDesc': 'AI-driven intelligent development environment architecture',
+  'componentLibrary.components.parallelFlow': 'Parallel Flow',
+  'componentLibrary.components.parallelFlowDesc': 'Parallel processing flow',
+};
+
+const materializeCategory = (spec: CategorySpec, t: Translate): MermaidComponentCategory => ({
+  id: spec.id,
+  name: t(spec.nameKey),
+  components: spec.components.map((component) => ({
+    id: component.id,
+    name: t(component.nameKey),
+    category: spec.id,
+    code: component.code,
+    description: t(component.descKey)
+  }))
 });
+
+export const getComponentCategories = (t: Translate): MermaidComponentCategory[] => (
+  CATEGORY_SPECS.map((category) => materializeCategory(category, t))
+);
+
+export const componentCategories: MermaidComponentCategory[] = getComponentCategories(
+  (key) => ENGLISH_FALLBACKS[key] || key
+);
