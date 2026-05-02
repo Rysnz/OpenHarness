@@ -97,6 +97,48 @@ export interface SearchProps {
   ariaExpanded?: boolean;
 }
 
+function mergeRefs<T>(...refs: Array<React.ForwardedRef<T> | React.MutableRefObject<T | null>>) {
+  return (node: T | null) => {
+    refs.forEach(ref => {
+      if (!ref) {
+        return;
+      }
+      if (typeof ref === 'function') {
+        ref(node);
+      } else {
+        (ref as React.MutableRefObject<T | null>).current = node;
+      }
+    });
+  };
+}
+
+function buildSearchClassNames(options: {
+  size: NonNullable<SearchProps['size']>;
+  isFocused: boolean;
+  isHovered: boolean;
+  disabled: boolean;
+  error: boolean;
+  loading: boolean;
+  expandOnFocus: boolean;
+  showSearchButton: boolean;
+  className: string;
+}): string {
+  return [
+    'search',
+    `search--${options.size}`,
+    options.isFocused && 'search--focused',
+    options.isHovered && 'search--hovered',
+    options.disabled && 'search--disabled',
+    options.error && 'search--error',
+    options.loading && 'search--loading',
+    options.expandOnFocus && 'search--expandable',
+    options.showSearchButton && 'search--with-button',
+    options.className
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
 export const Search = forwardRef<HTMLInputElement, SearchProps>(({
   value,
   defaultValue = '',
@@ -138,16 +180,7 @@ export const Search = forwardRef<HTMLInputElement, SearchProps>(({
   const [isHovered, setIsHovered] = useState(false);
   
   const inputRef = useRef<HTMLInputElement | null>(null);
-
-  const setForwardedRef = useCallback((node: HTMLInputElement | null) => {
-    if (typeof ref === 'function') {
-      ref(node);
-      return;
-    }
-    if (ref) {
-      (ref as React.MutableRefObject<HTMLInputElement | null>).current = node;
-    }
-  }, [ref]);
+  const setInputRefs = useCallback(mergeRefs(inputRef, ref), [ref]);
 
   useEffect(() => {
     if (value !== undefined) {
@@ -209,20 +242,17 @@ export const Search = forwardRef<HTMLInputElement, SearchProps>(({
     onBlurProp?.();
   }, [onBlurProp]);
 
-  const classNames = [
-    'search',
-    `search--${size}`,
-    isFocused && 'search--focused',
-    isHovered && 'search--hovered',
-    disabled && 'search--disabled',
-    error && 'search--error',
-    loading && 'search--loading',
-    expandOnFocus && 'search--expandable',
-    showSearchButton && 'search--with-button',
+  const classNames = buildSearchClassNames({
+    size,
+    isFocused,
+    isHovered,
+    disabled,
+    error,
+    loading,
+    expandOnFocus,
+    showSearchButton,
     className
-  ]
-    .filter(Boolean)
-    .join(' ');
+  });
 
   return (
     <div className={classNames}>
@@ -236,10 +266,7 @@ export const Search = forwardRef<HTMLInputElement, SearchProps>(({
         </div>
 
         <input
-          ref={(node) => {
-            inputRef.current = node;
-            setForwardedRef(node);
-          }}
+          ref={setInputRefs}
           type="text"
           className="search__input"
           value={inputValue}
