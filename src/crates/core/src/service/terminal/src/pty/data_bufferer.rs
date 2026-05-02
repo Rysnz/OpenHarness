@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{RwLock, mpsc};
 
 use crate::config::BufferingConfig;
 
@@ -55,6 +55,36 @@ impl ProcessBuffer {
             flush_scheduled: false,
         }
     }
+
+    fn append(&mut self, data: &[u8]) -> bool {
+        if self.data.is_empty() {
+            self.start_time = Instant::now();
+        }
+
+        self.data.extend_from_slice(data);
+        !self.flush_scheduled
+    }
+
+    fn mark_flush_scheduled(&mut self) {
+        self.flush_scheduled = true;
+    }
+
+    fn drain(&mut self, process_id: u32) -> Option<BufferedData> {
+        if self.data.is_empty() {
+            self.flush_scheduled = false;
+            return None;
+        }
+
+        let data = std::mem::take(&mut self.data);
+        let start_time = self.start_time;
+        self.flush_scheduled = false;
+
+        Some(BufferedData {
+            process_id,
+            data,
+            start_time,
+        })
+    }
 }
 
 impl DataBufferer {
@@ -88,15 +118,7 @@ impl DataBufferer {
     /// Add data to the buffer
     pub async fn buffer_data(&self, process_id: u32, data: &[u8]) {
         if !self.config.enabled {
-            // Buffering disabled, send immediately
-            let _ = self
-                .output_tx
-                .send(BufferedData {
-                    process_id,
-                    data: data.to_vec(),
-                    start_time: Instant::now(),
-                })
-                .await;
+            self.send_immediately(process_id, data).await;
             return;
         }
 
@@ -107,35 +129,42 @@ impl DataBufferer {
             let mut buffers = self.buffers.write().await;
             let buffer = buffers.entry(process_id).or_insert_with(ProcessBuffer::new);
 
-            // Reset start time if buffer was empty
-            if buffer.data.is_empty() {
-                buffer.start_time = Instant::now();
-            }
-
-            buffer.data.extend_from_slice(data);
-
-            // Check if we should flush
+            let can_schedule = buffer.append(data);
             should_flush_now = buffer.data.len() >= self.config.max_buffer_size;
-            should_schedule_flush = !buffer.flush_scheduled && !should_flush_now;
+            should_schedule_flush = can_schedule && !should_flush_now;
 
             if should_schedule_flush {
-                buffer.flush_scheduled = true;
+                buffer.mark_flush_scheduled();
             }
         }
 
         if should_flush_now {
             self.flush_buffer(process_id).await;
         } else if should_schedule_flush {
-            // Schedule a flush after the interval
-            let buffers = self.buffers.clone();
-            let output_tx = self.output_tx.clone();
-            let flush_interval = Duration::from_millis(self.config.flush_interval_ms);
-
-            tokio::spawn(async move {
-                tokio::time::sleep(flush_interval).await;
-                Self::do_flush(process_id, buffers, output_tx).await;
-            });
+            self.schedule_flush(process_id);
         }
+    }
+
+    async fn send_immediately(&self, process_id: u32, data: &[u8]) {
+        let _ = self
+            .output_tx
+            .send(BufferedData {
+                process_id,
+                data: data.to_vec(),
+                start_time: Instant::now(),
+            })
+            .await;
+    }
+
+    fn schedule_flush(&self, process_id: u32) {
+        let buffers = self.buffers.clone();
+        let output_tx = self.output_tx.clone();
+        let flush_interval = Duration::from_millis(self.config.flush_interval_ms);
+
+        tokio::spawn(async move {
+            tokio::time::sleep(flush_interval).await;
+            Self::do_flush(process_id, buffers, output_tx).await;
+        });
     }
 
     /// Flush the buffer for a process
@@ -151,24 +180,9 @@ impl DataBufferer {
     ) {
         let data = {
             let mut buffers = buffers.write().await;
-            if let Some(buffer) = buffers.get_mut(&process_id) {
-                if buffer.data.is_empty() {
-                    buffer.flush_scheduled = false;
-                    return;
-                }
-
-                let data = std::mem::take(&mut buffer.data);
-                let start_time = buffer.start_time;
-                buffer.flush_scheduled = false;
-
-                Some(BufferedData {
-                    process_id,
-                    data,
-                    start_time,
-                })
-            } else {
-                None
-            }
+            buffers
+                .get_mut(&process_id)
+                .and_then(|buffer| buffer.drain(process_id))
         };
 
         if let Some(buffered_data) = data {
