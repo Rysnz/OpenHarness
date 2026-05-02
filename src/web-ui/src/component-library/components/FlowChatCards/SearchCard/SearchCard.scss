@@ -3,9 +3,29 @@
  * Supports Grep text search and Glob file search
  * Search card styles
  */
+@use 'sass:map';
 @use '../../../styles/tokens.scss' as tokens;
 @use '../_shared-styles.scss' as shared;
 
+$search-card-compact-margin: 4px 2rem;
+$search-card-compact-max: calc(100% - 4rem);
+$search-card-min-label: 70px;
+$search-card-file-count-pad: 2px 6px;
+$search-card-mode-colors: (
+  grep: #8b5cf6,
+  glob: #06b6d4
+);
+
+@mixin search-row {
+  display: flex;
+  align-items: center;
+}
+
+@mixin search-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .search-card {
   @include shared.liquid-card-base;
@@ -15,13 +35,13 @@
 
 
 .search-card--compact {
-  display: flex;
-  align-items: center;
+  @include search-row;
+
   gap: tokens.$size-gap-2;
   padding: tokens.$size-gap-2 tokens.$size-gap-3;
-  margin: 4px 2rem;
+  margin: $search-card-compact-margin;
   cursor: pointer;
-  max-width: calc(100% - 4rem);
+  max-width: $search-card-compact-max;
   @include shared.compact-hover;
 
   &:hover {
@@ -29,15 +49,11 @@
   }
 }
 
-.search-card--compact.search-card--grep {
-  .search-card__icon {
-    color: #8b5cf6;
-  }
-}
-
-.search-card--compact.search-card--glob {
-  .search-card__icon {
-    color: #06b6d4;
+@each $mode, $color in $search-card-mode-colors {
+  .search-card--compact.search-card--#{$mode} {
+    .search-card__icon {
+      color: $color;
+    }
   }
 }
 
@@ -61,9 +77,7 @@
   font-family: tokens.$font-family-mono;
   flex-shrink: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  @include search-truncate;
 }
 
 .search-card__result {
@@ -75,8 +89,8 @@
 }
 
 .search-card__status {
-  display: flex;
-  align-items: center;
+  @include search-row;
+
   flex-shrink: 0;
   margin-left: tokens.$size-gap-2;
   color: tokens.$color-text-muted;
@@ -119,8 +133,8 @@
 }
 
 .search-card__info-row {
-  display: flex;
-  align-items: center;
+  @include search-row;
+
   gap: tokens.$size-gap-2;
   font-size: var(--font-size-sm);
 }
@@ -129,15 +143,13 @@
   color: tokens.$color-text-secondary;
   font-weight: tokens.$font-weight-medium;
   flex-shrink: 0;
-  min-width: 70px;
+  min-width: $search-card-min-label;
 }
 
 .search-card__value {
   color: tokens.$color-text-primary;
   font-family: tokens.$font-family-mono;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  @include search-truncate;
 }
 
 .search-card__stats-box {
@@ -150,9 +162,9 @@
 }
 
 .search-card__stat-item {
-  display: flex;
+  @include search-row;
+
   flex-direction: column;
-  align-items: center;
   gap: tokens.$size-gap-1;
   flex: 1;
 }
@@ -174,8 +186,8 @@
 }
 
 .search-card__expand-button {
-  display: flex;
-  align-items: center;
+  @include search-row;
+
   gap: tokens.$size-gap-2;
   width: 100%;
   padding: tokens.$size-gap-2 tokens.$size-gap-3;
@@ -218,8 +230,8 @@
 }
 
 .search-card__file-item {
-  display: flex;
-  align-items: center;
+  @include search-row;
+
   gap: tokens.$size-gap-2;
   padding: tokens.$size-gap-2;
   border-radius: tokens.$size-radius-sm;
@@ -240,16 +252,14 @@
   font-size: var(--font-size-sm);
   color: tokens.$color-text-primary;
   font-family: tokens.$font-family-mono;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  @include search-truncate;
 }
 
 .search-card__file-count {
   font-size: var(--font-size-xs);
   color: tokens.$color-text-muted;
   background: tokens.$element-bg-soft;
-  padding: 2px 6px;
+  padding: $search-card-file-count-pad;
   border-radius: tokens.$size-radius-sm;
   flex-shrink: 0;
 }
