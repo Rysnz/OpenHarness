@@ -15,6 +15,36 @@ interface UseInstalledSkillsOptions {
   activeFilter: InstalledFilter;
 }
 
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+function workspacePathParam(workspacePath?: string | null): string | undefined {
+  return workspacePath || undefined;
+}
+
+function skillMatchesQuery(skill: SkillInfo, normalizedQuery: string): boolean {
+  if (!normalizedQuery) {
+    return true;
+  }
+
+  return [skill.name, skill.description, skill.path].some((field) =>
+    field?.toLowerCase().includes(normalizedQuery)
+  );
+}
+
+function skillMatchesFilter(skill: SkillInfo, activeFilter: InstalledFilter): boolean {
+  return activeFilter === 'all' || skill.level === activeFilter;
+}
+
+function countSkills(skills: SkillInfo[]) {
+  return {
+    all: skills.length,
+    user: skills.filter((skill) => skill.level === 'user').length,
+    project: skills.filter((skill) => skill.level === 'project').length,
+  };
+}
+
 export function useInstalledSkills({ searchQuery, activeFilter }: UseInstalledSkillsOptions) {
   const { t } = useTranslation('scenes/skills');
   const notification = useNotification();
@@ -39,7 +69,7 @@ export function useInstalledSkills({ searchQuery, activeFilter }: UseInstalledSk
       setError(null);
       const list = await configAPI.getSkillConfigs({
         forceRefresh,
-        workspacePath: workspacePath || undefined,
+        workspacePath: workspacePathParam(workspacePath),
       });
       if (requestId !== loadRequestIdRef.current) {
         return;
@@ -50,7 +80,7 @@ export function useInstalledSkills({ searchQuery, activeFilter }: UseInstalledSk
         return;
       }
       log.error('Failed to load skills', err);
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errorMessage(err));
     } finally {
       if (requestId === loadRequestIdRef.current) {
         setLoading(false);
@@ -74,7 +104,7 @@ export function useInstalledSkills({ searchQuery, activeFilter }: UseInstalledSk
     } catch (err) {
       setValidationResult({
         valid: false,
-        error: err instanceof Error ? err.message : String(err),
+        error: errorMessage(err),
       });
     } finally {
       setIsValidating(false);
@@ -127,7 +157,7 @@ export function useInstalledSkills({ searchQuery, activeFilter }: UseInstalledSk
       await configAPI.addSkill({
         sourcePath: formPath,
         level: formLevel,
-        workspacePath: workspacePath || undefined,
+        workspacePath: workspacePathParam(workspacePath),
       });
       notification.success(t('messages.addSuccess', { name: validationResult.name }));
       resetForm();
@@ -136,7 +166,7 @@ export function useInstalledSkills({ searchQuery, activeFilter }: UseInstalledSk
     } catch (err) {
       notification.error(
         t('messages.addFailed', {
-          error: err instanceof Error ? err.message : String(err),
+          error: errorMessage(err),
         }),
       );
       return false;
@@ -149,7 +179,7 @@ export function useInstalledSkills({ searchQuery, activeFilter }: UseInstalledSk
     try {
       await configAPI.deleteSkill({
         skillKey: skill.key,
-        workspacePath: workspacePath || undefined,
+        workspacePath: workspacePathParam(workspacePath),
       });
       notification.success(t('messages.deleteSuccess', { name: skill.name }));
       await loadSkills(true);
@@ -157,7 +187,7 @@ export function useInstalledSkills({ searchQuery, activeFilter }: UseInstalledSk
     } catch (err) {
       notification.error(
         t('messages.deleteFailed', {
-          error: err instanceof Error ? err.message : String(err),
+          error: errorMessage(err),
         }),
       );
       return false;
@@ -167,22 +197,12 @@ export function useInstalledSkills({ searchQuery, activeFilter }: UseInstalledSk
   const normalizedQuery = searchQuery.trim().toLowerCase();
 
   const filteredSkills = useMemo(() => {
-    return skills.filter((skill) => {
-      const matchesFilter = activeFilter === 'all' || skill.level === activeFilter;
-      const matchesQuery = !normalizedQuery || [
-        skill.name,
-        skill.description,
-        skill.path,
-      ].some((field) => field?.toLowerCase().includes(normalizedQuery));
-      return matchesFilter && matchesQuery;
-    });
+    return skills.filter(
+      (skill) => skillMatchesFilter(skill, activeFilter) && skillMatchesQuery(skill, normalizedQuery)
+    );
   }, [activeFilter, normalizedQuery, skills]);
 
-  const counts = useMemo(() => ({
-    all: skills.length,
-    user: skills.filter((skill) => skill.level === 'user').length,
-    project: skills.filter((skill) => skill.level === 'project').length,
-  }), [skills]);
+  const counts = useMemo(() => countSkills(skills), [skills]);
 
   return {
     skills,
