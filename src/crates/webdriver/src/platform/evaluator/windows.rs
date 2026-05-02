@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use serde_json::Value;
@@ -13,7 +13,7 @@ use windows::core::implement;
 use windows::Win32::System::Com::{CoInitializeEx, COINIT_APARTMENTTHREADED};
 
 use super::remove_pending_request;
-use crate::runtime::{script, BridgeError};
+use crate::runtime::{script, BridgeError, BridgeResponse};
 use crate::server::response::WebDriverErrorResponse;
 use crate::server::AppState;
 
@@ -30,6 +30,23 @@ pub(super) async fn evaluate_script<R: Runtime>(
 ) -> Result<Value, WebDriverErrorResponse> {
     ensure_message_handler(&webview)?;
 
+    let (request_id, receiver) = register_pending_request(&state)?;
+    let injected = script::build_bridge_eval_script(
+        &request_id,
+        script_source,
+        args,
+        async_mode,
+        frame_context,
+    );
+    dispatch_script(&state, &webview, &request_id, &injected)?;
+    let response = wait_for_bridge_response(&state, &request_id, timeout_ms, receiver).await?;
+
+    bridge_response_to_value(response)
+}
+
+fn register_pending_request(
+    state: &Arc<AppState>,
+) -> Result<(String, oneshot::Receiver<BridgeResponse>), WebDriverErrorResponse> {
     let request_id = state.next_request_id();
     let (sender, receiver) = oneshot::channel();
 
@@ -39,31 +56,42 @@ pub(super) async fn evaluate_script<R: Runtime>(
         .map_err(|_| WebDriverErrorResponse::unknown_error("Failed to lock pending request map"))?
         .insert(request_id.clone(), sender);
 
-    let injected = script::build_bridge_eval_script(
-        &request_id,
-        script_source,
-        args,
-        async_mode,
-        frame_context,
-    );
-    webview.eval(&injected).map_err(|error| {
-        remove_pending_request(&state, &request_id);
+    Ok((request_id, receiver))
+}
+
+fn dispatch_script<R: Runtime>(
+    state: &Arc<AppState>,
+    webview: &Webview<R>,
+    request_id: &str,
+    injected: &str,
+) -> Result<(), WebDriverErrorResponse> {
+    webview.eval(injected).map_err(|error| {
+        remove_pending_request(state, request_id);
         WebDriverErrorResponse::javascript_error(
             format!("Failed to evaluate script: {error}"),
             None,
         )
-    })?;
+    })
+}
 
-    let response = tokio::time::timeout(Duration::from_millis(timeout_ms), receiver)
+async fn wait_for_bridge_response(
+    state: &Arc<AppState>,
+    request_id: &str,
+    timeout_ms: u64,
+    receiver: oneshot::Receiver<BridgeResponse>,
+) -> Result<BridgeResponse, WebDriverErrorResponse> {
+    tokio::time::timeout(Duration::from_millis(timeout_ms), receiver)
         .await
         .map_err(|_| {
-            remove_pending_request(&state, &request_id);
+            remove_pending_request(state, request_id);
             WebDriverErrorResponse::timeout(format!("Script timed out after {timeout_ms}ms"))
         })?
         .map_err(|_| {
             WebDriverErrorResponse::unknown_error("Bridge response channel closed unexpectedly")
-        })?;
+        })
+}
 
+fn bridge_response_to_value(response: BridgeResponse) -> Result<Value, WebDriverErrorResponse> {
     if response.ok {
         return Ok(response.value.unwrap_or(Value::Null));
     }
