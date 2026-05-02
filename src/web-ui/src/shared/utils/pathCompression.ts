@@ -1,163 +1,142 @@
- 
-
-import { FileTreeNode } from '../types/project-view';
 import { i18nService } from '@/infrastructure/i18n';
+import { FileTreeNode } from '../types/project-view';
 
 export interface CompressedNode extends Omit<FileTreeNode, 'children'> {
   children?: CompressedNode[];
   isCompressed?: boolean;
-  compressedPath?: string; 
-  originalNodes?: FileTreeNode[]; 
+  compressedPath?: string;
+  originalNodes?: FileTreeNode[];
 }
 
- 
-function canCompress(node: FileTreeNode): boolean {
+function hasSingleDirectoryChild(node: FileTreeNode): boolean {
   return (
     node.isDirectory &&
-    !!node.children &&
+    Array.isArray(node.children) &&
     node.children.length === 1 &&
     node.children[0].isDirectory
   );
 }
 
- 
+function compressChildren(children: FileTreeNode[] | undefined): CompressedNode[] | undefined {
+  return children?.map((child) => compressNodePath(child));
+}
+
+function collectCompressibleChain(root: FileTreeNode) {
+  const segments = [root.name];
+  const originalNodes = [root];
+  let tail = root;
+
+  while (hasSingleDirectoryChild(tail)) {
+    const child = tail.children![0];
+    segments.push(child.name);
+    originalNodes.push(child);
+    tail = child;
+  }
+
+  return { segments, originalNodes, tail };
+}
+
 function compressNodePath(node: FileTreeNode): CompressedNode {
-  if (!canCompress(node)) {
-    
-    const compressedNode: CompressedNode = {
-      ...node,
-      children: node.children?.map(child => compressNodePath(child))
-    };
-    return compressedNode;
-  }
-
-  
-  const pathSegments: string[] = [node.name];
-  const originalNodes: FileTreeNode[] = [node];
-  let currentNode = node;
-
-  
-  while (canCompress(currentNode)) {
-    const childNode = currentNode.children![0];
-    pathSegments.push(childNode.name);
-    originalNodes.push(childNode);
-    currentNode = childNode;
-  }
-
-  
-  const compressedNode: CompressedNode = {
-    ...node, 
-    name: pathSegments.join('/'), 
-    path: currentNode.path, 
-    isCompressed: true,
-    compressedPath: pathSegments.join('/'),
-    originalNodes,
-    
-    children: currentNode.children?.map(child => compressNodePath(child))
-  };
-
-  return compressedNode;
-}
-
- 
-export function compressFileTree(fileTree: FileTreeNode[]): CompressedNode[] {
-  return fileTree.map(node => compressNodePath(node));
-}
-
- 
-export function lazyCompressFileTree(fileTree: FileTreeNode[], expandedFolders: Set<string>): CompressedNode[] {
-  return fileTree.map(node => lazyCompressNodePath(node, expandedFolders));
-}
-
- 
-function lazyCompressNodePath(node: FileTreeNode, expandedFolders: Set<string>): CompressedNode {
-  
-  if (!expandedFolders.has(node.path)) {
+  if (!hasSingleDirectoryChild(node)) {
     return {
       ...node,
-      children: node.children?.map(child => ({
-        ...child,
-        children: child.children 
-      }))
+      children: compressChildren(node.children),
     };
   }
 
-  
-  if (!node.children || node.children.length === 0) {
-    return { ...node };
-  }
-
-  
-  const compressedChildren = node.children.map(child => {
-    if (child.isDirectory && canCompress(child)) {
-      
-      return compressNodePath(child);
-    } else {
-      
-      return lazyCompressNodePath(child, expandedFolders);
-    }
-  });
+  const { segments, originalNodes, tail } = collectCompressibleChain(node);
+  const compressedPath = segments.join('/');
 
   return {
     ...node,
-    children: compressedChildren
+    name: compressedPath,
+    path: tail.path,
+    isCompressed: true,
+    compressedPath,
+    originalNodes,
+    children: compressChildren(tail.children),
   };
 }
 
- 
+export function compressFileTree(fileTree: FileTreeNode[]): CompressedNode[] {
+  return fileTree.map((node) => compressNodePath(node));
+}
+
+export function lazyCompressFileTree(fileTree: FileTreeNode[], expandedFolders: Set<string>): CompressedNode[] {
+  return fileTree.map((node) => lazyCompressNodePath(node, expandedFolders));
+}
+
+function shallowCloneChildren(children: FileTreeNode[] | undefined): CompressedNode[] | undefined {
+  return children?.map((child) => ({
+    ...child,
+    children: child.children,
+  }));
+}
+
+function lazyCompressNodePath(node: FileTreeNode, expandedFolders: Set<string>): CompressedNode {
+  if (!expandedFolders.has(node.path)) {
+    return {
+      ...node,
+      children: shallowCloneChildren(node.children),
+    };
+  }
+
+  if (!node.children?.length) {
+    return { ...node };
+  }
+
+  return {
+    ...node,
+    children: node.children.map((child) =>
+      child.isDirectory && hasSingleDirectoryChild(child)
+        ? compressNodePath(child)
+        : lazyCompressNodePath(child, expandedFolders)
+    ),
+  };
+}
+
 export function expandCompressedNode(compressedNode: CompressedNode): FileTreeNode[] {
   if (!compressedNode.isCompressed || !compressedNode.originalNodes) {
-    
     return [{
       ...compressedNode,
-      children: compressedNode.children?.map(child => expandCompressedNode(child)).flat()
+      children: compressedNode.children?.flatMap((child) => expandCompressedNode(child)),
     }];
   }
 
-  
   const nodes = [...compressedNode.originalNodes];
-  
-  
-  for (let i = nodes.length - 1; i >= 0; i--) {
-    const currentNode = nodes[i];
-    
-    if (i === nodes.length - 1) {
-      
-      currentNode.children = compressedNode.children?.map(child => expandCompressedNode(child)).flat();
-    } else {
-      
-      currentNode.children = [nodes[i + 1]];
-    }
+  for (let index = nodes.length - 1; index >= 0; index--) {
+    const currentNode = nodes[index];
+    currentNode.children = index === nodes.length - 1
+      ? compressedNode.children?.flatMap((child) => expandCompressedNode(child))
+      : [nodes[index + 1]];
   }
 
   return [nodes[0]];
 }
 
- 
 export function shouldCompressPaths(options?: {
   enabled?: boolean;
   minDepth?: number;
   maxCompressedSegments?: number;
 }): boolean {
-  const defaultOptions = {
+  const finalOptions = {
     enabled: true,
-    minDepth: 2, 
-    maxCompressedSegments: 5 
+    minDepth: 2,
+    maxCompressedSegments: 5,
+    ...options,
   };
-  
-  const finalOptions = { ...defaultOptions, ...options };
+
   return finalOptions.enabled ?? true;
 }
 
- 
 export function getCompressionTooltip(compressedNode: CompressedNode): string {
   if (!compressedNode.isCompressed || !compressedNode.originalNodes) {
     return compressedNode.path;
   }
-  
-  const segments = compressedNode.originalNodes.map(node => node.name);
+
+  const compressed = compressedNode.originalNodes.map((node) => node.name).join(' > ');
   return i18nService.t('common:file.compressedPathTooltip', {
-    compressed: segments.join(' > '),
-    full: compressedNode.path
+    compressed,
+    full: compressedNode.path,
   });
 }
