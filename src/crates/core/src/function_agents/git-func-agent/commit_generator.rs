@@ -12,6 +12,10 @@ use log::{debug, info};
 use std::path::Path;
 use std::sync::Arc;
 
+const ESTIMATED_FILE_ADDITIONS: u32 = 10;
+const ESTIMATED_FILE_DELETIONS: u32 = 5;
+const MAX_AFFECTED_MODULES: usize = 3;
+
 pub struct CommitGenerator;
 
 impl CommitGenerator {
@@ -29,13 +33,7 @@ impl CommitGenerator {
             .await
             .map_err(|e| AgentError::git_error(format!("Failed to get Git status: {}", e)))?;
 
-        let changed_files: Vec<String> = status.staged.iter().map(|f| f.path.clone()).collect();
-
-        if changed_files.is_empty() {
-            return Err(AgentError::invalid_input(
-                "Staging area is empty, please stage files first",
-            ));
-        }
+        let changed_files = Self::staged_file_paths(&status)?;
 
         debug!(
             "Staged files: count={}, files={:?}",
@@ -44,10 +42,7 @@ impl CommitGenerator {
         );
 
         let diff_content = Self::get_full_diff(repo_path).await?;
-
-        if diff_content.trim().is_empty() {
-            return Err(AgentError::invalid_input("Diff content is empty"));
-        }
+        Self::ensure_diff_has_content(&diff_content)?;
 
         let project_context = ContextAnalyzer::analyze_project_context(repo_path)
             .await
@@ -106,37 +101,39 @@ impl CommitGenerator {
         Ok(diff)
     }
 
+    fn staged_file_paths(status: &crate::service::git::GitStatus) -> AgentResult<Vec<String>> {
+        let files = status
+            .staged
+            .iter()
+            .map(|file| file.path.clone())
+            .collect::<Vec<_>>();
+
+        if files.is_empty() {
+            return Err(AgentError::invalid_input(
+                "Staging area is empty, please stage files first",
+            ));
+        }
+
+        Ok(files)
+    }
+
+    fn ensure_diff_has_content(diff_content: &str) -> AgentResult<()> {
+        if diff_content.trim().is_empty() {
+            return Err(AgentError::invalid_input("Diff content is empty"));
+        }
+
+        Ok(())
+    }
+
     fn build_changes_summary(
         status: &crate::service::git::GitStatus,
         changed_files: &[String],
     ) -> ChangesSummary {
-        let total_additions = status.staged.iter().map(|_| 10u32).sum::<u32>()
-            + status.unstaged.iter().map(|_| 10u32).sum::<u32>();
-        let total_deletions = status.staged.iter().map(|_| 5u32).sum::<u32>()
-            + status.unstaged.iter().map(|_| 5u32).sum::<u32>();
-
-        let file_changes: Vec<FileChange> = changed_files
-            .iter()
-            .map(|path| {
-                let file_type = super::utils::infer_file_type(path);
-                FileChange {
-                    path: path.clone(),
-                    change_type: FileChangeType::Modified, // Simplified handling
-                    additions: 10,
-                    deletions: 5,
-                    file_type,
-                }
-            })
-            .collect();
-
-        let affected_modules: Vec<String> = changed_files
-            .iter()
-            .filter_map(|path| super::utils::extract_module_name(path))
-            .collect::<std::collections::HashSet<_>>()
-            .into_iter()
-            .take(3)
-            .collect();
-
+        let total_files = status.staged.len() + status.unstaged.len();
+        let total_additions = total_files as u32 * ESTIMATED_FILE_ADDITIONS;
+        let total_deletions = total_files as u32 * ESTIMATED_FILE_DELETIONS;
+        let file_changes = Self::build_file_changes(changed_files);
+        let affected_modules = Self::collect_affected_modules(changed_files);
         let change_patterns = super::utils::detect_change_patterns(&file_changes);
 
         ChangesSummary {
@@ -149,6 +146,29 @@ impl CommitGenerator {
         }
     }
 
+    fn build_file_changes(changed_files: &[String]) -> Vec<FileChange> {
+        changed_files
+            .iter()
+            .map(|path| FileChange {
+                path: path.clone(),
+                change_type: FileChangeType::Modified,
+                additions: ESTIMATED_FILE_ADDITIONS,
+                deletions: ESTIMATED_FILE_DELETIONS,
+                file_type: super::utils::infer_file_type(path),
+            })
+            .collect()
+    }
+
+    fn collect_affected_modules(changed_files: &[String]) -> Vec<String> {
+        changed_files
+            .iter()
+            .filter_map(|path| super::utils::extract_module_name(path))
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .take(MAX_AFFECTED_MODULES)
+            .collect()
+    }
+
     fn assemble_full_message(
         title: &str,
         body: &Option<String>,
@@ -156,20 +176,22 @@ impl CommitGenerator {
     ) -> String {
         let mut parts = vec![title.to_string()];
 
-        if let Some(body_text) = body {
-            if !body_text.is_empty() {
-                parts.push(String::new());
-                parts.push(body_text.clone());
-            }
-        }
-
-        if let Some(footer_text) = footer {
-            if !footer_text.is_empty() {
-                parts.push(String::new());
-                parts.push(footer_text.clone());
-            }
-        }
+        Self::append_message_section(&mut parts, body);
+        Self::append_message_section(&mut parts, footer);
 
         parts.join("\n")
+    }
+
+    fn append_message_section(parts: &mut Vec<String>, section: &Option<String>) {
+        let Some(text) = section else {
+            return;
+        };
+
+        if text.is_empty() {
+            return;
+        }
+
+        parts.push(String::new());
+        parts.push(text.clone());
     }
 }
