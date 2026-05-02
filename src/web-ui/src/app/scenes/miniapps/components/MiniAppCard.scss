@@ -1,9 +1,16 @@
 @use '../../../../component-library/styles/tokens' as *;
 
+$_miniapp-card-width: 360px;
+$_miniapp-card-min-height: 200px;
+$_miniapp-card-radius: 15px;
+$_miniapp-action-surface: rgba(247, 234, 234, 0.3);
+$_miniapp-action-surface-hover: rgba(247, 234, 234, 0.6);
+$_miniapp-spring-easing: cubic-bezier(0.34, 1.56, 0.64, 1);
+
 .miniapp-card {
-  width: 360px;
-  min-height: 200px;
-  border-radius: 15px;
+  width: $_miniapp-card-width;
+  min-height: $_miniapp-card-min-height;
+  border-radius: $_miniapp-card-radius;
   background: var(--element-bg-soft);
   display: flex;
   flex-direction: column;
@@ -13,7 +20,7 @@
   animation: miniapp-card-in 0.22s $easing-decelerate both;
   animation-delay: calc(var(--card-index, 0) * 35ms);
   transition:
-    transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1),
+    transform 0.35s $_miniapp-spring-easing,
     box-shadow 0.35s ease;
 
   // Top gradient overlay - shows on hover, covers entire card except footer
@@ -89,7 +96,7 @@
     color: var(--color-text-primary);
     animation: miniapp-icon-pop 0.5s $easing-decelerate both;
     animation-delay: calc(var(--card-index, 0) * 35ms + 60ms);
-    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    transition: transform 0.3s $_miniapp-spring-easing;
   }
 
   &__run-dot {
@@ -180,7 +187,7 @@
     display: flex;
     align-items: center;
     width: 100%;
-    border-radius: 0 0 15px 15px;
+    border-radius: 0 0 $_miniapp-card-radius $_miniapp-card-radius;
     overflow: hidden;
     position: relative;
     z-index: 1;
@@ -221,7 +228,7 @@
     height: 30px;
     border-radius: $size-radius-sm;
     border: none;
-    background: rgba(247, 234, 234, 0.3);
+    background: $_miniapp-action-surface;
     color: var(--color-text-secondary);
     cursor: pointer;
     transition:
@@ -233,17 +240,17 @@
     }
 
     &--primary:hover {
-      background: rgba(247, 234, 234, 0.6);
+      background: $_miniapp-action-surface-hover;
       color: var(--color-accent-400);
     }
 
     &--danger:hover {
-      background: rgba(247, 234, 234, 0.6);
+      background: $_miniapp-action-surface-hover;
       color: var(--color-error);
     }
 
     &--stop:hover {
-      background: rgba(247, 234, 234, 0.6);
+      background: $_miniapp-action-surface-hover;
       color: #34d399;
     }
   }
