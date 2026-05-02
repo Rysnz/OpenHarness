@@ -9,6 +9,26 @@ import { StartupPage } from '../page-objects/StartupPage';
 import { saveScreenshot, saveFailureScreenshot } from '../helpers/screenshot-utils';
 import { ensureWorkspaceOpen } from '../helpers/workspace-utils';
 
+const CONFIRM_TYPES = ['info', 'warning', 'error', 'success'];
+const MODAL_SIZES = ['small', 'medium', 'large'];
+const MODAL_SELECTOR = '.modal, .confirm-dialog, .input-dialog';
+
+function requireWorkspace(context: { skip: () => void }, hasWorkspace: boolean, logMessage?: string): boolean {
+  if (hasWorkspace) {
+    return true;
+  }
+
+  if (logMessage) {
+    console.log(logMessage);
+  }
+  context.skip();
+  return false;
+}
+
+async function elementExists(selector: string): Promise<boolean> {
+  return (await $(selector)).isExisting();
+}
+
 describe('L1 Dialog', () => {
   let header: Header;
   let startupPage: StartupPage;
@@ -33,20 +53,12 @@ describe('L1 Dialog', () => {
 
   describe('Modal infrastructure', () => {
     it('modal overlay should exist when dialog is open', async function () {
-      if (!hasWorkspace) {
-        console.log('[L1] Skipping: workspace required');
-        this.skip();
-        return;
-      }
+      if (!requireWorkspace(this, hasWorkspace, '[L1] Skipping: workspace required')) return;
 
       await browser.pause(500);
 
-      // Check for modal infrastructure
-      const overlay = await $('.modal-overlay');
-      const modal = await $('.modal');
-
-      const overlayExists = await overlay.isExisting();
-      const modalExists = await modal.isExisting();
+      const overlayExists = await elementExists('.modal-overlay');
+      const modalExists = await elementExists('.modal');
 
       console.log('[L1] Modal infrastructure:', { overlayExists, modalExists });
 
@@ -57,10 +69,7 @@ describe('L1 Dialog', () => {
 
   describe('Confirm dialog', () => {
     it('confirm dialog should have correct structure', async function () {
-      if (!hasWorkspace) {
-        this.skip();
-        return;
-      }
+      if (!requireWorkspace(this, hasWorkspace)) return;
 
       // Check for confirm dialog structure (if any is open)
       const confirmDialog = await $('.confirm-dialog');
@@ -86,10 +95,7 @@ describe('L1 Dialog', () => {
     });
 
     it('confirm dialog should have action buttons', async function () {
-      if (!hasWorkspace) {
-        this.skip();
-        return;
-      }
+      if (!requireWorkspace(this, hasWorkspace)) return;
 
       const confirmDialog = await $('.confirm-dialog');
       const exists = await confirmDialog.isExisting();
@@ -107,14 +113,9 @@ describe('L1 Dialog', () => {
     });
 
     it('confirm dialog should support types (info/warning/error)', async function () {
-      if (!hasWorkspace) {
-        this.skip();
-        return;
-      }
+      if (!requireWorkspace(this, hasWorkspace)) return;
 
-      const types = ['info', 'warning', 'error', 'success'];
-
-      for (const type of types) {
+      for (const type of CONFIRM_TYPES) {
         const typedDialog = await $(`.confirm-dialog--${type}`);
         const exists = await typedDialog.isExisting();
 
@@ -123,16 +124,13 @@ describe('L1 Dialog', () => {
         }
       }
 
-      expect(Array.isArray(types)).toBe(true);
+      expect(Array.isArray(CONFIRM_TYPES)).toBe(true);
     });
   });
 
   describe('Input dialog', () => {
     it('input dialog should have input field', async function () {
-      if (!hasWorkspace) {
-        this.skip();
-        return;
-      }
+      if (!requireWorkspace(this, hasWorkspace)) return;
 
       const inputDialog = await $('.input-dialog');
       const exists = await inputDialog.isExisting();
@@ -152,23 +150,16 @@ describe('L1 Dialog', () => {
     });
 
     it('input dialog should have description area', async function () {
-      if (!hasWorkspace) {
-        this.skip();
-        return;
-      }
+      if (!requireWorkspace(this, hasWorkspace)) return;
 
-      const description = await $('.input-dialog__description');
-      const exists = await description.isExisting();
+      const exists = await elementExists('.input-dialog__description');
 
       console.log('[L1] Input dialog description exists:', exists);
       expect(typeof exists).toBe('boolean');
     });
 
     it('input dialog should have action buttons', async function () {
-      if (!hasWorkspace) {
-        this.skip();
-        return;
-      }
+      if (!requireWorkspace(this, hasWorkspace)) return;
 
       const inputDialog = await $('.input-dialog');
       const exists = await inputDialog.isExisting();
@@ -192,12 +183,9 @@ describe('L1 Dialog', () => {
 
   describe('Dialog interactions', () => {
     it('ESC key should close dialog', async function () {
-      if (!hasWorkspace) {
-        this.skip();
-        return;
-      }
+      if (!requireWorkspace(this, hasWorkspace)) return;
 
-      const modal = await $('.modal, .confirm-dialog, .input-dialog');
+      const modal = await $(MODAL_SELECTOR);
       const exists = await modal.isExisting();
 
       if (!exists) {
@@ -210,7 +198,7 @@ describe('L1 Dialog', () => {
       await browser.keys(['Escape']);
       await browser.pause(300);
 
-      const modalAfter = await $('.modal, .confirm-dialog, .input-dialog');
+      const modalAfter = await $(MODAL_SELECTOR);
       const stillOpen = await modalAfter.isExisting();
 
       console.log('[L1] Dialog still open after ESC:', stillOpen);
@@ -218,10 +206,7 @@ describe('L1 Dialog', () => {
     });
 
     it('clicking overlay should close modal', async function () {
-      if (!hasWorkspace) {
-        this.skip();
-        return;
-      }
+      if (!requireWorkspace(this, hasWorkspace)) return;
 
       const overlay = await $('.modal-overlay');
       const exists = await overlay.isExisting();
@@ -240,10 +225,7 @@ describe('L1 Dialog', () => {
     });
 
     it('dialog should be focusable', async function () {
-      if (!hasWorkspace) {
-        this.skip();
-        return;
-      }
+      if (!requireWorkspace(this, hasWorkspace)) return;
 
       const modalContent = await $('.modal__content, .confirm-dialog, .input-dialog');
       const exists = await modalContent.isExisting();
@@ -268,14 +250,9 @@ describe('L1 Dialog', () => {
 
   describe('Modal features', () => {
     it('modal should support different sizes', async function () {
-      if (!hasWorkspace) {
-        this.skip();
-        return;
-      }
+      if (!requireWorkspace(this, hasWorkspace)) return;
 
-      const sizes = ['small', 'medium', 'large'];
-
-      for (const size of sizes) {
+      for (const size of MODAL_SIZES) {
         const sizedModal = await $(`.modal--${size}`);
         const exists = await sizedModal.isExisting();
 
@@ -284,30 +261,22 @@ describe('L1 Dialog', () => {
         }
       }
 
-      expect(Array.isArray(sizes)).toBe(true);
+      expect(Array.isArray(MODAL_SIZES)).toBe(true);
     });
 
     it('modal should support dragging if draggable', async function () {
-      if (!hasWorkspace) {
-        this.skip();
-        return;
-      }
+      if (!requireWorkspace(this, hasWorkspace)) return;
 
-      const draggableModal = await $('.modal--draggable');
-      const exists = await draggableModal.isExisting();
+      const exists = await elementExists('.modal--draggable');
 
       console.log('[L1] Draggable modal exists:', exists);
       expect(typeof exists).toBe('boolean');
     });
 
     it('modal should support resizing if resizable', async function () {
-      if (!hasWorkspace) {
-        this.skip();
-        return;
-      }
+      if (!requireWorkspace(this, hasWorkspace)) return;
 
-      const resizableModal = await $('.modal--resizable');
-      const exists = await resizableModal.isExisting();
+      const exists = await elementExists('.modal--resizable');
 
       console.log('[L1] Resizable modal exists:', exists);
       expect(typeof exists).toBe('boolean');
