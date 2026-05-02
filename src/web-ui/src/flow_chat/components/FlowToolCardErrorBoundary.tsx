@@ -11,6 +11,45 @@ import {
 const log = createLogger('FlowToolCardErrorBoundary');
 const DETAIL_PREVIEW_LIMIT = 4000;
 
+const fallbackGridStyle = {
+  display: 'grid',
+  gap: 12,
+} as const;
+
+const messageStyle = {
+  color: 'var(--tool-card-text-secondary)',
+  fontSize: 12,
+  lineHeight: 1.5,
+} as const;
+
+const retryButtonStyle = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 6,
+  padding: '6px 10px',
+  borderRadius: 8,
+  border: '1px solid var(--tool-card-border, rgba(255, 255, 255, 0.12))',
+  background: 'var(--tool-card-bg-secondary, rgba(255, 255, 255, 0.04))',
+  color: 'var(--tool-card-text-primary)',
+  cursor: 'pointer',
+} as const;
+
+const detailsSummaryStyle = { cursor: 'pointer' } as const;
+
+const previewBlockStyle = {
+  marginTop: 8,
+  whiteSpace: 'pre-wrap',
+  wordBreak: 'break-word',
+  fontSize: 12,
+  maxHeight: 220,
+  overflow: 'auto',
+} as const;
+
+const technicalBlockStyle = {
+  ...previewBlockStyle,
+  maxHeight: 260,
+} as const;
+
 interface Props {
   children: ReactNode;
   toolItem: FlowToolItem;
@@ -49,6 +88,34 @@ function getFirstLine(error?: Error): string {
   return message.split('\n')[0] || 'Tool card render failed.';
 }
 
+function getToolCardId(toolItem: FlowToolItem): string {
+  return toolItem.id ?? toolItem.toolCall?.id ?? 'unknown-tool-id';
+}
+
+function getTechnicalDetails(error: Error | undefined, errorInfo: unknown): string {
+  const componentStack = safeReactErrorInfo(errorInfo).componentStack;
+  return truncateDetail(
+    [error?.stack || error?.message, componentStack]
+      .filter(Boolean)
+      .join('\n\n')
+  );
+}
+
+function ErrorDetails({ error, errorInfo }: { error?: Error; errorInfo?: unknown }) {
+  if (!import.meta.env.DEV) {
+    return null;
+  }
+
+  return (
+    <details>
+      <summary style={detailsSummaryStyle}>Technical details</summary>
+      <pre style={technicalBlockStyle}>
+        {getTechnicalDetails(error, errorInfo)}
+      </pre>
+    </details>
+  );
+}
+
 function RenderFallback({
   displayName,
   error,
@@ -62,8 +129,7 @@ function RenderFallback({
   onRetry: () => void;
   toolItem: FlowToolItem;
 }) {
-  const componentStack = safeReactErrorInfo(errorInfo).componentStack;
-  const toolId = toolItem.id ?? toolItem.toolCall?.id ?? 'unknown-tool-id';
+  const toolId = getToolCardId(toolItem);
 
   return (
     <div data-tool-card-id={toolId} role="alert">
@@ -78,36 +144,15 @@ function RenderFallback({
           />
         )}
         expandedContent={(
-          <div
-            style={{
-              display: 'grid',
-              gap: 12,
-            }}
-          >
-            <div
-              style={{
-                color: 'var(--tool-card-text-secondary)',
-                fontSize: 12,
-                lineHeight: 1.5,
-              }}
-            >
+          <div style={fallbackGridStyle}>
+            <div style={messageStyle}>
               {getFirstLine(error)}
             </div>
 
             <div>
               <button
                 onClick={onRetry}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  padding: '6px 10px',
-                  borderRadius: 8,
-                  border: '1px solid var(--tool-card-border, rgba(255, 255, 255, 0.12))',
-                  background: 'var(--tool-card-bg-secondary, rgba(255, 255, 255, 0.04))',
-                  color: 'var(--tool-card-text-primary)',
-                  cursor: 'pointer',
-                }}
+                style={retryButtonStyle}
                 type="button"
               >
                 <RefreshCw size={12} />
@@ -116,42 +161,13 @@ function RenderFallback({
             </div>
 
             <details>
-              <summary style={{ cursor: 'pointer' }}>Raw tool payload</summary>
-              <pre
-                style={{
-                  marginTop: 8,
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-word',
-                  fontSize: 12,
-                  maxHeight: 220,
-                  overflow: 'auto',
-                }}
-              >
+              <summary style={detailsSummaryStyle}>Raw tool payload</summary>
+              <pre style={previewBlockStyle}>
                 {safeSerialize(toolItem)}
               </pre>
             </details>
 
-            {import.meta.env.DEV && (
-              <details>
-                <summary style={{ cursor: 'pointer' }}>Technical details</summary>
-                <pre
-                  style={{
-                    marginTop: 8,
-                    whiteSpace: 'pre-wrap',
-                    wordBreak: 'break-word',
-                    fontSize: 12,
-                    maxHeight: 260,
-                    overflow: 'auto',
-                  }}
-                >
-                  {truncateDetail(
-                    [error?.stack || error?.message, componentStack]
-                      .filter(Boolean)
-                      .join('\n\n')
-                  )}
-                </pre>
-              </details>
-            )}
+            <ErrorDetails error={error} errorInfo={errorInfo} />
           </div>
         )}
       />
@@ -188,29 +204,33 @@ export class FlowToolCardErrorBoundary extends Component<Props, State> {
       return;
     }
 
-    const shouldReset =
-      prevProps.toolItem.id !== this.props.toolItem.id ||
-      prevProps.toolItem.status !== this.props.toolItem.status ||
-      prevProps.toolItem.toolResult !== this.props.toolItem.toolResult ||
-      prevProps.toolItem.partialParams !== this.props.toolItem.partialParams ||
-      prevProps.toolItem.userConfirmed !== this.props.toolItem.userConfirmed;
-
-    if (shouldReset) {
-      this.setState({
-        hasError: false,
-        error: undefined,
-        errorInfo: undefined,
-      });
+    if (this.shouldResetForNewToolState(prevProps)) {
+      this.clearError();
     }
   }
 
   private handleRetry = () => {
+    this.clearError();
+  };
+
+  private shouldResetForNewToolState(prevProps: Props): boolean {
+    const previous = prevProps.toolItem;
+    const current = this.props.toolItem;
+
+    return previous.id !== current.id ||
+      previous.status !== current.status ||
+      previous.toolResult !== current.toolResult ||
+      previous.partialParams !== current.partialParams ||
+      previous.userConfirmed !== current.userConfirmed;
+  }
+
+  private clearError(): void {
     this.setState({
       hasError: false,
       error: undefined,
       errorInfo: undefined,
     });
-  };
+  }
 
   render() {
     if (!this.state.hasError) {
