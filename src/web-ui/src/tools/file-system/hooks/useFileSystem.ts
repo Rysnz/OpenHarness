@@ -25,6 +25,20 @@ export interface UseFileSystemReturn {
   updateOptions: (options: Partial<FileSystemOptions>) => void;
 }
 
+function buildControllerConfig(options: UseFileSystemOptions, overrides: Partial<FileSystemOptions>) {
+  return {
+    rootPath: options.rootPath,
+    autoLoad: options.autoLoad ?? true,
+    enableAutoWatch: options.enableAutoWatch ?? true,
+    enablePathCompression: overrides.enablePathCompression ?? options.enablePathCompression ?? true,
+    showHiddenFiles: overrides.showHiddenFiles ?? options.showHiddenFiles ?? false,
+    sortBy: overrides.sortBy ?? options.sortBy ?? 'name',
+    sortOrder: overrides.sortOrder ?? options.sortOrder ?? 'asc',
+    maxDepth: overrides.maxDepth ?? options.maxDepth,
+    excludePatterns: overrides.excludePatterns ?? options.excludePatterns ?? [],
+  };
+}
+
 export function useFileSystem(options: UseFileSystemOptions = {}): UseFileSystemReturn {
   const [optionOverrides, setOptionOverrides] = useState<Partial<FileSystemOptions>>({});
 
@@ -32,17 +46,7 @@ export function useFileSystem(options: UseFileSystemOptions = {}): UseFileSystem
     setOptionOverrides({});
   }, [options.rootPath]);
 
-  const controllerConfig = useMemo(() => ({
-    rootPath: options.rootPath,
-    autoLoad: options.autoLoad ?? true,
-    enableAutoWatch: options.enableAutoWatch ?? true,
-    enablePathCompression: optionOverrides.enablePathCompression ?? options.enablePathCompression ?? true,
-    showHiddenFiles: optionOverrides.showHiddenFiles ?? options.showHiddenFiles ?? false,
-    sortBy: optionOverrides.sortBy ?? options.sortBy ?? 'name',
-    sortOrder: optionOverrides.sortOrder ?? options.sortOrder ?? 'asc',
-    maxDepth: optionOverrides.maxDepth ?? options.maxDepth,
-    excludePatterns: optionOverrides.excludePatterns ?? options.excludePatterns ?? [],
-  }), [
+  const controllerConfig = useMemo(() => buildControllerConfig(options, optionOverrides), [
     options.rootPath,
     options.autoLoad,
     options.enableAutoWatch,
