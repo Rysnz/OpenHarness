@@ -5,6 +5,12 @@
 
 @use '../../../component-library/styles/tokens' as *;
 
+$_branch-modal-page-padding: 24px;
+$_branch-modal-radius: 6px;
+$_branch-modal-transition: 0.15s ease;
+$_branch-modal-dialog-width: 380px;
+$_branch-modal-dialog-max-height: 520px;
+
 // ==================== Overlay ====================
 
 .branch-select-overlay {
@@ -18,7 +24,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 24px;
+  padding: $_branch-modal-page-padding;
   animation: branch-overlay-fade 0.2s ease;
 }
 
@@ -35,11 +41,11 @@
   flex-direction: column;
   background: var(--color-bg-primary);
   border: 1px solid var(--border-subtle);
-  border-radius: 12px;
+  border-radius: $_branch-modal-radius * 2;
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
-  width: 380px;
-  max-width: calc(100vw - 48px);
-  max-height: min(520px, calc(100vh - 48px));
+  width: $_branch-modal-dialog-width;
+  max-width: calc(100vw - #{$_branch-modal-page-padding * 2});
+  max-height: min($_branch-modal-dialog-max-height, calc(100vh - #{$_branch-modal-page-padding * 2}));
   overflow: hidden;
   animation: branch-dialog-enter 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -68,7 +74,7 @@
   cursor: pointer;
   padding: 5px;
   border-radius: 5px;
-  transition: all 0.15s ease;
+  transition: all $_branch-modal-transition;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -127,7 +133,7 @@
   padding: 8px 12px;
   background: rgba(244, 67, 54, 0.08);
   border: 1px solid rgba(244, 67, 54, 0.2);
-  border-radius: 6px;
+  border-radius: $_branch-modal-radius;
   color: #f44336;
   font-size: 12px;
 }
@@ -141,7 +147,7 @@
   overflow-y: auto;
   overflow-x: hidden;
   border: 1px solid var(--border-subtle);
-  border-radius: 6px;
+  border-radius: $_branch-modal-radius;
   background: var(--color-bg-secondary);
   
 }
@@ -290,7 +296,7 @@
   border: none;
   border-radius: 6px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all $_branch-modal-transition;
 
   &--cancel {
     background: var(--element-bg-base);
