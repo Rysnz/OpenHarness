@@ -1,26 +1,23 @@
- 
-
+import { createLogger } from '@/shared/utils/logger';
+import { MenuContext } from '../types/context.types';
+import { MenuItem } from '../types/menu.types';
 import {
   IMenuProvider,
   MenuProviderConfig,
-  ProviderRegistrationOptions,
+  ProviderGroup,
   ProviderMetadata,
-  ProviderGroup
+  ProviderRegistrationOptions,
 } from '../types/provider.types';
-import { MenuContext } from '../types/context.types';
-import { MenuItem } from '../types/menu.types';
-import { createLogger } from '@/shared/utils/logger';
 
 const log = createLogger('ContextMenuRegistry');
 
- 
 class SimpleMenuProvider implements IMenuProvider {
   readonly id: string;
   readonly name: string;
   readonly description?: string;
   readonly priority: number;
   readonly scope?: string | string[];
-  
+
   private matcher: (context: MenuContext) => boolean;
   private menuBuilder: (context: MenuContext) => MenuItem[] | Promise<MenuItem[]>;
   private enabled: boolean | (() => boolean);
@@ -41,8 +38,7 @@ class SimpleMenuProvider implements IMenuProvider {
   }
 
   async getMenuItems(context: MenuContext): Promise<MenuItem[]> {
-    const items = await this.menuBuilder(context);
-    return items;
+    return this.menuBuilder(context);
   }
 
   isEnabled(): boolean {
@@ -50,123 +46,69 @@ class SimpleMenuProvider implements IMenuProvider {
   }
 }
 
- 
+function isProviderConfig(provider: IMenuProvider | MenuProviderConfig): provider is MenuProviderConfig {
+  return 'matcher' in provider && 'menuBuilder' in provider;
+}
+
+function createMetadata(provider: IMenuProvider, options: ProviderRegistrationOptions): ProviderMetadata {
+  return {
+    id: provider.id,
+    name: provider.name,
+    description: provider.description,
+    priority: provider.priority,
+    scope: provider.scope,
+    enabled: options.enabled ?? true,
+    registeredAt: Date.now(),
+    invocationCount: 0,
+  };
+}
+
 export class ContextMenuRegistry {
-  private providers: Map<string, IMenuProvider>;
-  private metadata: Map<string, ProviderMetadata>;
-  private groups: Map<string, ProviderGroup>;
+  private providers = new Map<string, IMenuProvider>();
+  private metadata = new Map<string, ProviderMetadata>();
+  private groups = new Map<string, ProviderGroup>();
 
-  constructor() {
-    this.providers = new Map();
-    this.metadata = new Map();
-    this.groups = new Map();
-  }
-
-   
   register(
     provider: IMenuProvider | MenuProviderConfig,
     options: ProviderRegistrationOptions = {}
   ): void {
-    const actualProvider = this.isConfig(provider)
+    const actualProvider = isProviderConfig(provider)
       ? new SimpleMenuProvider(provider)
       : provider;
 
-    
     if (this.providers.has(actualProvider.id) && !options.override) {
       throw new Error(`Menu provider with id "${actualProvider.id}" already exists`);
     }
 
-    
     this.providers.set(actualProvider.id, actualProvider);
-
-    
-    this.metadata.set(actualProvider.id, {
-      id: actualProvider.id,
-      name: actualProvider.name,
-      description: actualProvider.description,
-      priority: actualProvider.priority,
-      scope: actualProvider.scope,
-      enabled: options.enabled ?? true,
-      registeredAt: Date.now(),
-      invocationCount: 0
-    });
+    this.metadata.set(actualProvider.id, createMetadata(actualProvider, options));
   }
 
-   
   unregister(providerId: string): boolean {
     const deleted = this.providers.delete(providerId);
     this.metadata.delete(providerId);
-    
-    
-    this.groups.forEach(group => {
-      const index = group.providers.indexOf(providerId);
-      if (index > -1) {
-        group.providers.splice(index, 1);
-      }
-    });
-
+    this.removeProviderFromAllGroups(providerId);
     return deleted;
   }
 
-   
   getProvider(providerId: string): IMenuProvider | undefined {
     return this.providers.get(providerId);
   }
 
-   
   getAllProviders(): IMenuProvider[] {
     return Array.from(this.providers.values());
   }
 
-   
   getMetadata(providerId: string): ProviderMetadata | undefined {
     return this.metadata.get(providerId);
   }
 
-   
   findMatchingProviders(context: MenuContext): IMenuProvider[] {
-    const matching: IMenuProvider[] = [];
-
-    for (const provider of this.providers.values()) {
-      try {
-        
-        if (provider.isEnabled && !provider.isEnabled()) {
-          continue;
-        }
-
-        const meta = this.metadata.get(provider.id);
-        if (meta && !meta.enabled) {
-          continue;
-        }
-
-        
-        if (provider.scope && !this.matchesScope(provider.scope, context)) {
-          continue;
-        }
-
-        
-        const matches = provider.matches(context);
-        
-        if (matches) {
-          matching.push(provider);
-          
-          
-          if (meta) {
-            meta.invocationCount++;
-          }
-        }
-      } catch (error) {
-        log.error('Error matching provider', { providerId: provider.id, error });
-      }
-    }
-
-    
-    matching.sort((a, b) => b.priority - a.priority);
-
-    return matching;
+    return Array.from(this.providers.values())
+      .filter((provider) => this.canUseProvider(provider, context))
+      .sort((a, b) => b.priority - a.priority);
   }
 
-   
   setProviderEnabled(providerId: string, enabled: boolean): void {
     const meta = this.metadata.get(providerId);
     if (meta) {
@@ -174,17 +116,14 @@ export class ContextMenuRegistry {
     }
   }
 
-   
   createGroup(group: ProviderGroup): void {
     this.groups.set(group.id, group);
   }
 
-   
   getGroup(groupId: string): ProviderGroup | undefined {
     return this.groups.get(groupId);
   }
 
-   
   addToGroup(groupId: string, providerId: string): void {
     const group = this.groups.get(groupId);
     if (group && !group.providers.includes(providerId)) {
@@ -192,18 +131,15 @@ export class ContextMenuRegistry {
     }
   }
 
-   
   removeFromGroup(groupId: string, providerId: string): void {
     const group = this.groups.get(groupId);
-    if (group) {
-      const index = group.providers.indexOf(providerId);
-      if (index > -1) {
-        group.providers.splice(index, 1);
-      }
+    if (!group) {
+      return;
     }
+
+    group.providers = group.providers.filter((id) => id !== providerId);
   }
 
-   
   getProvidersInGroup(groupId: string): IMenuProvider[] {
     const group = this.groups.get(groupId);
     if (!group) {
@@ -211,46 +147,63 @@ export class ContextMenuRegistry {
     }
 
     return group.providers
-      .map(id => this.providers.get(id))
+      .map((id) => this.providers.get(id))
       .filter(Boolean) as IMenuProvider[];
   }
 
-   
   clear(): void {
     this.providers.clear();
     this.metadata.clear();
     this.groups.clear();
   }
 
-   
   getStats() {
+    const metadata = Array.from(this.metadata.values());
+
     return {
       totalProviders: this.providers.size,
-      enabledProviders: Array.from(this.metadata.values()).filter(m => m.enabled).length,
+      enabledProviders: metadata.filter((meta) => meta.enabled).length,
       totalGroups: this.groups.size,
-      metadata: Array.from(this.metadata.values())
+      metadata,
     };
   }
 
-   
-  private isConfig(obj: any): obj is MenuProviderConfig {
-    return 'matcher' in obj && 'menuBuilder' in obj;
+  private canUseProvider(provider: IMenuProvider, context: MenuContext): boolean {
+    try {
+      const meta = this.metadata.get(provider.id);
+      if (provider.isEnabled && !provider.isEnabled()) {
+        return false;
+      }
+      if (meta && !meta.enabled) {
+        return false;
+      }
+      if (provider.scope && !this.matchesScope(provider.scope, context)) {
+        return false;
+      }
+      if (!provider.matches(context)) {
+        return false;
+      }
+
+      if (meta) {
+        meta.invocationCount++;
+      }
+      return true;
+    } catch (error) {
+      log.error('Error matching provider', { providerId: provider.id, error });
+      return false;
+    }
   }
 
-   
-  private matchesScope(scope: string | string[], context: MenuContext): boolean {
-    const scopes = Array.isArray(scope) ? scope : [scope];
-    
-    
-    const contextArea = context.metadata?.area;
-    if (contextArea) {
-      return scopes.includes(contextArea);
-    }
+  private removeProviderFromAllGroups(providerId: string): void {
+    this.groups.forEach((group) => {
+      group.providers = group.providers.filter((id) => id !== providerId);
+    });
+  }
 
-    return true; 
+  private matchesScope(scope: string | string[], context: MenuContext): boolean {
+    const contextArea = context.metadata?.area;
+    return contextArea ? (Array.isArray(scope) ? scope : [scope]).includes(contextArea) : true;
   }
 }
 
- 
 export const contextMenuRegistry = new ContextMenuRegistry();
-
