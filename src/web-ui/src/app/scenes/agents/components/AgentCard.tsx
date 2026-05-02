@@ -23,6 +23,17 @@ interface AgentCardProps {
   onOpenDetails: (agent: AgentWithCapabilities) => void;
 }
 
+function agentCardClassName(enabled: boolean): string {
+  return ['agent-card', !enabled && 'agent-card--disabled'].filter(Boolean).join(' ');
+}
+
+function agentCardStyle(agent: AgentWithCapabilities, index: number): React.CSSProperties {
+  return {
+    '--card-index': index,
+    '--agent-card-gradient': getCardGradient(agent.id || agent.name),
+  } as React.CSSProperties;
+}
+
 const AgentCard: React.FC<AgentCardProps> = ({
   agent,
   index = 0,
@@ -37,17 +48,12 @@ const AgentCard: React.FC<AgentCardProps> = ({
   const Icon = AGENT_ICON_MAP[(agent.iconKey ?? 'bot') as keyof typeof AGENT_ICON_MAP] ?? Bot;
   const totalTools = toolCount ?? agent.toolCount ?? agent.defaultTools?.length ?? 0;
   const openDetails = () => onOpenDetails(agent);
+  const isModeAgent = agent.agentKind === 'mode';
 
   return (
     <div
-      className={[
-        'agent-card',
-        !agent.enabled && 'agent-card--disabled',
-      ].filter(Boolean).join(' ')}
-      style={{
-        '--card-index': index,
-        '--agent-card-gradient': getCardGradient(agent.id || agent.name),
-      } as React.CSSProperties}
+      className={agentCardClassName(agent.enabled)}
+      style={agentCardStyle(agent, index)}
       onClick={openDetails}
       role="button"
       tabIndex={0}
@@ -66,7 +72,7 @@ const AgentCard: React.FC<AgentCardProps> = ({
             <span className="agent-card__name">{agent.name}</span>
             <div className="agent-card__badges">
               <Badge variant={badge.variant}>
-                {agent.agentKind === 'mode' ? <Cpu size={10} /> : <Bot size={10} />}
+                {isModeAgent ? <Cpu size={10} /> : <Bot size={10} />}
                 {badge.label}
               </Badge>
               {!agent.enabled ? (
@@ -103,7 +109,7 @@ const AgentCard: React.FC<AgentCardProps> = ({
             <Wrench size={12} />
             {t('agentCard.meta.tools', '{{count}} 个工具', { count: totalTools })}
           </span>
-          {agent.agentKind === 'mode' && skillCount > 0 ? (
+          {isModeAgent && skillCount > 0 ? (
             <span className="agent-card__meta-item">
               <Puzzle size={12} />
               {t('agentCard.meta.skills', '{{count}} 个 Skills', { count: skillCount })}
