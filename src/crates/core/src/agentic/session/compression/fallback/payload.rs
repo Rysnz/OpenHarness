@@ -29,6 +29,48 @@ pub(super) fn trim_payload_to_budget(
     rebuild_payload_from_units(selected_units)
 }
 
+#[derive(Default)]
+struct RebuildTurnState {
+    entry_id: Option<usize>,
+    turn_id: Option<String>,
+    messages: Vec<CompressedMessage>,
+    todo: Option<CompressedTodoSnapshot>,
+}
+
+impl RebuildTurnState {
+    fn start_turn(&mut self, entry_id: usize, turn_id: Option<String>) {
+        self.entry_id = Some(entry_id);
+        self.turn_id = turn_id;
+    }
+
+    fn has_entry(&self, entry_id: usize) -> bool {
+        self.entry_id == Some(entry_id)
+    }
+
+    fn clear(&mut self) {
+        self.entry_id = None;
+        self.turn_id = None;
+    }
+
+    fn flush_into(&mut self, entries: &mut Vec<CompressionEntry>) {
+        if self.entry_id.is_none() {
+            return;
+        }
+
+        if self.messages.is_empty() && self.todo.is_none() {
+            self.clear();
+            return;
+        }
+
+        entries.push(CompressionEntry::Turn {
+            turn_id: self.turn_id.clone(),
+            messages: std::mem::take(&mut self.messages),
+            todo: self.todo.take(),
+        });
+        self.clear();
+    }
+}
+
 fn flatten_entries_to_units(entries: Vec<CompressionEntry>) -> Vec<CompressionUnit> {
     let mut units = Vec::new();
 
@@ -65,21 +107,12 @@ fn flatten_entries_to_units(entries: Vec<CompressionEntry>) -> Vec<CompressionUn
 
 fn rebuild_payload_from_units(units: Vec<CompressionUnit>) -> CompressionPayload {
     let mut entries = Vec::new();
-    let mut current_turn_entry_id: Option<usize> = None;
-    let mut current_turn_id: Option<String> = None;
-    let mut current_messages = Vec::new();
-    let mut current_todo = None;
+    let mut current_turn = RebuildTurnState::default();
 
     for unit in units {
         match unit {
             CompressionUnit::ModelSummary { text } => {
-                flush_rebuilt_turn(
-                    &mut entries,
-                    &mut current_turn_entry_id,
-                    &mut current_turn_id,
-                    &mut current_messages,
-                    &mut current_todo,
-                );
+                current_turn.flush_into(&mut entries);
                 entries.push(CompressionEntry::ModelSummary { text });
             }
             CompressionUnit::TurnMessage {
@@ -87,75 +120,29 @@ fn rebuild_payload_from_units(units: Vec<CompressionUnit>) -> CompressionPayload
                 turn_id,
                 message,
             } => {
-                if current_turn_entry_id != Some(entry_id) {
-                    flush_rebuilt_turn(
-                        &mut entries,
-                        &mut current_turn_entry_id,
-                        &mut current_turn_id,
-                        &mut current_messages,
-                        &mut current_todo,
-                    );
-                    current_turn_entry_id = Some(entry_id);
-                    current_turn_id = turn_id;
+                if !current_turn.has_entry(entry_id) {
+                    current_turn.flush_into(&mut entries);
+                    current_turn.start_turn(entry_id, turn_id);
                 }
-                current_messages.push(message);
+                current_turn.messages.push(message);
             }
             CompressionUnit::TurnTodo {
                 entry_id,
                 turn_id,
                 todo,
             } => {
-                if current_turn_entry_id != Some(entry_id) {
-                    flush_rebuilt_turn(
-                        &mut entries,
-                        &mut current_turn_entry_id,
-                        &mut current_turn_id,
-                        &mut current_messages,
-                        &mut current_todo,
-                    );
-                    current_turn_entry_id = Some(entry_id);
-                    current_turn_id = turn_id;
+                if !current_turn.has_entry(entry_id) {
+                    current_turn.flush_into(&mut entries);
+                    current_turn.start_turn(entry_id, turn_id);
                 }
-                current_todo = Some(todo);
+                current_turn.todo = Some(todo);
             }
         }
     }
 
-    flush_rebuilt_turn(
-        &mut entries,
-        &mut current_turn_entry_id,
-        &mut current_turn_id,
-        &mut current_messages,
-        &mut current_todo,
-    );
+    current_turn.flush_into(&mut entries);
 
     CompressionPayload { entries }
-}
-
-fn flush_rebuilt_turn(
-    entries: &mut Vec<CompressionEntry>,
-    current_turn_entry_id: &mut Option<usize>,
-    current_turn_id: &mut Option<String>,
-    current_messages: &mut Vec<CompressedMessage>,
-    current_todo: &mut Option<CompressedTodoSnapshot>,
-) {
-    if current_turn_entry_id.is_none() {
-        return;
-    }
-
-    if current_messages.is_empty() && current_todo.is_none() {
-        *current_turn_entry_id = None;
-        *current_turn_id = None;
-        return;
-    }
-
-    entries.push(CompressionEntry::Turn {
-        turn_id: current_turn_id.clone(),
-        messages: std::mem::take(current_messages),
-        todo: current_todo.take(),
-    });
-    *current_turn_entry_id = None;
-    *current_turn_id = None;
 }
 
 fn estimate_payload_tokens(payload: &CompressionPayload) -> usize {
