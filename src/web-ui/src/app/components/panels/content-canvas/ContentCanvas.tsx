@@ -13,6 +13,9 @@ import { useTabLifecycle, useKeyboardShortcuts, usePanelTabCoordinator } from '.
 import type { AnchorPosition } from './types';
 import { openMainSession, selectActiveBtwSessionTab } from '@/flow_chat/services/openBtwSession';
 import './ContentCanvas.scss';
+
+type BtwSessionData = { childSessionId: string; parentSessionId: string; workspacePath?: string };
+
 export interface ContentCanvasProps {
   /** Workspace path */
   workspacePath?: string;
@@ -26,6 +29,30 @@ export interface ContentCanvasProps {
   onBeforeClose?: (content: any) => Promise<boolean>;
   /** Disable pop-out and panel-close controls (used in panel-view scene) */
   disablePopOut?: boolean;
+}
+
+function useBtwSessionSync(mode: NonNullable<ContentCanvasProps['mode']>): void {
+  const activeBtwSessionTab = useCanvasStore(state => selectActiveBtwSessionTab(state as any));
+  const activeBtwSessionData = activeBtwSessionTab?.content.data as BtwSessionData | undefined;
+  const lastSyncedBtwTabIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (mode !== 'agent' || !activeBtwSessionTab?.id || !activeBtwSessionData?.parentSessionId) {
+      lastSyncedBtwTabIdRef.current = null;
+      return;
+    }
+
+    if (lastSyncedBtwTabIdRef.current === activeBtwSessionTab.id) {
+      return;
+    }
+
+    lastSyncedBtwTabIdRef.current = activeBtwSessionTab.id;
+    void openMainSession(activeBtwSessionData.parentSessionId);
+  }, [activeBtwSessionData?.parentSessionId, activeBtwSessionTab?.id, mode]);
+}
+
+function hasVisibleTabs(tabs: Array<{ isHidden?: boolean }>): boolean {
+  return tabs.some((tab) => !tab.isHidden);
 }
 
 export const ContentCanvas: React.FC<ContentCanvasProps> = ({
@@ -45,75 +72,44 @@ export const ContentCanvas: React.FC<ContentCanvasProps> = ({
     closeMissionControl,
     openMissionControl,
   } = useCanvasStore();
-  const activeBtwSessionTab = useCanvasStore(state => selectActiveBtwSessionTab(state as any));
-  const activeBtwSessionData = activeBtwSessionTab?.content.data as
-    | { childSessionId: string; parentSessionId: string; workspacePath?: string }
-    | undefined;
-  const lastSyncedBtwTabIdRef = useRef<string | null>(null);
-  // Initialize hooks
+  useBtwSessionSync(mode);
+
   const { handleCloseWithDirtyCheck, handleCloseAllWithDirtyCheck } = useTabLifecycle({ mode });
   useKeyboardShortcuts({ enabled: true, handleCloseWithDirtyCheck });
-  // Panel/tab state coordinator (auto manage expand/collapse)
   const { collapsePanel } = usePanelTabCoordinator({
     autoCollapseOnEmpty: true,
     autoExpandOnTabOpen: true,
   });
 
-  useEffect(() => {
-    if (mode !== 'agent' || !activeBtwSessionTab?.id || !activeBtwSessionData?.parentSessionId) {
-      lastSyncedBtwTabIdRef.current = null;
-      return;
-    }
+  const hasPrimaryVisibleTabs = useMemo(() => hasVisibleTabs(primaryGroup.tabs), [primaryGroup.tabs]);
 
-    if (lastSyncedBtwTabIdRef.current === activeBtwSessionTab.id) {
-      return;
-    }
-
-    lastSyncedBtwTabIdRef.current = activeBtwSessionTab.id;
-    void openMainSession(activeBtwSessionData.parentSessionId);
-  }, [activeBtwSessionData?.parentSessionId, activeBtwSessionTab?.id, mode]);
-
-  // Check if primary group has visible tabs
-  const hasPrimaryVisibleTabs = useMemo(() => {
-    const primaryVisible = primaryGroup.tabs.filter(t => !t.isHidden).length;
-    return primaryVisible > 0;
-  }, [primaryGroup.tabs]);
-
-  // Handle anchor close
   const handleAnchorClose = useCallback(() => {
     setAnchorPosition('hidden');
   }, [setAnchorPosition]);
 
-  // Handle anchor position change
   const handleAnchorPositionChange = useCallback((position: AnchorPosition) => {
     setAnchorPosition(position);
   }, [setAnchorPosition]);
 
-  // Handle anchor size change
   const handleAnchorSizeChange = useCallback((size: number) => {
     setAnchorSize(size);
   }, [setAnchorSize]);
 
-  // Handle mission control open
   const handleOpenMissionControl = useCallback(() => {
     openMissionControl();
   }, [openMissionControl]);
 
-  // Handle mission control close
   const handleCloseMissionControl = useCallback(() => {
     closeMissionControl();
   }, [closeMissionControl]);
 
-  // Render content
   const renderContent = () => {
-    // Show empty state when primary group has no visible tabs
     if (!hasPrimaryVisibleTabs) {
       return <EmptyState onClose={disablePopOut ? undefined : collapsePanel} />;
     }
 
     return (
       <div className="canvas-content-canvas__main">
-        {/* Editor area */}
         <div className="canvas-content-canvas__editor">
           <EditorArea
             workspacePath={workspacePath}
@@ -126,7 +122,6 @@ export const ContentCanvas: React.FC<ContentCanvasProps> = ({
           />
         </div>
 
-        {/* Anchor area */}
         {layout.anchorPosition !== 'hidden' && (
           <AnchorZone
             position={layout.anchorPosition}
@@ -135,7 +130,6 @@ export const ContentCanvas: React.FC<ContentCanvasProps> = ({
             onPositionChange={handleAnchorPositionChange}
             onClose={handleAnchorClose}
           >
-            {/* Anchor content (e.g., terminal) renders here */}
             <div className="canvas-content-canvas__anchor-content">
             </div>
           </AnchorZone>
@@ -149,10 +143,8 @@ export const ContentCanvas: React.FC<ContentCanvasProps> = ({
       className={`canvas-content-canvas ${layout.isMaximized ? 'is-maximized' : ''}`}
       data-shortcut-scope="canvas"
     >
-      {/* Main content */}
       {renderContent()}
 
-      {/* Mission control overlay */}
       <MissionControl
         isOpen={isMissionControlOpen}
         onClose={handleCloseMissionControl}
