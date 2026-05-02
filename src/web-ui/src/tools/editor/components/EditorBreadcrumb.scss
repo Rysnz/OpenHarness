@@ -9,11 +9,29 @@
 $_breadcrumb-height: 24px;
 $_dropdown-max-height: 300px;
 $_dropdown-width: 220px;
+$_breadcrumb-icon-size: 12px;
+$_dropdown-icon-size: 14px;
+$_breadcrumb-folder-color: #e8b541;
+
+@mixin breadcrumb-row($justify: null) {
+  display: flex;
+  align-items: center;
+
+  @if $justify != null {
+    justify-content: $justify;
+  }
+}
+
+@mixin breadcrumb-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 // Breadcrumb Navigation
 .editor-breadcrumb {
-  display: flex;
-  align-items: center;
+  @include breadcrumb-row;
+
   height: $_breadcrumb-height;
   padding: 0 $size-gap-3;
   background: var(--color-bg-scene);
@@ -29,8 +47,9 @@ $_dropdown-width: 220px;
   }
   
   &__item {
+    @include breadcrumb-row;
+
     display: inline-flex;
-    align-items: center;
     gap: 3px;
     font-size: 12px;
     font-family: $font-family-mono;
@@ -45,13 +64,12 @@ $_dropdown-width: 220px;
       align-items: center;
       color: var(--color-text-muted);
       
-      svg { width: 12px; height: 12px; }
+      svg { width: $_breadcrumb-icon-size; height: $_breadcrumb-icon-size; }
     }
     
     &-text {
       max-width: 120px;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      @include breadcrumb-truncate;
     }
     
     &--ellipsis {
@@ -60,7 +78,7 @@ $_dropdown-width: 220px;
     }
     
     &--folder .editor-breadcrumb__item-icon {
-      color: #e8b541;
+      color: $_breadcrumb-folder-color;
     }
     
     &--file .editor-breadcrumb__item-icon {
@@ -94,8 +112,8 @@ $_dropdown-width: 220px;
   animation: breadcrumb-dropdown-in 0.12s ease-out;
   
   &__header {
-    display: flex;
-    align-items: center;
+    @include breadcrumb-row;
+
     gap: $size-gap-2;
     padding: 6px 8px;
     border-bottom: 1px solid var(--color-border-subtle);
@@ -103,9 +121,8 @@ $_dropdown-width: 220px;
   }
   
   &__back {
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    @include breadcrumb-row(center);
+
     width: 20px;
     height: 20px;
     padding: 0;
@@ -131,15 +148,12 @@ $_dropdown-width: 220px;
     font-size: 11px;
     font-weight: 500;
     color: var(--color-text-secondary);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    @include breadcrumb-truncate;
   }
   
   &__loading {
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    @include breadcrumb-row(center);
+
     gap: $size-gap-2;
     padding: 16px;
     color: var(--color-text-muted);
@@ -167,8 +181,8 @@ $_dropdown-width: 220px;
   }
   
   &__item {
-    display: flex;
-    align-items: center;
+    @include breadcrumb-row;
+
     gap: 8px;
     padding: 5px 10px;
     cursor: pointer;
@@ -201,18 +215,16 @@ $_dropdown-width: 220px;
       flex-shrink: 0;
       color: var(--color-text-muted);
       
-      svg { width: 14px; height: 14px; }
+      svg { width: $_dropdown-icon-size; height: $_dropdown-icon-size; }
       
-      .lucide-folder { color: #e8b541; }
+      .lucide-folder { color: $_breadcrumb-folder-color; }
     }
     
     &-name {
       flex: 1;
       font-size: 12px;
       color: var(--color-text-primary);
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      @include breadcrumb-truncate;
     }
     
     &-arrow {

@@ -4,11 +4,18 @@
  */
 
 .mermaid-source-editor {
+  --mermaid-source-bg: var(--color-bg-secondary, #18181a);
+  --mermaid-source-border: var(--border-subtle, rgba(255, 255, 255, 0.06));
+  --mermaid-source-grid-size: 16px;
+  --mermaid-source-grid-dot: rgba(255, 255, 255, 0.025);
+  --mermaid-source-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', 'Monaco', monospace;
+  --mermaid-source-status-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: var(--color-bg-secondary, #18181a);
-  border: 1px dashed var(--border-subtle, rgba(255, 255, 255, 0.06));
+  background: var(--mermaid-source-bg);
+  border: 1px dashed var(--mermaid-source-border);
   border-radius: 0;
   overflow: hidden;
   transition: border-color 0.2s ease, border-style 0.2s ease;
@@ -28,8 +35,8 @@
   display: flex;
   align-items: center;
   padding: 8px 12px;
-  background: var(--color-bg-secondary, #18181a);
-  border-bottom: 1px dashed var(--border-subtle, rgba(255, 255, 255, 0.06));
+  background: var(--mermaid-source-bg);
+  border-bottom: 1px dashed var(--mermaid-source-border);
   flex-shrink: 0;
 }
 
@@ -71,10 +78,10 @@
   bottom: 0;
   background-image: radial-gradient(
     circle at center,
-    rgba(255, 255, 255, 0.025) 1px,
+    var(--mermaid-source-grid-dot) 1px,
     transparent 1px
   );
-  background-size: 16px 16px;
+  background-size: var(--mermaid-source-grid-size) var(--mermaid-source-grid-size);
   pointer-events: none;
   opacity: 0.6;
 }
@@ -91,7 +98,7 @@
   border: none;
   outline: none;
   color: var(--color-text-primary, #e8e8e8);
-  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', 'Monaco', monospace;
+  font-family: var(--mermaid-source-mono);
   font-size: 13px;
   line-height: 1.6;
   resize: none;
@@ -147,11 +154,11 @@
   justify-content: space-between;
   align-items: center;
   padding: 4px 12px;
-  background: var(--color-bg-secondary, #18181a);
+  background: var(--mermaid-source-bg);
   border-top: 1px dashed var(--border-subtle, rgba(255, 255, 255, 0.06));
   font-size: 11px;
   color: var(--color-text-muted, #707070);
-  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-family: var(--mermaid-source-status-mono);
   flex-shrink: 0;
 }
 

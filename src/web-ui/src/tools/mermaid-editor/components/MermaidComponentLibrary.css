@@ -3,26 +3,34 @@
  * Dashed borders, dotted grid background, hover feedback.
  */
 .mermaid-component-library {
+  --mermaid-library-bg: var(--color-bg-secondary, #18181a);
+  --mermaid-library-border: var(--border-subtle, rgba(255, 255, 255, 0.06));
+  --mermaid-library-border-hover: var(--border-medium, rgba(255, 255, 255, 0.12));
+  --mermaid-library-grid-size: 16px;
+  --mermaid-library-grid-dot: rgba(255, 255, 255, 0.025);
+  --mermaid-library-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  --mermaid-component-min: 130px;
+
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: var(--color-bg-secondary, #18181a);
-  border: 1px dashed var(--border-subtle, rgba(255, 255, 255, 0.06));
+  background: var(--mermaid-library-bg);
+  border: 1px dashed var(--mermaid-library-border);
   border-radius: 0;
   overflow: hidden;
   transition: border-color 0.2s ease, border-style 0.2s ease;
 }
 
 .mermaid-component-library:hover {
-  border-color: var(--border-medium, rgba(255, 255, 255, 0.12));
+  border-color: var(--mermaid-library-border-hover);
 }
 
 .library-header {
   display: flex;
   align-items: center;
   padding: 8px 12px;
-  background: var(--color-bg-secondary, #18181a);
-  border-bottom: 1px dashed var(--border-subtle, rgba(255, 255, 255, 0.06));
+  background: var(--mermaid-library-bg);
+  border-bottom: 1px dashed var(--mermaid-library-border);
   flex-shrink: 0;
 }
 
@@ -62,10 +70,10 @@
   bottom: 0;
   background-image: radial-gradient(
     circle at center,
-    rgba(255, 255, 255, 0.025) 1px,
+    var(--mermaid-library-grid-dot) 1px,
     transparent 1px
   );
-  background-size: 16px 16px;
+  background-size: var(--mermaid-library-grid-size) var(--mermaid-library-grid-size);
   pointer-events: none;
   opacity: 0.6;
 }
@@ -122,7 +130,7 @@
 
 .component-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(var(--mermaid-component-min), 1fr));
   gap: 6px;
 }
 
@@ -172,7 +180,7 @@
 }
 
 .component-preview code {
-  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-family: var(--mermaid-library-mono);
   font-size: 10px;
   color: var(--color-text-muted, #808080);
   text-align: center;
@@ -209,8 +217,11 @@
 }
 
 @media (max-width: 768px) {
+  .mermaid-component-library {
+    --mermaid-component-min: 110px;
+  }
+
   .component-grid {
-    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
     gap: 4px;
   }
   
