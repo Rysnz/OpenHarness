@@ -13,11 +13,28 @@ import { useCanvasStore } from '../stores';
 import { useApp } from '@/app/hooks/useApp';
 import { TAB_EVENTS } from '../types';
 import { loadPanelWidth, STORAGE_KEYS, RIGHT_PANEL_CONFIG } from '@/app/layout/panelConfig';
+
 interface UsePanelTabCoordinatorOptions {
   /** Auto-collapse when all tabs are closed */
   autoCollapseOnEmpty?: boolean;
   /** Auto-expand when a tab opens */
   autoExpandOnTabOpen?: boolean;
+}
+
+function countVisibleTabs(tabs: Array<{ isHidden?: boolean }>): number {
+  return tabs.filter((tab) => !tab.isHidden).length;
+}
+
+function toggleOnNextFrame(toggle: (() => void) | undefined) {
+  requestAnimationFrame(() => {
+    toggle?.();
+  });
+}
+
+function notifyImmediatePanelExpand() {
+  window.dispatchEvent(new CustomEvent('expand-right-panel-immediate', {
+    detail: { noAnimation: true }
+  }));
 }
 
 /**
@@ -72,16 +89,10 @@ export const usePanelTabCoordinator = (options: UsePanelTabCoordinatorOptions = 
       updateRightPanelWidth(lastWidth);
       
       // Expand immediately without animation (notify WorkspaceLayout)
-      window.dispatchEvent(new CustomEvent('expand-right-panel-immediate', { 
-        detail: { noAnimation: true } 
-      }));
+      notifyImmediatePanelExpand();
       
       // Use requestAnimationFrame to run on next render
-      requestAnimationFrame(() => {
-        if (toggleRightPanelRef.current) {
-          toggleRightPanelRef.current();
-        }
-      });
+      toggleOnNextFrame(toggleRightPanelRef.current);
     }
   }, [updateRightPanelWidth]);
 
@@ -90,11 +101,7 @@ export const usePanelTabCoordinator = (options: UsePanelTabCoordinatorOptions = 
    */
   const collapsePanel = useCallback(() => {
     if (!rightPanelCollapsedRef.current && toggleRightPanelRef.current) {
-      requestAnimationFrame(() => {
-        if (toggleRightPanelRef.current) {
-          toggleRightPanelRef.current();
-        }
-      });
+      toggleOnNextFrame(toggleRightPanelRef.current);
     }
   }, []);
 
@@ -108,9 +115,7 @@ export const usePanelTabCoordinator = (options: UsePanelTabCoordinatorOptions = 
     }
 
     // Count visible tabs
-    const primaryVisible = primaryGroup.tabs.filter(t => !t.isHidden).length;
-    const secondaryVisible = secondaryGroup.tabs.filter(t => !t.isHidden).length;
-    const visibleCount = primaryVisible + secondaryVisible;
+    const visibleCount = countVisibleTabs(primaryGroup.tabs) + countVisibleTabs(secondaryGroup.tabs);
     
     const isCollapsed = rightPanelCollapsedRef.current;
 
