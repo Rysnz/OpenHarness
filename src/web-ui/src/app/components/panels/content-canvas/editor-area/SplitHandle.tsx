@@ -20,6 +20,44 @@ export interface SplitHandleProps {
   containerRef: React.RefObject<HTMLElement>;
 }
 
+type SplitDirection = SplitHandleProps['direction'];
+
+function pointerPosition(event: Pick<MouseEvent | React.MouseEvent, 'clientX' | 'clientY'>, direction: SplitDirection): number {
+  return direction === 'horizontal' ? event.clientX : event.clientY;
+}
+
+function containerSize(rect: DOMRect, direction: SplitDirection): number {
+  return direction === 'horizontal' ? rect.width : rect.height;
+}
+
+function keyDelta(key: string, direction: SplitDirection, step: number): number | null {
+  if (direction === 'horizontal') {
+    if (key === 'ArrowLeft') return -step;
+    if (key === 'ArrowRight') return step;
+  } else {
+    if (key === 'ArrowUp') return -step;
+    if (key === 'ArrowDown') return step;
+  }
+
+  return null;
+}
+
+const SplitGrip: React.FC<{ direction: SplitDirection }> = ({ direction }) => (
+  direction === 'horizontal' ? (
+    <svg width="6" height="16" viewBox="0 0 6 16" fill="none">
+      <circle cx="3" cy="4" r="1" fill="currentColor" />
+      <circle cx="3" cy="8" r="1" fill="currentColor" />
+      <circle cx="3" cy="12" r="1" fill="currentColor" />
+    </svg>
+  ) : (
+    <svg width="16" height="6" viewBox="0 0 16 6" fill="none">
+      <circle cx="4" cy="3" r="1" fill="currentColor" />
+      <circle cx="8" cy="3" r="1" fill="currentColor" />
+      <circle cx="12" cy="3" r="1" fill="currentColor" />
+    </svg>
+  )
+);
+
 export const SplitHandle: React.FC<SplitHandleProps> = ({
   direction,
   ratio,
@@ -35,7 +73,7 @@ export const SplitHandle: React.FC<SplitHandleProps> = ({
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     setIsDragging(true);
-    startPosRef.current = direction === 'horizontal' ? e.clientX : e.clientY;
+    startPosRef.current = pointerPosition(e, direction);
     startRatioRef.current = ratio;
   }, [direction, ratio]);
 
@@ -47,13 +85,11 @@ export const SplitHandle: React.FC<SplitHandleProps> = ({
       if (!containerRef.current) return;
 
       const containerRect = containerRef.current.getBoundingClientRect();
-      const containerSize = direction === 'horizontal' 
-        ? containerRect.width 
-        : containerRect.height;
+      const size = containerSize(containerRect, direction);
       
-      const currentPos = direction === 'horizontal' ? e.clientX : e.clientY;
+      const currentPos = pointerPosition(e, direction);
       const delta = currentPos - startPosRef.current;
-      const deltaRatio = delta / containerSize;
+      const deltaRatio = delta / size;
       
       const newRatio = clampSplitRatio(startRatioRef.current + deltaRatio);
       onRatioChange(newRatio);
@@ -80,23 +116,10 @@ export const SplitHandle: React.FC<SplitHandleProps> = ({
   // Handle keyboard adjustments
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     const step = e.shiftKey ? 0.1 : 0.02;
-    
-    if (direction === 'horizontal') {
-      if (e.key === 'ArrowLeft') {
-        e.preventDefault();
-        onRatioChange(clampSplitRatio(ratio - step));
-      } else if (e.key === 'ArrowRight') {
-        e.preventDefault();
-        onRatioChange(clampSplitRatio(ratio + step));
-      }
-    } else {
-      if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        onRatioChange(clampSplitRatio(ratio - step));
-      } else if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        onRatioChange(clampSplitRatio(ratio + step));
-      }
+    const delta = keyDelta(e.key, direction, step);
+    if (delta !== null) {
+      e.preventDefault();
+      onRatioChange(clampSplitRatio(ratio + delta));
     }
   }, [direction, ratio, onRatioChange]);
 
@@ -118,19 +141,7 @@ export const SplitHandle: React.FC<SplitHandleProps> = ({
       >
         <div className="canvas-split-handle__line" />
         <div className="canvas-split-handle__grip">
-          {direction === 'horizontal' ? (
-            <svg width="6" height="16" viewBox="0 0 6 16" fill="none">
-              <circle cx="3" cy="4" r="1" fill="currentColor" />
-              <circle cx="3" cy="8" r="1" fill="currentColor" />
-              <circle cx="3" cy="12" r="1" fill="currentColor" />
-            </svg>
-          ) : (
-            <svg width="16" height="6" viewBox="0 0 16 6" fill="none">
-              <circle cx="4" cy="3" r="1" fill="currentColor" />
-              <circle cx="8" cy="3" r="1" fill="currentColor" />
-              <circle cx="12" cy="3" r="1" fill="currentColor" />
-            </svg>
-          )}
+          <SplitGrip direction={direction} />
         </div>
       </div>
     </Tooltip>
