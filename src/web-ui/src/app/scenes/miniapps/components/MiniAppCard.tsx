@@ -15,6 +15,16 @@ interface MiniAppCardProps {
   onStop?: (id: string) => void;
 }
 
+const RUNNING_GRADIENT =
+  'linear-gradient(135deg, rgba(52, 211, 153, 0.28) 0%, rgba(16, 185, 129, 0.18) 100%)';
+const IDLE_GRADIENT =
+  'linear-gradient(135deg, rgba(59, 130, 246, 0.28) 0%, rgba(139, 92, 246, 0.18) 100%)';
+
+const stopPropagation = (handler: () => void) => (event: React.MouseEvent) => {
+  event.stopPropagation();
+  handler();
+};
+
 const MiniAppCard: React.FC<MiniAppCardProps> = ({
   app,
   index = 0,
@@ -25,46 +35,33 @@ const MiniAppCard: React.FC<MiniAppCardProps> = ({
   onStop,
 }) => {
   const { t } = useI18n('scenes/miniapp');
-  const handleDeleteClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    onDelete(app.id);
-  };
-
-  const handleStopClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    onStop?.(app.id);
-  };
-
-  const handleOpenClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    onOpen(app.id);
-  };
-
   const handleOpenDetails = () => {
     onOpenDetails(app);
   };
+  const handleDeleteClick = stopPropagation(() => onDelete(app.id));
+  const handleStopClick = stopPropagation(() => onStop?.(app.id));
+  const handleOpenClick = stopPropagation(() => onOpen(app.id));
+
+  const cardClassName = [
+    'miniapp-card',
+    isRunning && 'miniapp-card--running',
+  ].filter(Boolean).join(' ');
+
+  const cardStyle = {
+    '--card-index': index,
+    '--miniapp-card-gradient': isRunning ? RUNNING_GRADIENT : IDLE_GRADIENT,
+  } as React.CSSProperties;
 
   return (
     <div
-      className={[
-        'miniapp-card',
-        isRunning && 'miniapp-card--running',
-      ]
-        .filter(Boolean)
-        .join(' ')}
-      style={{
-        '--card-index': index,
-        '--miniapp-card-gradient': isRunning
-          ? 'linear-gradient(135deg, rgba(52, 211, 153, 0.28) 0%, rgba(16, 185, 129, 0.18) 100%)'
-          : 'linear-gradient(135deg, rgba(59, 130, 246, 0.28) 0%, rgba(139, 92, 246, 0.18) 100%)',
-      } as React.CSSProperties}
+      className={cardClassName}
+      style={cardStyle}
       onClick={handleOpenDetails}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => e.key === 'Enter' && handleOpenDetails()}
       aria-label={app.name}
     >
-      {/* Header with icon and title */}
       <div className="miniapp-card__header">
         <div className="miniapp-card__icon-area">
           <div className="miniapp-card__icon">
@@ -78,7 +75,6 @@ const MiniAppCard: React.FC<MiniAppCardProps> = ({
         {isRunning && <span className="miniapp-card__run-dot" />}
       </div>
 
-      {/* Body: description + tags */}
       <div className="miniapp-card__body">
         {app.description ? (
           <div className="miniapp-card__desc">
@@ -94,7 +90,6 @@ const MiniAppCard: React.FC<MiniAppCardProps> = ({
         ) : null}
       </div>
 
-      {/* Footer with actions */}
       <div className="miniapp-card__footer">
         <div className="miniapp-card__actions" onClick={(e) => e.stopPropagation()}>
           <button
