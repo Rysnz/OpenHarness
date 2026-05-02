@@ -12,6 +12,7 @@ import {
 } from './shellEntryTypes';
 
 const log = createLogger('useTerminalSessions');
+const STARTUP_COMMAND_DELAY_MS = 800;
 
 interface UseTerminalSessionsOptions {
   workspacePath?: string;
@@ -31,6 +32,10 @@ interface UseTerminalSessionsReturn {
   hasSession: (sessionId: string) => boolean;
 }
 
+type TerminalNotification =
+  | { name: 'terminal-session-destroyed'; detail: { sessionId: string } }
+  | { name: 'terminal-session-renamed'; detail: { sessionId: string; newName: string } };
+
 async function getDefaultShellType(): Promise<string | undefined> {
   try {
     const config = await configManager.getConfig<TerminalConfig>('terminal');
@@ -40,20 +45,47 @@ async function getDefaultShellType(): Promise<string | undefined> {
   }
 }
 
-function dispatchTerminalDestroyed(sessionId: string) {
+const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+function dispatchTerminalNotification(notification: TerminalNotification): void {
   if (typeof window === 'undefined') {
     return;
   }
 
-  window.dispatchEvent(new CustomEvent('terminal-session-destroyed', { detail: { sessionId } }));
+  window.dispatchEvent(new CustomEvent(notification.name, { detail: notification.detail }));
 }
 
-function dispatchTerminalRenamed(sessionId: string, newName: string) {
-  if (typeof window === 'undefined') {
+function shouldIncludeSession(
+  session: SessionResponse,
+  isRemote: boolean,
+  currentConnectionId: string | null,
+): boolean {
+  const isRemoteSession = session.shellType === 'Remote';
+  return isRemote
+    ? isRemoteSession && session.connectionId === currentConnectionId
+    : !isRemoteSession;
+}
+
+async function runStartupCommand(
+  service: TerminalService,
+  entry: ShellEntry,
+): Promise<void> {
+  const command = entry.startupCommand?.trim();
+  if (!command) {
     return;
   }
 
-  window.dispatchEvent(new CustomEvent('terminal-session-renamed', { detail: { sessionId, newName } }));
+  await wait(STARTUP_COMMAND_DELAY_MS);
+  try {
+    await service.sendCommand(entry.sessionId, command);
+  } catch (error) {
+    log.error('Failed to run startup command', { sessionId: entry.sessionId, error });
+  }
+}
+
+function manualSessionName(sessions: SessionResponse[]): string {
+  const nextIndex = sessions.filter((session) => session.source === MANUAL_SOURCE).length + 1;
+  return `Shell ${nextIndex}`;
 }
 
 export function useTerminalSessions(
@@ -70,20 +102,13 @@ export function useTerminalSessions(
 
   const refreshSessions = useCallback(async () => {
     const service = serviceRef.current;
-    if (!service) {
-      return;
-    }
+    if (!service) return;
 
     try {
       const allSessions = await service.listSessions();
-      const filtered = allSessions.filter((session) => {
-        const isRemoteSession = session.shellType === 'Remote';
-        if (isRemote) {
-          return isRemoteSession && session.connectionId === currentConnectionId;
-        }
-        return !isRemoteSession;
-      });
-      setSessions(filtered);
+      setSessions(
+        allSessions.filter((session) => shouldIncludeSession(session, isRemote, currentConnectionId))
+      );
     } catch (error) {
       log.error('Failed to list sessions', error);
     }
@@ -93,16 +118,14 @@ export function useTerminalSessions(
     const service = getTerminalService();
     serviceRef.current = service;
 
-    const init = async () => {
+    void (async () => {
       try {
         await service.connect();
         await refreshSessions();
       } catch (error) {
         log.error('Failed to connect terminal service', error);
       }
-    };
-
-    void init();
+    })();
 
     const unsubscribe = service.onEvent((event: TerminalEvent) => {
       if (event.type === 'ready' || event.type === 'exit') {
@@ -121,7 +144,10 @@ export function useTerminalSessions(
 
     try {
       await service.closeSession(sessionId);
-      dispatchTerminalDestroyed(sessionId);
+      dispatchTerminalNotification({
+        name: 'terminal-session-destroyed',
+        detail: { sessionId }
+      });
     } catch (error) {
       log.error('Failed to close terminal session', { sessionId, error });
     }
@@ -129,34 +155,25 @@ export function useTerminalSessions(
 
   const startEntrySession = useCallback(async (entry: ShellEntry): Promise<boolean> => {
     const service = serviceRef.current;
-    const existingSession = sessionMap.get(entry.sessionId);
     if (!service) {
       return false;
     }
 
     try {
+      const existingSession = sessionMap.get(entry.sessionId);
       if (existingSession && !isSessionRunning(existingSession)) {
         await service.closeSession(entry.sessionId);
       }
 
-      const shellType = entry.shellType ?? await getDefaultShellType();
       await service.createSession({
         sessionId: entry.sessionId,
         workingDirectory: entry.workingDirectory ?? entry.cwd ?? workspacePath,
         name: entry.name,
-        shellType,
+        shellType: entry.shellType ?? await getDefaultShellType(),
         source: entry.source,
       });
 
-      if (entry.startupCommand?.trim()) {
-        await new Promise((resolve) => setTimeout(resolve, 800));
-        try {
-          await service.sendCommand(entry.sessionId, entry.startupCommand);
-        } catch (error) {
-          log.error('Failed to run startup command', { sessionId: entry.sessionId, error });
-        }
-      }
-
+      await runStartupCommand(service, entry);
       await refreshSessions();
       return true;
     } catch (error) {
@@ -165,19 +182,19 @@ export function useTerminalSessions(
     }
   }, [refreshSessions, sessionMap, workspacePath]);
 
-  const createManualSession = useCallback(async (shellTypeOverride?: string): Promise<SessionResponse | null> => {
+  const createManualSession = useCallback(async (
+    shellTypeOverride?: string
+  ): Promise<SessionResponse | null> => {
     const service = serviceRef.current;
     if (!service) {
       return null;
     }
 
     try {
-      const shellType = shellTypeOverride ?? await getDefaultShellType();
-      const nextIndex = sessions.filter((session) => session.source === MANUAL_SOURCE).length + 1;
       const session = await service.createSession({
         workingDirectory: workspacePath,
-        name: `Shell ${nextIndex}`,
-        shellType,
+        name: manualSessionName(sessions),
+        shellType: shellTypeOverride ?? await getDefaultShellType(),
         source: MANUAL_SOURCE,
       });
 
@@ -204,10 +221,15 @@ export function useTerminalSessions(
       return;
     }
 
-    setSessions((prev) =>
-      prev.map((session) => (session.id === sessionId ? { ...session, name: newName } : session)),
+    setSessions((currentSessions) =>
+      currentSessions.map((session) =>
+        session.id === sessionId ? { ...session, name: newName } : session
+      ),
     );
-    dispatchTerminalRenamed(sessionId, newName);
+    dispatchTerminalNotification({
+      name: 'terminal-session-renamed',
+      detail: { sessionId, newName }
+    });
   }, [sessionMap]);
 
   const hasSession = useCallback((sessionId: string) => sessionMap.has(sessionId), [sessionMap]);
