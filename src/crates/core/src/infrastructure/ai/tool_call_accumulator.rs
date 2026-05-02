@@ -30,6 +30,27 @@ pub struct PendingToolCall {
     raw_arguments: String,
 }
 
+struct ParsedArguments {
+    value: Value,
+    error: Option<String>,
+}
+
+impl ParsedArguments {
+    fn from_raw(raw_arguments: &str) -> Self {
+        match parse_json_arguments(raw_arguments) {
+            Ok(value) => Self { value, error: None },
+            Err(error) => Self {
+                value: json!({}),
+                error: Some(error),
+            },
+        }
+    }
+
+    fn is_error(&self) -> bool {
+        self.error.is_some()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct FinalizedToolCall {
     pub tool_id: String,
@@ -48,46 +69,42 @@ impl FinalizedToolCall {
     }
 }
 
+fn boundary_label(boundary: ToolCallBoundary) -> &'static str {
+    boundary.as_str()
+}
+
+fn remove_single_trailing_right_brace(raw_arguments: &str) -> Option<String> {
+    let (index, ch) = raw_arguments
+        .char_indices()
+        .rev()
+        .find(|(_, ch)| !ch.is_whitespace())?;
+
+    if ch != '}' {
+        return None;
+    }
+
+    let mut repaired = raw_arguments.to_string();
+    repaired.remove(index);
+    Some(repaired)
+}
+
+fn parse_json_arguments(raw_arguments: &str) -> Result<Value, String> {
+    let primary_error = match serde_json::from_str::<Value>(raw_arguments) {
+        Ok(arguments) => return Ok(arguments),
+        Err(error) => error,
+    };
+
+    if let Some(repaired_arguments) = remove_single_trailing_right_brace(raw_arguments) {
+        if let Ok(arguments) = serde_json::from_str::<Value>(&repaired_arguments) {
+            warn!("Tool call arguments repaired by removing one trailing right brace");
+            return Ok(arguments);
+        }
+    }
+
+    Err(primary_error.to_string())
+}
+
 impl PendingToolCall {
-    fn remove_trailing_right_brace_once(raw_arguments: &str) -> Option<String> {
-        let last_non_whitespace_idx = raw_arguments
-            .char_indices()
-            .rev()
-            .find(|(_, ch)| !ch.is_whitespace())
-            .map(|(idx, _)| idx)?;
-
-        if !raw_arguments[last_non_whitespace_idx..].starts_with('}') {
-            return None;
-        }
-
-        let mut repaired = raw_arguments.to_string();
-        repaired.remove(last_non_whitespace_idx);
-        Some(repaired)
-    }
-
-    fn parse_arguments(raw_arguments: &str) -> Result<Value, String> {
-        match serde_json::from_str::<Value>(raw_arguments) {
-            Ok(arguments) => Ok(arguments),
-            Err(primary_error) => {
-                if let Some(repaired_arguments) =
-                    Self::remove_trailing_right_brace_once(raw_arguments)
-                {
-                    match serde_json::from_str::<Value>(&repaired_arguments) {
-                        Ok(arguments) => {
-                            warn!(
-                                "Tool call arguments repaired by removing one trailing right brace"
-                            );
-                            Ok(arguments)
-                        }
-                        Err(_) => Err(primary_error.to_string()),
-                    }
-                } else {
-                    Err(primary_error.to_string())
-                }
-            }
-        }
-    }
-
     pub fn has_pending(&self) -> bool {
         !self.tool_id.is_empty()
     }
@@ -124,13 +141,12 @@ impl PendingToolCall {
         let tool_id = std::mem::take(&mut self.tool_id);
         let tool_name = std::mem::take(&mut self.tool_name);
         let raw_arguments = std::mem::take(&mut self.raw_arguments);
-        let parsed_arguments = Self::parse_arguments(&raw_arguments);
-        let is_error = parsed_arguments.is_err();
+        let parsed_arguments = ParsedArguments::from_raw(&raw_arguments);
 
-        if let Err(error) = &parsed_arguments {
+        if let Some(error) = &parsed_arguments.error {
             error!(
                 "Tool call arguments parsing failed at boundary={}: tool_id={}, tool_name={}, error={}, raw_arguments={}",
-                boundary.as_str(),
+                boundary_label(boundary),
                 tool_id,
                 tool_name,
                 error,
@@ -142,8 +158,8 @@ impl PendingToolCall {
             tool_id,
             tool_name,
             raw_arguments,
-            arguments: parsed_arguments.unwrap_or_else(|_| json!({})),
-            is_error,
+            is_error: parsed_arguments.is_error(),
+            arguments: parsed_arguments.value,
         })
     }
 }
