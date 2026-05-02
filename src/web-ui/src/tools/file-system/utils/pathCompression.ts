@@ -9,22 +9,23 @@ export interface CompressedNode extends Omit<FileSystemNode, 'children'> {
   originalNodes?: FileSystemNode[];
 }
 
+const cloneChildren = (node: FileSystemNode): CompressedNode[] | undefined =>
+  node.children?.map(child => compressNodePath(child));
+
+const flattenExpandedChildren = (children: CompressedNode[] | undefined): FileSystemNode[] | undefined =>
+  children?.flatMap(child => expandCompressedNode(child));
+
 function canCompress(node: FileSystemNode): boolean {
-  return Boolean(
-    node.isDirectory &&
-    node.children &&
-    node.children.length === 1 &&
-    node.children[0].isDirectory
-  );
+  const onlyChild = node.children?.[0];
+  return Boolean(node.isDirectory && node.children?.length === 1 && onlyChild?.isDirectory);
 }
 
 function compressNodePath(node: FileSystemNode): CompressedNode {
   if (!canCompress(node)) {
-    const compressedNode: CompressedNode = {
+    return {
       ...node,
-      children: node.children?.map(child => compressNodePath(child))
+      children: cloneChildren(node)
     };
-    return compressedNode;
   }
 
   const pathSegments: string[] = [node.name];
@@ -38,17 +39,15 @@ function compressNodePath(node: FileSystemNode): CompressedNode {
     currentNode = childNode;
   }
 
-  const compressedNode: CompressedNode = {
+  return {
     ...node,
     name: pathSegments.join('/'),
     path: currentNode.path,
     isCompressed: true,
     compressedPath: pathSegments.join('/'),
     originalNodes,
-    children: currentNode.children?.map(child => compressNodePath(child))
+    children: cloneChildren(currentNode)
   };
-
-  return compressedNode;
 }
 
 export function compressFileTree(fileTree: FileSystemNode[]): CompressedNode[] {
@@ -75,11 +74,9 @@ function lazyCompressNodePath(node: FileSystemNode, expandedFolders: Set<string>
   }
 
   const compressedChildren = node.children.map(child => {
-    if (child.isDirectory && canCompress(child)) {
-      return compressNodePath(child);
-    } else {
-      return lazyCompressNodePath(child, expandedFolders);
-    }
+    return child.isDirectory && canCompress(child)
+      ? compressNodePath(child)
+      : lazyCompressNodePath(child, expandedFolders);
   });
 
   return {
@@ -92,7 +89,7 @@ export function expandCompressedNode(compressedNode: CompressedNode): FileSystem
   if (!compressedNode.isCompressed || !compressedNode.originalNodes) {
     return [{
       ...compressedNode,
-      children: compressedNode.children?.map(child => expandCompressedNode(child)).flat()
+      children: flattenExpandedChildren(compressedNode.children)
     }];
   }
 
@@ -102,7 +99,7 @@ export function expandCompressedNode(compressedNode: CompressedNode): FileSystem
     const currentNode = nodes[i];
     
     if (i === nodes.length - 1) {
-      currentNode.children = compressedNode.children?.map(child => expandCompressedNode(child)).flat();
+      currentNode.children = flattenExpandedChildren(compressedNode.children);
     } else {
       currentNode.children = [nodes[i + 1]];
     }
