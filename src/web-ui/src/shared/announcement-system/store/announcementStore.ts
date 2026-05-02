@@ -9,6 +9,10 @@ import { create } from 'zustand';
 import type { AnnouncementCard } from '../types';
 import { announcementService } from '../services/AnnouncementService';
 
+const TOAST_EXIT_DELAY_MS = 400;
+const MODAL_EXIT_DELAY_MS = 350;
+const DEBUG_TOAST_DELAY_MS = 100;
+
 export interface AnnouncementStoreState {
   /** Ordered list of cards waiting to be displayed. */
   queue: AnnouncementCard[];
@@ -52,6 +56,14 @@ export interface AnnouncementStoreActions {
 
 type AnnouncementStore = AnnouncementStoreState & AnnouncementStoreActions;
 
+const closedSurfaces = {
+  modalVisible: false,
+  openModal: null,
+  toastVisible: false,
+  activeToast: null,
+  currentPage: 0,
+} satisfies Partial<AnnouncementStoreState>;
+
 export const useAnnouncementStore = create<AnnouncementStore>((set, get) => ({
   queue: [],
   activeToast: null,
@@ -89,7 +101,7 @@ export const useAnnouncementStore = create<AnnouncementStore>((set, get) => ({
     announcementService.dismiss(card.id);
     set({ toastVisible: false, activeToast: null });
     // Delay before showing next to allow exit animation to finish.
-    setTimeout(() => get().showNextToast(), 400);
+    setTimeout(() => get().showNextToast(), TOAST_EXIT_DELAY_MS);
   },
 
   closeModal(neverShow = false) {
@@ -106,7 +118,7 @@ export const useAnnouncementStore = create<AnnouncementStore>((set, get) => ({
     setTimeout(() => {
       set({ openModal: null, currentPage: 0 });
       get().showNextToast();
-    }, 350);
+    }, MODAL_EXIT_DELAY_MS);
   },
 
   markInitialised() {
@@ -116,15 +128,11 @@ export const useAnnouncementStore = create<AnnouncementStore>((set, get) => ({
   forceShowCards(cards) {
     // Close anything currently open, then replace the queue.
     set({
-      modalVisible: false,
-      openModal: null,
-      toastVisible: false,
-      activeToast: null,
-      currentPage: 0,
+      ...closedSurfaces,
       queue: cards,
     });
     if (cards.length > 0) {
-      setTimeout(() => get().showNextToast(), 100);
+      setTimeout(() => get().showNextToast(), DEBUG_TOAST_DELAY_MS);
     }
   },
 
