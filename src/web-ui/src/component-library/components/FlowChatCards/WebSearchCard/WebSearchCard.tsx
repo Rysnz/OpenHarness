@@ -21,6 +21,49 @@ export interface WebSearchCardProps extends Omit<BaseToolCardProps, 'toolName' |
   results?: WebSearchResult[];
 }
 
+const isCompleted = (status: BaseToolCardProps['status']): boolean => status === 'completed';
+const isSearching = (status: BaseToolCardProps['status']): boolean =>
+  status === 'running' || status === 'streaming';
+
+function resolveSearchQuery(input: any, query: string | undefined, fallback: string): string {
+  return query || input?.query || input?.search_query || input?.url || fallback;
+}
+
+function ResultLink({ url }: { url?: string }) {
+  if (!url) {
+    return null;
+  }
+
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="web-search-card__result-link"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <ExternalLink size={12} />
+    </a>
+  );
+}
+
+function SearchResultItem({ item, index }: { item: WebSearchResult; index: number }) {
+  return (
+    <div key={index} className="web-search-card__result-item">
+      <div className="web-search-card__result-header">
+        <span className="web-search-card__result-title">{item.title}</span>
+        <ResultLink url={item.url} />
+      </div>
+      {item.snippet && (
+        <div className="web-search-card__result-snippet">{item.snippet}</div>
+      )}
+      {item.url && (
+        <div className="web-search-card__result-url">{item.url}</div>
+      )}
+    </div>
+  );
+}
+
 export const WebSearchCard: React.FC<WebSearchCardProps> = ({
   searchType = 'search',
   query,
@@ -34,7 +77,7 @@ export const WebSearchCard: React.FC<WebSearchCardProps> = ({
   const { t } = useI18n('components');
   const [isExpanded, setIsExpanded] = useState(false);
 
-  const resolvedQuery = query || input?.query || input?.search_query || input?.url || t('flowChatCards.webSearchCard.unspecifiedQuery');
+  const resolvedQuery = resolveSearchQuery(input, query, t('flowChatCards.webSearchCard.unspecifiedQuery'));
   const resolvedResults = results || result?.results || [];
 
   const isSearch = searchType === 'search';
@@ -48,7 +91,7 @@ export const WebSearchCard: React.FC<WebSearchCardProps> = ({
         <span className="web-search-card__query" title={resolvedQuery}>
           {resolvedQuery}
         </span>
-        {status === 'completed' && resolvedResults.length > 0 && (
+        {isCompleted(status) && resolvedResults.length > 0 && (
           <span className="web-search-card__count">
             {t('flowChatCards.webSearchCard.resultsCount', { count: resolvedResults.length })}
           </span>
@@ -76,7 +119,7 @@ export const WebSearchCard: React.FC<WebSearchCardProps> = ({
           <span className="web-search-card__label">{isSearch ? t('flowChatCards.webSearchCard.searchQuery') : t('flowChatCards.webSearchCard.url')}:</span>
           <span className="web-search-card__value">{resolvedQuery}</span>
         </div>
-        {status === 'completed' && resolvedResults.length > 0 && (
+        {isCompleted(status) && resolvedResults.length > 0 && (
           <div className="web-search-card__info-row">
             <span className="web-search-card__label">{t('flowChatCards.webSearchCard.resultCount')}:</span>
             <span className="web-search-card__value">{t('flowChatCards.webSearchCard.resultsCount', { count: resolvedResults.length })}</span>
@@ -84,11 +127,11 @@ export const WebSearchCard: React.FC<WebSearchCardProps> = ({
         )}
       </div>
 
-      {status === 'completed' && resolvedResults.length > 0 && (
+      {isCompleted(status) && resolvedResults.length > 0 && (
         <div className="web-search-card__results-section">
           <button
             className="web-search-card__results-header"
-            onClick={() => setIsExpanded(!isExpanded)}
+            onClick={() => setIsExpanded(expanded => !expanded)}
           >
             <Globe size={14} />
             <span>{t('flowChatCards.webSearchCard.results')}</span>
@@ -98,41 +141,20 @@ export const WebSearchCard: React.FC<WebSearchCardProps> = ({
           {isExpanded && (
             <div className="web-search-card__results-list">
               {resolvedResults.map((item: WebSearchResult, index: number) => (
-                <div key={index} className="web-search-card__result-item">
-                  <div className="web-search-card__result-header">
-                    <span className="web-search-card__result-title">{item.title}</span>
-                    {item.url && (
-                      <a
-                        href={item.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="web-search-card__result-link"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <ExternalLink size={12} />
-                      </a>
-                    )}
-                  </div>
-                  {item.snippet && (
-                    <div className="web-search-card__result-snippet">{item.snippet}</div>
-                  )}
-                  {item.url && (
-                    <div className="web-search-card__result-url">{item.url}</div>
-                  )}
-                </div>
+                <SearchResultItem key={`${item.url || item.title}-${index}`} item={item} index={index} />
               ))}
             </div>
           )}
         </div>
       )}
 
-      {status === 'completed' && resolvedResults.length === 0 && (
+      {isCompleted(status) && resolvedResults.length === 0 && (
         <div className="web-search-card__no-results">
           {t('flowChatCards.webSearchCard.noResults')}
         </div>
       )}
 
-      {(status === 'running' || status === 'streaming') && (
+      {isSearching(status) && (
         <div className="web-search-card__searching">
           <Globe className="web-search-card__searching-icon" size={14} />
           <span>{t('flowChatCards.webSearchCard.searching')}</span>
