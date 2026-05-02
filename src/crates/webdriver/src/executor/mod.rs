@@ -55,12 +55,7 @@ impl BridgeExecutor {
             .state
             .app
             .get_webview(&self.session.current_window)
-            .ok_or_else(|| {
-                WebDriverErrorResponse::no_such_window(format!(
-                    "Webview not found: {}",
-                    self.session.current_window
-                ))
-            })?;
+            .ok_or_else(|| self.missing_webview_error())?;
 
         platform::take_screenshot(webview, self.session.timeouts.script).await
     }
@@ -73,12 +68,7 @@ impl BridgeExecutor {
             .state
             .app
             .get_webview(&self.session.current_window)
-            .ok_or_else(|| {
-                WebDriverErrorResponse::no_such_window(format!(
-                    "Webview not found: {}",
-                    self.session.current_window
-                ))
-            })?;
+            .ok_or_else(|| self.missing_webview_error())?;
 
         platform::print_page(webview, self.session.timeouts.script, &options).await
     }
@@ -93,6 +83,13 @@ impl BridgeExecutor {
                     self.session.current_window
                 ))
             })
+    }
+
+    fn missing_webview_error(&self) -> WebDriverErrorResponse {
+        WebDriverErrorResponse::no_such_window(format!(
+            "Webview not found: {}",
+            self.session.current_window
+        ))
     }
 }
 
