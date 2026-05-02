@@ -1,5 +1,7 @@
 pub(super) fn script() -> &'static str {
     r####"
+    const getElementWindow = (element) => element?.ownerDocument?.defaultView || window;
+
     const setSelectionRange = (element, start, end) => {
       if (typeof element.setSelectionRange === "function") {
         element.setSelectionRange(start, end);
@@ -14,7 +16,7 @@ pub(super) fn script() -> &'static str {
     };
 
     const getNativeValueDescriptor = (element) => {
-      const ownerWindow = element?.ownerDocument?.defaultView || window;
+      const ownerWindow = getElementWindow(element);
       if (element instanceof ownerWindow.HTMLInputElement) {
         return Object.getOwnPropertyDescriptor(ownerWindow.HTMLInputElement.prototype, "value");
       }
@@ -37,7 +39,7 @@ pub(super) fn script() -> &'static str {
     };
 
     const dispatchBeforeInputEvent = (element, inputType, data = null) => {
-      const ownerWindow = element?.ownerDocument?.defaultView || window;
+      const ownerWindow = getElementWindow(element);
       if (typeof ownerWindow.InputEvent === "function") {
         return element.dispatchEvent(new ownerWindow.InputEvent("beforeinput", {
           bubbles: true,
@@ -54,7 +56,7 @@ pub(super) fn script() -> &'static str {
     };
 
     const emitInputEvents = (element, inputType = "insertText", data = null) => {
-      const ownerWindow = element?.ownerDocument?.defaultView || window;
+      const ownerWindow = getElementWindow(element);
       if (typeof ownerWindow.InputEvent === "function") {
         element.dispatchEvent(new ownerWindow.InputEvent("input", {
           bubbles: true,
@@ -107,7 +109,7 @@ pub(super) fn script() -> &'static str {
         return;
       }
       if (element.isContentEditable) {
-        const ownerWindow = element.ownerDocument?.defaultView || window;
+        const ownerWindow = getElementWindow(element);
         if (!dispatchBeforeInputEvent(element, "insertText", text)) {
           return;
         }
