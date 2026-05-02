@@ -112,21 +112,22 @@ pub(super) fn script() -> &'static str {
       if (typeof element.focus === "function") {
         element.focus();
       }
+      const frameContext = getFrameContext();
       const rect = element.getBoundingClientRect();
       const x = rect.left + rect.width / 2;
       const y = rect.top + rect.height / 2;
-      updatePointerTarget(getFrameContext(), x, y, element);
+      updatePointerTarget(frameContext, x, y, element);
       const runtime = ensureRuntimeState();
       const buttonMask = pointerButtonMask(button);
-      dispatchMouseEvent(element, "mouseover", x, y, button, runtime.pointer.buttons, getFrameContext());
-      dispatchMouseEvent(element, "mousemove", x, y, button, runtime.pointer.buttons, getFrameContext());
+      dispatchMouseEvent(element, "mouseover", x, y, button, runtime.pointer.buttons, frameContext);
+      dispatchMouseEvent(element, "mousemove", x, y, button, runtime.pointer.buttons, frameContext);
       runtime.pointer.buttons |= buttonMask;
-      dispatchMouseEvent(element, "mousedown", x, y, button, runtime.pointer.buttons, getFrameContext());
+      dispatchMouseEvent(element, "mousedown", x, y, button, runtime.pointer.buttons, frameContext);
       runtime.pointer.buttons &= ~buttonMask;
-      dispatchMouseEvent(element, "mouseup", x, y, button, runtime.pointer.buttons, getFrameContext());
-      maybeDispatchClick(element, x, y, button, getFrameContext());
+      dispatchMouseEvent(element, "mouseup", x, y, button, runtime.pointer.buttons, frameContext);
+      maybeDispatchClick(element, x, y, button, frameContext);
       if (doubleClick && button === 0) {
-        dispatchMouseEvent(element, "dblclick", x, y, button, runtime.pointer.buttons, getFrameContext());
+        dispatchMouseEvent(element, "dblclick", x, y, button, runtime.pointer.buttons, frameContext);
       }
     };
 "####
