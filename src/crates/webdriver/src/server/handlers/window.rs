@@ -47,6 +47,31 @@ fn rect_response(rect: WindowRect) -> WebDriverResponse {
     }))
 }
 
+fn reset_session_window_state(session: &mut crate::webdriver::Session, window_handle: Option<String>) {
+    if let Some(window_handle) = window_handle {
+        session.current_window = window_handle;
+    }
+    session.frame_context.clear();
+    session.action_state = Default::default();
+}
+
+async fn executor_for_window(
+    state: Arc<AppState>,
+    session_id: &str,
+) -> Result<BridgeExecutor, WebDriverErrorResponse> {
+    let _session = get_session(&state, session_id).await?;
+    BridgeExecutor::from_session_id(state, session_id).await
+}
+
+fn requested_rect(current: WindowRect, request: WindowRectRequest) -> WindowRect {
+    WindowRect {
+        x: request.x.unwrap_or(current.x),
+        y: request.y.unwrap_or(current.y),
+        width: request.width.unwrap_or(current.width),
+        height: request.height.unwrap_or(current.height),
+    }
+}
+
 pub async fn get_window_handle(
     State(state): State<Arc<AppState>>,
     Path(session_id): Path<String>,
@@ -69,9 +94,7 @@ pub async fn switch_to_window(
 
     let mut sessions = state.sessions.write().await;
     let session = sessions.get_mut(&session_id)?;
-    session.current_window = request.handle;
-    session.frame_context.clear();
-    session.action_state = Default::default();
+    reset_session_window_state(session, Some(request.handle));
 
     Ok(WebDriverResponse::null())
 }
@@ -103,11 +126,7 @@ pub async fn close_window(
     let next_handle = handles.first().cloned();
     let mut sessions = state.sessions.write().await;
     let session = sessions.get_mut(&session_id)?;
-    if let Some(next_handle) = next_handle {
-        session.current_window = next_handle;
-    }
-    session.frame_context.clear();
-    session.action_state = Default::default();
+    reset_session_window_state(session, next_handle);
     Ok(WebDriverResponse::success(handles))
 }
 
@@ -126,8 +145,7 @@ pub async fn get_window_rect(
     State(state): State<Arc<AppState>>,
     Path(session_id): Path<String>,
 ) -> WebDriverResult {
-    let _session = get_session(&state, &session_id).await?;
-    let rect = BridgeExecutor::from_session_id(state, &session_id)
+    let rect = executor_for_window(state, &session_id)
         .await?
         .get_window_rect()
         .await?;
@@ -139,16 +157,10 @@ pub async fn set_window_rect(
     Path(session_id): Path<String>,
     Json(request): Json<WindowRectRequest>,
 ) -> WebDriverResult {
-    let _session = get_session(&state, &session_id).await?;
-    let executor = BridgeExecutor::from_session_id(state, &session_id).await?;
+    let executor = executor_for_window(state, &session_id).await?;
     let current = executor.get_window_rect().await?;
     let rect = executor
-        .set_window_rect(WindowRect {
-            x: request.x.unwrap_or(current.x),
-            y: request.y.unwrap_or(current.y),
-            width: request.width.unwrap_or(current.width),
-            height: request.height.unwrap_or(current.height),
-        })
+        .set_window_rect(requested_rect(current, request))
         .await?;
     Ok(rect_response(rect))
 }
@@ -157,8 +169,7 @@ pub async fn maximize(
     State(state): State<Arc<AppState>>,
     Path(session_id): Path<String>,
 ) -> WebDriverResult {
-    let _session = get_session(&state, &session_id).await?;
-    let rect = BridgeExecutor::from_session_id(state, &session_id)
+    let rect = executor_for_window(state, &session_id)
         .await?
         .maximize_window()
         .await?;
@@ -169,8 +180,7 @@ pub async fn minimize(
     State(state): State<Arc<AppState>>,
     Path(session_id): Path<String>,
 ) -> WebDriverResult {
-    let _session = get_session(&state, &session_id).await?;
-    BridgeExecutor::from_session_id(state, &session_id)
+    executor_for_window(state, &session_id)
         .await?
         .minimize_window()
         .await?;
@@ -181,8 +191,7 @@ pub async fn fullscreen(
     State(state): State<Arc<AppState>>,
     Path(session_id): Path<String>,
 ) -> WebDriverResult {
-    let _session = get_session(&state, &session_id).await?;
-    let rect = BridgeExecutor::from_session_id(state, &session_id)
+    let rect = executor_for_window(state, &session_id)
         .await?
         .fullscreen_window()
         .await?;
