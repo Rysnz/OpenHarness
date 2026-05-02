@@ -49,24 +49,11 @@ export class RelayHttpClient {
     const mobileInstallId = identity.mobileInstallId.trim();
 
     // Step 1: POST /pair → encrypted challenge
-    const pairResp = await fetch(
-      `${this.relayUrl}/api/rooms/${this.roomId}/pair`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          public_key: toB64(this.keyPair.publicKey),
-          device_id: deviceId,
-          device_name: deviceName,
-        }),
-      },
-    );
-
-    if (!pairResp.ok) {
-      throw new Error(`Pairing failed: HTTP ${pairResp.status}`);
-    }
-
-    const pairData = await pairResp.json();
+    const pairData = await this.postRoomJson('pair', {
+      public_key: toB64(this.keyPair.publicKey),
+      device_id: deviceId,
+      device_name: deviceName,
+    }, 'Pairing failed');
     const challengeJson = await decrypt(
       this.sharedKey,
       pairData.encrypted_data,
@@ -82,25 +69,11 @@ export class RelayHttpClient {
       mobile_install_id: mobileInstallId,
       user_id: userId,
     });
-    const { data: encData, nonce: encNonce } = await encrypt(
-      this.sharedKey,
-      challengeResponse,
+    const cmdData = await this.postRoomJson(
+      'command',
+      await this.encryptPayload(challengeResponse),
+      'Pairing verification failed',
     );
-
-    const cmdResp = await fetch(
-      `${this.relayUrl}/api/rooms/${this.roomId}/command`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ encrypted_data: encData, nonce: encNonce }),
-      },
-    );
-
-    if (!cmdResp.ok) {
-      throw new Error(`Pairing verification failed: HTTP ${cmdResp.status}`);
-    }
-
-    const cmdData = await cmdResp.json();
     const initialSyncJson = await decrypt(
       this.sharedKey,
       cmdData.encrypted_data,
@@ -119,28 +92,11 @@ export class RelayHttpClient {
   async sendCommand<T = any>(cmd: object): Promise<T> {
     if (!this.sharedKey) throw new Error('Not paired');
 
-    const plaintext = JSON.stringify(cmd);
-    const { data: encData, nonce: encNonce } = await encrypt(
-      this.sharedKey,
-      plaintext,
+    const data = await this.postRoomJson(
+      'command',
+      await this.encryptPayload(JSON.stringify(cmd)),
+      'Command failed',
     );
-
-    const body = JSON.stringify({ encrypted_data: encData, nonce: encNonce });
-
-    const resp = await fetch(
-      `${this.relayUrl}/api/rooms/${this.roomId}/command`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body,
-      },
-    );
-
-    if (!resp.ok) {
-      throw new Error(`Command failed: HTTP ${resp.status}`);
-    }
-
-    const data = await resp.json();
     const decrypted = await decrypt(
       this.sharedKey,
       data.encrypted_data,
@@ -159,5 +115,32 @@ export class RelayHttpClient {
     if (/iPad/i.test(ua)) return 'iPad';
     if (/Android/i.test(ua)) return 'Android';
     return 'Mobile Browser';
+  }
+
+  private roomEndpoint(action: 'pair' | 'command'): string {
+    return `${this.relayUrl}/api/rooms/${this.roomId}/${action}`;
+  }
+
+  private async postRoomJson(action: 'pair' | 'command', payload: object, errorPrefix: string): Promise<any> {
+    const response = await fetch(this.roomEndpoint(action), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      throw new Error(`${errorPrefix}: HTTP ${response.status}`);
+    }
+
+    return response.json();
+  }
+
+  private async encryptPayload(plaintext: string): Promise<{ encrypted_data: string; nonce: string }> {
+    if (!this.sharedKey) {
+      throw new Error('Not paired');
+    }
+
+    const { data, nonce } = await encrypt(this.sharedKey, plaintext);
+    return { encrypted_data: data, nonce };
   }
 }
