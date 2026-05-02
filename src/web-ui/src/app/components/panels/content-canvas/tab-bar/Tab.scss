@@ -1,7 +1,30 @@
-/**
- * Tab component styles.
- * Supports preview/active/pinned states.
- */
+$tab-height: 32px;
+$tab-action-size: 16px;
+$tab-motion: 0.15s ease;
+
+@mixin tab-icon-button($color) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: $tab-action-size;
+  height: $tab-action-size;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 2px;
+  color: $color;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+@mixin reveal-on-tab-hover {
+  opacity: 0;
+  transition: opacity $tab-motion, background-color $tab-motion;
+
+  .canvas-tab:hover & {
+    opacity: 1;
+  }
+}
 
 .canvas-tab {
   display: flex;
@@ -10,29 +33,25 @@
   padding: 6px 8px;
   min-width: 80px;
   max-width: 180px;
-  height: 32px;
+  height: $tab-height;
   background: transparent;
   border: none;
   border-radius: 4px 4px 0 0;
   cursor: pointer;
   user-select: none;
   position: relative;
-  transition: background-color 0.15s ease, border-bottom-color 0.15s ease;
+  transition: background-color $tab-motion, border-bottom-color $tab-motion;
   border-bottom: 1px solid transparent;
 
   &:hover {
     background: var(--color-bg-hover, rgba(255, 255, 255, 0.05));
   }
 
-  // ==================== State styles ====================
-
-  // Active state - match canvas-tab-bar is-active-group background
   &.is-active {
     background: var(--color-bg-scene, rgba(255, 255, 255, 0.08));
     border-bottom: 1px solid var(--color-primary, #60a5fa);
   }
 
-  // Preview state - italic title
   &.is-preview {
     .canvas-tab__title {
       font-style: italic;
@@ -40,7 +59,6 @@
     }
   }
 
-  // Task-detail tabs: no italic, normal opacity regardless of preview state
   &.is-task-detail {
     &.is-preview .canvas-tab__title {
       font-style: normal;
@@ -48,14 +66,12 @@
     }
   }
 
-  // Pinned state
   &.is-pinned {
     .canvas-tab__title {
       font-weight: 500;
     }
   }
 
-  // Dirty state
   &.is-dirty {
     .canvas-tab__dirty-indicator {
       display: inline-block;
@@ -73,9 +89,6 @@
     opacity: 0.5;
   }
 
-  // ==================== Child elements ====================
-
-  // Type icon (e.g. task-detail)
   &__type-icon {
     flex-shrink: 0;
     color: var(--color-text-secondary, rgba(255, 255, 255, 0.5));
@@ -83,27 +96,14 @@
     align-items: center;
   }
 
-  // Pin icon
   &__pin-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 16px;
-    height: 16px;
-    padding: 0;
-    background: none;
-    border: none;
-    color: var(--color-primary, #60a5fa);
-    cursor: pointer;
-    border-radius: 2px;
-    flex-shrink: 0;
+    @include tab-icon-button(var(--color-primary, #60a5fa));
 
     &:hover {
       background: var(--color-bg-hover, rgba(255, 255, 255, 0.1));
     }
   }
 
-  // Title
   &__title {
     flex: 1;
     min-width: 0;
@@ -111,23 +111,19 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: 12px;
-    // Inactive state: lighter text color
     color: var(--color-text-secondary, rgba(255, 255, 255, 0.6));
     line-height: 1.4;
-    transition: color 0.15s ease, font-weight 0.15s ease;
+    transition: color $tab-motion, font-weight $tab-motion;
   }
 
-  // Keep title visually centered when tab is not hovered.
   &:not(:hover) &__title {
     text-align: center;
   }
 
-  // Active state title color is brighter
   &.is-active &__title {
     color: var(--color-text-primary, rgba(255, 255, 255, 0.95));
   }
 
-  // Dirty indicator
   &__dirty-indicator {
     display: none;
     flex-shrink: 0;
@@ -136,65 +132,18 @@
     margin-left: 2px;
   }
 
-  // Pop out button
-  &__popout-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 16px;
-    height: 16px;
-    padding: 0;
-    background: none;
-    border: none;
-    color: var(--color-text-secondary, rgba(255, 255, 255, 0.6));
-    cursor: pointer;
-    border-radius: 2px;
-    flex-shrink: 0;
-    opacity: 0;
-    transition: opacity 0.15s ease, background-color 0.15s ease;
-
-    &:hover {
-      background: var(--color-bg-hover, rgba(255, 255, 255, 0.1));
-      color: var(--color-text-primary, rgba(255, 255, 255, 0.9));
-    }
-  }
-
-  // Show pop out button on hover
-  &:hover &__popout-btn {
-    opacity: 1;
-  }
-
-  // Close button
+  &__popout-btn,
   &__close-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 16px;
-    height: 16px;
-    padding: 0;
-    background: none;
-    border: none;
-    color: var(--color-text-secondary, rgba(255, 255, 255, 0.6));
-    cursor: pointer;
-    border-radius: 2px;
-    flex-shrink: 0;
-    opacity: 0;
-    transition: opacity 0.15s ease, background-color 0.15s ease;
+    @include tab-icon-button(var(--color-text-secondary, rgba(255, 255, 255, 0.6)));
+    @include reveal-on-tab-hover;
 
     &:hover {
       background: var(--color-bg-hover, rgba(255, 255, 255, 0.1));
       color: var(--color-text-primary, rgba(255, 255, 255, 0.9));
     }
-  }
-
-  // Show close button on hover
-  &:hover &__close-btn {
-    opacity: 1;
   }
 
 }
-
-// ==================== Drop indicator ====================
 
 .canvas-tab-drop-indicator {
   position: absolute;

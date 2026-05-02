@@ -3,6 +3,43 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+const MIB: usize = 1024 * 1024;
+const NO_APP_IMAGE_CAP: usize = usize::MAX;
+
+#[derive(Debug, Clone, Copy)]
+struct ProviderLimitSpec {
+    max_size_mib: usize,
+    max_width: u32,
+    max_height: u32,
+}
+
+impl ProviderLimitSpec {
+    const fn new(max_size_mib: usize, max_width: u32, max_height: u32) -> Self {
+        Self {
+            max_size_mib,
+            max_width,
+            max_height,
+        }
+    }
+
+    fn into_limits(self) -> ImageLimits {
+        ImageLimits {
+            max_size: self.max_size_mib * MIB,
+            max_width: self.max_width,
+            max_height: self.max_height,
+            max_images_per_request: NO_APP_IMAGE_CAP,
+        }
+    }
+}
+
+const DEFAULT_PROVIDER_LIMITS: ProviderLimitSpec = ProviderLimitSpec::new(20, 2048, 2048);
+const ANTHROPIC_PROVIDER_LIMITS: ProviderLimitSpec = ProviderLimitSpec::new(5, 1568, 2390);
+const GOOGLE_PROVIDER_LIMITS: ProviderLimitSpec = ProviderLimitSpec::new(10, 4096, 4096);
+
+fn normalized_provider_key(provider: &str) -> String {
+    provider.trim().to_ascii_lowercase()
+}
+
 /// Image context data
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImageContextData {
@@ -107,37 +144,19 @@ pub struct ImageLimits {
 
 impl Default for ImageLimits {
     fn default() -> Self {
-        Self {
-            max_size: 20 * 1024 * 1024, // 20MB
-            max_width: 2048,
-            max_height: 2048,
-            max_images_per_request: usize::MAX,
-        }
+        DEFAULT_PROVIDER_LIMITS.into_limits()
     }
 }
 
 impl ImageLimits {
     /// Get limits based on model provider
     pub fn for_provider(provider: &str) -> Self {
-        match provider.to_lowercase().as_str() {
-            "openai" | "response" | "responses" | "nvidia" | "openrouter" => Self {
-                max_size: 20 * 1024 * 1024, // 20MB
-                max_width: 2048,
-                max_height: 2048,
-                max_images_per_request: usize::MAX,
-            },
-            "anthropic" => Self {
-                max_size: 5 * 1024 * 1024, // 5MB
-                max_width: 1568,
-                max_height: 2390,
-                max_images_per_request: usize::MAX,
-            },
-            "google" | "gemini" => Self {
-                max_size: 10 * 1024 * 1024, // 10MB
-                max_width: 4096,
-                max_height: 4096,
-                max_images_per_request: usize::MAX,
-            },
+        match normalized_provider_key(provider).as_str() {
+            "anthropic" => ANTHROPIC_PROVIDER_LIMITS.into_limits(),
+            "google" | "gemini" => GOOGLE_PROVIDER_LIMITS.into_limits(),
+            "openai" | "response" | "responses" | "nvidia" | "openrouter" => {
+                DEFAULT_PROVIDER_LIMITS.into_limits()
+            }
             _ => Self::default(),
         }
     }

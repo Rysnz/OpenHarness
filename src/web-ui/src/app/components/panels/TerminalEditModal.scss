@@ -1,33 +1,51 @@
-/**
- * Terminal edit modal styles
- * Simple and understated style
- */
-
 @use '../../../component-library/styles/tokens' as *;
 
-// ==================== Overlay ====================
+$terminal-edit-radius: 6px;
+$terminal-edit-motion: 0.15s ease;
+$terminal-edit-pad-x: 20px;
 
-.terminal-edit-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: $z-modal;
-  background: rgba(0, 0, 0, 0.6);
+@mixin terminal-edit-center {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+@mixin terminal-edit-focus-reset {
+  outline: none !important;
+  box-shadow: none;
+}
+
+@mixin terminal-edit-pressable($scale) {
+  &:active {
+    transform: scale($scale);
+  }
+}
+
+@mixin terminal-edit-enabled-pressable($scale) {
+  &:active:not(:disabled) {
+    transform: scale($scale);
+  }
+}
+
+.terminal-edit-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: $z-modal;
+  background: rgba(0, 0, 0, 0.6);
+  @include terminal-edit-center;
   padding: 24px;
   animation: terminal-edit-overlay-fade 0.2s ease;
 }
 
 @keyframes terminal-edit-overlay-fade {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
+  from {
+    opacity: 0;
+  }
 
-// ==================== Dialog Body ====================
+  to {
+    opacity: 1;
+  }
+}
 
 .terminal-edit-dialog {
   position: relative;
@@ -54,8 +72,6 @@
   }
 }
 
-// ==================== Close Button ====================
-
 .terminal-edit-dialog__close {
   position: absolute;
   top: 10px;
@@ -67,26 +83,19 @@
   cursor: pointer;
   padding: 5px;
   border-radius: 5px;
-  transition: all 0.15s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  transition: all $terminal-edit-motion;
+  @include terminal-edit-center;
+  @include terminal-edit-pressable(0.92);
   
   &:hover {
     background: var(--element-bg-subtle);
     color: var(--color-text-primary);
   }
-  
-  &:active {
-    transform: scale(0.92);
-  }
 }
-
-// ==================== Header Section ====================
 
 .terminal-edit-dialog__header {
   flex-shrink: 0;
-  padding: 16px 20px 12px;
+  padding: 16px $terminal-edit-pad-x 12px;
   border-bottom: 1px solid var(--border-subtle);
 }
 
@@ -98,16 +107,12 @@
   line-height: 1.3;
 }
 
-// ==================== Content Section ====================
-
 .terminal-edit-dialog__content {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  padding: 16px 20px;
+  padding: 16px $terminal-edit-pad-x;
 }
-
-// ==================== Form Fields ====================
 
 .terminal-edit-dialog__field {
   display: flex;
@@ -119,8 +124,8 @@
   font-size: 12px;
   font-weight: 500;
   color: var(--color-text-secondary);
-  display: flex;
-  align-items: center;
+  @include terminal-edit-center;
+  justify-content: flex-start;
   gap: 4px;
 }
 
@@ -138,19 +143,18 @@
   padding: 8px 12px;
   font-size: 13px;
   border: 1px solid var(--border-subtle);
-  border-radius: 6px;
+  border-radius: $terminal-edit-radius;
   background: var(--color-bg-secondary);
   color: var(--color-text-primary);
   outline: none !important;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition: border-color $terminal-edit-motion, background $terminal-edit-motion;
 
   &:focus,
   &:focus-visible,
   &:focus-within,
   &:active {
     border-color: var(--color-accent-500);
-    outline: none !important;
-    box-shadow: none;
+    @include terminal-edit-focus-reset;
   }
 
   &::placeholder {
@@ -164,14 +168,12 @@
   margin-top: 2px;
 }
 
-// ==================== Footer Buttons ====================
-
 .terminal-edit-dialog__footer {
   flex-shrink: 0;
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  padding: 12px 20px 16px;
+  padding: 12px $terminal-edit-pad-x 16px;
   border-top: 1px solid var(--border-subtle);
 }
 
@@ -180,33 +182,27 @@
   font-size: 12px;
   font-weight: 500;
   border: none;
-  border-radius: 6px;
+  border-radius: $terminal-edit-radius;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all $terminal-edit-motion;
 
   &--cancel {
     background: var(--element-bg-base);
     color: var(--color-text-secondary);
+    @include terminal-edit-pressable(0.97);
 
     &:hover {
       background: var(--element-bg-soft);
-    }
-    
-    &:active {
-      transform: scale(0.97);
     }
   }
 
   &--confirm {
     background: var(--color-accent-500);
     color: white;
+    @include terminal-edit-enabled-pressable(0.97);
 
     &:hover:not(:disabled) {
       background: var(--color-accent-600);
-    }
-    
-    &:active:not(:disabled) {
-      transform: scale(0.97);
     }
 
     &:disabled {

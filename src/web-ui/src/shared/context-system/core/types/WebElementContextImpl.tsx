@@ -1,5 +1,3 @@
- 
-
 import React from 'react';
 import { Code2 } from 'lucide-react';
 import type { WebElementContext, ValidationResult, RenderOptions } from '../../../types/context';
@@ -10,35 +8,47 @@ import type {
 } from '../../../services/ContextRegistry';
 import { i18nService } from '@/infrastructure/i18n';
 
+const MAX_VISIBLE_ATTRIBUTES = 6;
+const SOURCE_URL_LIMIT = 40;
+const CSS_PATH_TAIL_LIMIT = 60;
+const ATTRIBUTE_VALUE_LIMIT = 20;
+const TEXT_PREVIEW_LIMIT = 80;
 
+function clipTail(value: string, maxLength: number): string {
+  return value.length > maxLength ? `...${value.slice(-maxLength)}` : value;
+}
+
+function clipHead(value: string, maxLength: number): string {
+  return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value;
+}
+
+function webElementPayload(context: WebElementContext) {
+  return {
+    type: 'web-element',
+    id: context.id,
+    tag_name: context.tagName,
+    path: context.path,
+    attributes: context.attributes,
+    text_content: context.textContent,
+    outer_html: context.outerHTML,
+    source_url: context.sourceUrl ?? null,
+  };
+}
 
 export class WebElementContextTransformer implements ContextTransformer<'web-element'> {
   readonly type = 'web-element' as const;
 
   transform(context: WebElementContext): unknown {
-    return {
-      type: 'web-element',
-      id: context.id,
-      tag_name: context.tagName,
-      path: context.path,
-      attributes: context.attributes,
-      text_content: context.textContent,
-      outer_html: context.outerHTML,
-      source_url: context.sourceUrl ?? null,
-    };
+    return webElementPayload(context);
   }
 
   estimateSize(context: WebElementContext): number {
-    return (
-      context.path.length +
-      context.outerHTML.length +
-      JSON.stringify(context.attributes).length +
-      (context.textContent?.length ?? 0)
-    );
+    const attributeSize = JSON.stringify(context.attributes).length;
+    const optionalTextSize = context.textContent?.length ?? 0;
+
+    return context.path.length + context.outerHTML.length + attributeSize + optionalTextSize;
   }
 }
-
-
 
 export class WebElementContextValidator implements ContextValidator<'web-element'> {
   readonly type = 'web-element' as const;
@@ -47,22 +57,21 @@ export class WebElementContextValidator implements ContextValidator<'web-element
     if (!context.tagName) {
       return { valid: false, error: 'Web element must have a tag name.' };
     }
+
     if (!context.path) {
       return { valid: false, error: 'Web element must have a CSS path.' };
     }
+
     return { valid: true };
   }
 }
-
-
 
 export class WebElementCardRenderer implements ContextCardRenderer<'web-element'> {
   readonly type = 'web-element' as const;
 
   render(context: WebElementContext, options?: RenderOptions): React.ReactElement {
-    const { compact = false } = options || {};
-
-    const attrEntries = Object.entries(context.attributes).slice(0, 6);
+    const compact = options?.compact ?? false;
+    const attrEntries = Object.entries(context.attributes).slice(0, MAX_VISIBLE_ATTRIBUTES);
 
     return (
       <div className="context-card web-element-context-card" data-compact={compact}>
@@ -78,9 +87,7 @@ export class WebElementCardRenderer implements ContextCardRenderer<'web-element'
               <div className="context-card__meta">
                 <span title={context.sourceUrl}>
                   {i18nService.t('components:contextSystem.webElement.from')}{' '}
-                  {context.sourceUrl.length > 40
-                    ? `${context.sourceUrl.slice(0, 40)}…`
-                    : context.sourceUrl}
+                  {clipHead(context.sourceUrl, SOURCE_URL_LIMIT)}
                 </span>
               </div>
             )}
@@ -90,18 +97,18 @@ export class WebElementCardRenderer implements ContextCardRenderer<'web-element'
         {!compact && (
           <div className="web-element-context-card__details">
             <div className="web-element-context-card__path" title={context.path}>
-              {context.path.length > 60 ? `…${context.path.slice(-60)}` : context.path}
+              {clipTail(context.path, CSS_PATH_TAIL_LIMIT)}
             </div>
             {attrEntries.length > 0 && (
               <div className="web-element-context-card__attrs">
-                {attrEntries.map(([k, v]) => (
-                  <span key={k} className="web-element-context-card__attr">
-                    <span className="web-element-context-card__attr-name">{k}</span>
-                    {v && (
+                {attrEntries.map(([key, value]) => (
+                  <span key={key} className="web-element-context-card__attr">
+                    <span className="web-element-context-card__attr-name">{key}</span>
+                    {value && (
                       <>
                         <span className="web-element-context-card__attr-eq">=</span>
                         <span className="web-element-context-card__attr-val">
-                          &quot;{v.length > 20 ? `${v.slice(0, 20)}…` : v}&quot;
+                          &quot;{clipHead(value, ATTRIBUTE_VALUE_LIMIT)}&quot;
                         </span>
                       </>
                     )}
@@ -111,9 +118,7 @@ export class WebElementCardRenderer implements ContextCardRenderer<'web-element'
             )}
             {context.textContent && (
               <div className="web-element-context-card__text">
-                {context.textContent.length > 80
-                  ? `${context.textContent.slice(0, 80)}…`
-                  : context.textContent}
+                {clipHead(context.textContent, TEXT_PREVIEW_LIMIT)}
               </div>
             )}
           </div>
