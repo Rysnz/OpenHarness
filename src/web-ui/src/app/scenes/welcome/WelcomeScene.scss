@@ -1,8 +1,3 @@
-/**
- * WelcomeScene styles.
- * Session card hover effects mirror btn-action / btn-action-ai from component library.
- */
-
 @use '../../../component-library/styles/tokens.scss' as *;
 
 .welcome-scene {
@@ -10,54 +5,50 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 100%;
   width: 100%;
+  height: 100%;
+  padding: $size-gap-8 $size-gap-6;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: $size-gap-8 $size-gap-6;
   animation: welcome-fade-in 0.35s $easing-decelerate;
 
   &__content {
     display: flex;
     flex-direction: column;
     gap: $size-gap-8;
-    max-width: 560px;
     width: 100%;
+    max-width: 560px;
   }
 
   &__greeting {
     display: flex;
     flex-direction: column;
     align-items: center;
-    text-align: center;
     gap: $size-gap-3;
+    text-align: center;
   }
 
   &__title {
     margin: 0;
-    font-size: var(--font-size-2xl);
-    line-height: $line-height-tight;
-    letter-spacing: -0.02em;
     color: var(--color-text-primary);
+    font-size: var(--font-size-2xl);
     font-weight: $font-weight-semibold;
+    letter-spacing: -0.02em;
+    line-height: $line-height-tight;
   }
 
   &__greeting-label {
+    max-width: 420px;
+    margin: 0;
+    color: var(--color-text-primary);
     font-size: var(--font-size-lg);
     line-height: 1.5;
-    color: var(--color-text-primary);
-    margin: 0;
-    max-width: 420px;
   }
-
-  // ── Divider ──────────────────────────────────────────
 
   &__divider {
     height: 1px;
     background: var(--border-subtle);
   }
-
-  // ── Switch workspace section ─────────────────────────
 
   &__switch {
     display: flex;
@@ -72,36 +63,40 @@
     gap: $size-gap-3;
   }
 
-  &__section-label {
+  &__section-label,
+  &__switch-actions,
+  &__link-btn,
+  &__recent-row,
+  &__recent-item {
     display: flex;
     align-items: center;
+  }
+
+  &__section-label {
     gap: $size-gap-1;
-    font-size: var(--font-size-sm);
     color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
     font-weight: $font-weight-medium;
-    text-transform: uppercase;
     letter-spacing: 0.05em;
+    text-transform: uppercase;
   }
 
   &__switch-actions {
-    display: flex;
-    align-items: center;
     gap: $size-gap-1;
   }
 
   &__link-btn {
-    display: flex;
-    align-items: center;
     gap: 4px;
     padding: 4px $size-gap-2;
     border: none;
     border-radius: $size-radius-sm;
     background: transparent;
     color: var(--color-text-muted);
-    font-size: var(--font-size-sm);
     cursor: pointer;
-    transition: background $motion-fast $easing-standard,
-                color $motion-fast $easing-standard;
+    font-size: var(--font-size-sm);
+    transition:
+      background $motion-fast $easing-standard,
+      color $motion-fast $easing-standard;
 
     &:hover:not(:disabled) {
       background: var(--element-bg-soft);
@@ -109,14 +104,14 @@
     }
 
     &:disabled {
-      opacity: $opacity-disabled;
       cursor: default;
+      opacity: $opacity-disabled;
     }
 
-    svg { flex-shrink: 0; }
+    svg {
+      flex-shrink: 0;
+    }
   }
-
-  // ── Recent list ──────────────────────────────────────
 
   &__recent-list {
     display: flex;
@@ -125,10 +120,9 @@
   }
 
   &__recent-row {
-    display: flex;
     align-items: stretch;
-    border-radius: $size-radius-sm;
     overflow: hidden;
+    border-radius: $size-radius-sm;
     transition: background $motion-fast $easing-standard;
 
     &:hover {
@@ -137,7 +131,9 @@
       .welcome-scene__recent-item {
         color: var(--color-text-primary);
 
-        svg { color: var(--color-text-secondary); }
+        svg {
+          color: var(--color-text-secondary);
+        }
       }
 
       .welcome-scene__recent-time-btn__label {
@@ -145,8 +141,8 @@
       }
 
       .welcome-scene__recent-time-btn__icon {
-        opacity: 1;
         color: var(--color-text-secondary);
+        opacity: 1;
       }
     }
 
@@ -160,17 +156,15 @@
   }
 
   &__recent-item {
-    display: flex;
-    align-items: center;
-    gap: $size-gap-2;
     flex: 1;
+    gap: $size-gap-2;
     min-width: 0;
     padding: $size-gap-1 + 2px $size-gap-2;
     border: none;
     background: transparent;
     color: var(--color-text-secondary);
-    font-size: var(--font-size-base);
     cursor: pointer;
+    font-size: var(--font-size-base);
     text-align: left;
     transition: color $motion-fast $easing-standard;
 
@@ -191,10 +185,11 @@
     border: none;
     background: transparent;
     color: var(--color-text-muted);
-    font-size: var(--font-size-sm);
     cursor: pointer;
-    transition: color $motion-fast $easing-standard,
-                background $motion-fast $easing-standard;
+    font-size: var(--font-size-sm);
+    transition:
+      color $motion-fast $easing-standard,
+      background $motion-fast $easing-standard;
 
     &__label {
       display: flex;
@@ -212,11 +207,12 @@
       align-items: center;
       justify-content: flex-end;
       padding-right: $size-gap-2;
-      opacity: 0;
       color: var(--color-text-muted);
+      opacity: 0;
       pointer-events: none;
-      transition: opacity $motion-fast $easing-standard,
-                  color $motion-fast $easing-standard;
+      transition:
+        opacity $motion-fast $easing-standard,
+        color $motion-fast $easing-standard;
 
       svg {
         display: block;
@@ -226,10 +222,10 @@
     }
 
     &:focus-visible {
+      z-index: 1;
       color: var(--color-text-primary);
       outline: 2px solid var(--focus-ring-color, var(--color-accent));
       outline-offset: -2px;
-      z-index: 1;
     }
 
     &:focus-visible &__label {
@@ -237,61 +233,56 @@
     }
 
     &:focus-visible &__icon {
-      opacity: 1;
       color: var(--color-text-secondary);
+      opacity: 1;
     }
   }
 
   &__recent-name {
-    flex: 1;
     display: inline-flex;
+    flex: 1;
     align-items: baseline;
-    gap: 0;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    min-width: 0;
   }
 
   &__recent-host {
     flex-shrink: 0;
     max-width: 40%;
     overflow: hidden;
-    text-overflow: ellipsis;
     color: var(--color-text-muted);
     font-size: var(--font-size-sm);
+    text-overflow: ellipsis;
   }
 
   &__recent-host-sep {
     flex-shrink: 0;
     color: var(--color-text-muted);
-    opacity: 0.6;
     font-size: var(--font-size-sm);
+    opacity: 0.6;
   }
 
   &__no-recent {
-    font-size: var(--font-size-xs);
-    color: var(--color-text-muted);
     margin: 0;
     padding: $size-gap-1 $size-gap-2;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-xs);
   }
-
 }
-
-// ── Animations ────────────────────────────────────────
 
 @keyframes welcome-fade-in {
   from {
     opacity: 0;
     transform: translateY(10px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
   }
 }
-
-// ── Responsive ────────────────────────────────────────
 
 @media (max-width: 480px) {
   .welcome-scene {
