@@ -2,11 +2,23 @@
  * Backend tool for interactive Mermaid panels.
  */
 
-import { MermaidInteractiveToolInput, MermaidInteractiveToolOutput, MermaidPanelData, NodeMetadata, HighlightState } from '../types/MermaidPanelTypes';
+import {
+  HighlightState,
+  MermaidInteractiveToolInput,
+  MermaidInteractiveToolOutput,
+  MermaidPanelData,
+  NodeMetadata,
+} from '../types/MermaidPanelTypes';
+
+type RenderPayload = NonNullable<MermaidInteractiveToolInput['render_data']>;
+type HighlightPayload = NonNullable<MermaidInteractiveToolInput['update_data']>;
+type SwitchPayload = NonNullable<MermaidInteractiveToolInput['switch_data']>;
+
+const panelIdForSession = (sessionId: string): string => `mermaid-interactive-${sessionId}`;
 
 export class MermaidInteractiveTool {
   private static instance: MermaidInteractiveTool;
-  private panels: Map<string, MermaidPanelData> = new Map();
+  private readonly panels = new Map<string, MermaidPanelData>();
 
   static getInstance(): MermaidInteractiveTool {
     if (!MermaidInteractiveTool.instance) {
@@ -19,11 +31,11 @@ export class MermaidInteractiveTool {
     try {
       switch (input.action) {
         case 'render':
-          return await this.handleRender(input.render_data!);
+          return await this.handleRender(this.requirePayload(input.render_data, 'render_data'));
         case 'update_highlights':
-          return await this.handleUpdateHighlights(input.update_data!);
+          return await this.handleUpdateHighlights(this.requirePayload(input.update_data, 'update_data'));
         case 'switch_mode':
-          return await this.handleSwitchMode(input.switch_data!);
+          return await this.handleSwitchMode(this.requirePayload(input.switch_data, 'switch_data'));
         default:
           throw new Error(`Unknown action: ${input.action}`);
       }
@@ -32,26 +44,70 @@ export class MermaidInteractiveTool {
         success: false,
         panel_id: '',
         action: input.action,
-        message: error instanceof Error ? error.message : 'Unknown error'
+        message: error instanceof Error ? error.message : 'Unknown error',
       };
     }
   }
 
-  private async handleRender(data: {
-    mermaid_code: string;
-    title: string;
-    mode: 'interactive';
-    session_id: string;
-    node_metadata: Record<string, NodeMetadata>;
-    highlights: HighlightState;
-    options: {
-      allow_mode_switch: boolean;
-      enable_navigation: boolean;
-      position: 'left' | 'right' | 'center';
+  private async handleRender(data: RenderPayload): Promise<MermaidInteractiveToolOutput> {
+    const panelId = panelIdForSession(data.session_id);
+    const panelData = this.createPanelData(data);
+
+    this.panels.set(panelId, panelData);
+    await this.triggerPanelCreation(panelData, data.options.position);
+
+    return {
+      success: true,
+      panel_id: panelId,
+      action: 'render',
+      message: 'Interactive Mermaid diagram opened',
+      panel_info: {
+        position: data.options.position,
+        mode: 'interactive',
+        node_count: Object.keys(data.node_metadata).length,
+      },
     };
-  }): Promise<MermaidInteractiveToolOutput> {
-    const panelId = `mermaid-interactive-${data.session_id}`;
-    const panelData: MermaidPanelData = {
+  }
+
+  private async handleUpdateHighlights(data: HighlightPayload): Promise<MermaidInteractiveToolOutput> {
+    const panelId = panelIdForSession(data.session_id);
+    const panelData = this.getRequiredPanel(panelId);
+
+    this.applyHighlightUpdate(panelData, data.highlights, data.update_metadata);
+    await this.triggerPanelUpdate(panelId, {
+      highlights: data.highlights,
+      update_metadata: data.update_metadata,
+    });
+
+    return {
+      success: true,
+      panel_id: panelId,
+      action: 'update_highlights',
+      message: 'Highlights updated successfully',
+    };
+  }
+
+  private async handleSwitchMode(data: SwitchPayload): Promise<MermaidInteractiveToolOutput> {
+    const panelId = panelIdForSession(data.session_id);
+    const panelData = this.getRequiredPanel(panelId);
+
+    if (data.target_mode === 'interactive' && !panelData.interactive_config?.node_metadata) {
+      throw new Error('Interactive mode requires node metadata');
+    }
+
+    panelData.mode = data.target_mode;
+    await this.triggerModeSwitch(panelId, data.target_mode);
+
+    return {
+      success: true,
+      panel_id: panelId,
+      action: 'switch_mode',
+      message: `Mode switched to ${data.target_mode}`,
+    };
+  }
+
+  private createPanelData(data: RenderPayload): MermaidPanelData {
+    return {
       mermaid_code: data.mermaid_code,
       title: data.title,
       session_id: data.session_id,
@@ -61,119 +117,73 @@ export class MermaidInteractiveTool {
         node_metadata: data.node_metadata,
         highlights: data.highlights,
         enable_navigation: data.options.enable_navigation,
-        enable_tooltips: true
-      }
-    };
-    this.panels.set(panelId, panelData);
-    await this.triggerPanelCreation(panelData, data.options.position);
-    return {
-      success: true,
-      panel_id: panelId,
-      action: 'render',
-      message: 'Interactive Mermaid diagram opened',
-      panel_info: {
-        position: data.options.position,
-        mode: 'interactive',
-        node_count: Object.keys(data.node_metadata).length
-      }
+        enable_tooltips: true,
+      },
     };
   }
 
-  private async handleUpdateHighlights(data: {
-    session_id: string;
-    highlights: HighlightState;
-    update_metadata?: Record<string, Partial<NodeMetadata>>;
-  }): Promise<MermaidInteractiveToolOutput> {
-    const panelId = `mermaid-interactive-${data.session_id}`;
+  private getRequiredPanel(panelId: string): MermaidPanelData {
     const panelData = this.panels.get(panelId);
-
     if (!panelData) {
       throw new Error(`Panel not found: ${panelId}`);
     }
+    return panelData;
+  }
 
-    if (panelData.interactive_config) {
-      panelData.interactive_config.highlights = data.highlights;
-      if (data.update_metadata) {
-        Object.keys(data.update_metadata).forEach(nodeId => {
-          if (panelData.interactive_config!.node_metadata[nodeId]) {
-            Object.assign(
-              panelData.interactive_config!.node_metadata[nodeId],
-              data.update_metadata![nodeId]
-            );
-          }
-        });
-      }
+  private applyHighlightUpdate(
+    panelData: MermaidPanelData,
+    highlights: HighlightState,
+    updateMetadata?: Record<string, Partial<NodeMetadata>>
+  ): void {
+    const config = panelData.interactive_config;
+    if (!config) {
+      return;
     }
-    await this.triggerPanelUpdate(panelId, {
-      highlights: data.highlights,
-      update_metadata: data.update_metadata
+
+    config.highlights = highlights;
+    Object.entries(updateMetadata ?? {}).forEach(([nodeId, metadata]) => {
+      if (config.node_metadata[nodeId]) {
+        Object.assign(config.node_metadata[nodeId], metadata);
+      }
     });
-    return {
-      success: true,
-      panel_id: panelId,
-      action: 'update_highlights',
-      message: 'Highlights updated successfully'
-    };
   }
 
-  private async handleSwitchMode(data: {
-    session_id: string;
-    target_mode: 'editor' | 'interactive';
-  }): Promise<MermaidInteractiveToolOutput> {
-    const panelId = `mermaid-interactive-${data.session_id}`;
-    const panelData = this.panels.get(panelId);
-
-    if (!panelData) {
-      throw new Error(`Panel not found: ${panelId}`);
+  private requirePayload<T>(payload: T | undefined, name: string): T {
+    if (!payload) {
+      throw new Error(`Missing payload: ${name}`);
     }
-
-    if (data.target_mode === 'interactive' && !panelData.interactive_config?.node_metadata) {
-      throw new Error('Interactive mode requires node metadata');
-    }
-
-    panelData.mode = data.target_mode;
-    await this.triggerModeSwitch(panelId, data.target_mode);
-    return {
-      success: true,
-      panel_id: panelId,
-      action: 'switch_mode',
-      message: `Mode switched to ${data.target_mode}`
-    };
+    return payload;
   }
 
   private async triggerPanelCreation(panelData: MermaidPanelData, position: string): Promise<void> {
-    const event = new CustomEvent('agent-create-tab', {
-      detail: {
-        type: 'mermaid-panel',
-        title: panelData.title,
-        data: panelData,
-        position
-      }
+    this.dispatch('agent-create-tab', {
+      type: 'mermaid-panel',
+      title: panelData.title,
+      data: panelData,
+      position,
     });
-    
-    window.dispatchEvent(event);
   }
 
   private async triggerPanelUpdate(panelId: string, updateData: any): Promise<void> {
-    const event = new CustomEvent('mermaid-panel-update', {
-      detail: {
-        panel_id: panelId,
-        update_data: updateData
-      }
+    this.dispatch('mermaid-panel-update', {
+      panel_id: panelId,
+      update_data: updateData,
     });
-    
-    window.dispatchEvent(event);
   }
 
   private async triggerModeSwitch(panelId: string, targetMode: string): Promise<void> {
-    const event = new CustomEvent('mermaid-panel-mode-switch', {
-      detail: {
-        panel_id: panelId,
-        target_mode: targetMode
-      }
+    this.dispatch('mermaid-panel-mode-switch', {
+      panel_id: panelId,
+      target_mode: targetMode,
     });
-    
-    window.dispatchEvent(event);
+  }
+
+  private dispatch(eventName: string, detail: Record<string, unknown>): void {
+    window.dispatchEvent(new CustomEvent(eventName, {
+      detail: {
+        ...detail,
+      },
+    }));
   }
 
   getPanelData(panelId: string): MermaidPanelData | undefined {
