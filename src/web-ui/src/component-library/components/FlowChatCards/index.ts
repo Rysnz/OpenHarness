@@ -37,120 +37,107 @@ export interface ToolCardConfig {
   primaryColor: string;
 }
 
+type ToolCardPreset = Pick<
+  ToolCardConfig,
+  'icon' | 'requiresConfirmation' | 'resultDisplayType' | 'displayMode' | 'primaryColor'
+>;
+
+function makeToolCardConfig(
+  toolName: string,
+  translationKey: string,
+  preset: ToolCardPreset
+): ToolCardConfig {
+  const translationRoot = `components:flowChatCards.toolConfig.${translationKey}`;
+
+  return {
+    toolName,
+    displayName: i18nService.t(`${translationRoot}.displayName`),
+    description: i18nService.t(`${translationRoot}.description`),
+    ...preset,
+  };
+}
+
 export const FLOWCHAT_CARD_CONFIGS: Record<string, ToolCardConfig> = {
-  'Read': {
-    toolName: 'Read',
-    displayName: i18nService.t('components:flowChatCards.toolConfig.read.displayName'),
+  'Read': makeToolCardConfig('Read', 'read', {
     icon: 'R',
     requiresConfirmation: false,
     resultDisplayType: 'summary',
-    description: i18nService.t('components:flowChatCards.toolConfig.read.description'),
     displayMode: 'compact',
     primaryColor: '#3b82f6'
-  },
-  'Write': {
-    toolName: 'Write',
-    displayName: i18nService.t('components:flowChatCards.toolConfig.write.displayName'),
+  }),
+  'Write': makeToolCardConfig('Write', 'write', {
     icon: 'W',
     requiresConfirmation: false,
     resultDisplayType: 'summary',
-    description: i18nService.t('components:flowChatCards.toolConfig.write.description'),
     displayMode: 'standard',
     primaryColor: '#22c55e'
-  },
-  'Edit': {
-    toolName: 'Edit',
-    displayName: i18nService.t('components:flowChatCards.toolConfig.edit.displayName'),
+  }),
+  'Edit': makeToolCardConfig('Edit', 'edit', {
     icon: 'E',
     requiresConfirmation: false,
     resultDisplayType: 'detailed',
-    description: i18nService.t('components:flowChatCards.toolConfig.edit.description'),
     displayMode: 'standard',
     primaryColor: '#f59e0b'
-  },
-  'Delete': {
-    toolName: 'Delete',
-    displayName: i18nService.t('components:flowChatCards.toolConfig.delete.displayName'),
+  }),
+  'Delete': makeToolCardConfig('Delete', 'delete', {
     icon: 'D',
     requiresConfirmation: false,
     resultDisplayType: 'summary',
-    description: i18nService.t('components:flowChatCards.toolConfig.delete.description'),
     displayMode: 'detailed',
     primaryColor: '#ef4444'
-  },
+  }),
 
-  'Grep': {
-    toolName: 'Grep',
-    displayName: i18nService.t('components:flowChatCards.toolConfig.grep.displayName'),
+  'Grep': makeToolCardConfig('Grep', 'grep', {
     icon: 'G',
     requiresConfirmation: false,
     resultDisplayType: 'detailed',
-    description: i18nService.t('components:flowChatCards.toolConfig.grep.description'),
     displayMode: 'compact',
     primaryColor: '#8b5cf6'
-  },
-  'Glob': {
-    toolName: 'Glob',
-    displayName: i18nService.t('components:flowChatCards.toolConfig.glob.displayName'),
+  }),
+  'Glob': makeToolCardConfig('Glob', 'glob', {
     icon: 'F',
     requiresConfirmation: false,
     resultDisplayType: 'summary',
-    description: i18nService.t('components:flowChatCards.toolConfig.glob.description'),
     displayMode: 'compact',
     primaryColor: '#06b6d4'
-  },
+  }),
 
-  'WebSearch': {
-    toolName: 'WebSearch',
-    displayName: i18nService.t('components:flowChatCards.toolConfig.webSearch.displayName'),
+  'WebSearch': makeToolCardConfig('WebSearch', 'webSearch', {
     icon: 'WS',
     requiresConfirmation: false,
     resultDisplayType: 'detailed',
-    description: i18nService.t('components:flowChatCards.toolConfig.webSearch.description'),
     displayMode: 'compact',
     primaryColor: '#0ea5e9'
-  },
-  'WebFetch': {
-    toolName: 'WebFetch',
-    displayName: i18nService.t('components:flowChatCards.toolConfig.webFetch.displayName'),
+  }),
+  'WebFetch': makeToolCardConfig('WebFetch', 'webFetch', {
     icon: 'WF',
     requiresConfirmation: false,
     resultDisplayType: 'detailed',
-    description: i18nService.t('components:flowChatCards.toolConfig.webFetch.description'),
     displayMode: 'standard',
     primaryColor: '#0ea5e9'
-  },
+  }),
 
-  'Task': {
-    toolName: 'Task',
-    displayName: i18nService.t('components:flowChatCards.toolConfig.task.displayName'),
+  'Task': makeToolCardConfig('Task', 'task', {
     icon: 'AI',
     requiresConfirmation: false,
     resultDisplayType: 'detailed',
-    description: i18nService.t('components:flowChatCards.toolConfig.task.description'),
     displayMode: 'detailed',
     primaryColor: '#7c3aed'
-  },
-  'TodoWrite': {
-    toolName: 'TodoWrite',
-    displayName: i18nService.t('components:flowChatCards.toolConfig.todoWrite.displayName'),
+  }),
+  'TodoWrite': makeToolCardConfig('TodoWrite', 'todoWrite', {
     icon: 'T',
     requiresConfirmation: false,
     resultDisplayType: 'summary',
-    description: i18nService.t('components:flowChatCards.toolConfig.todoWrite.description'),
     displayMode: 'standard',
     primaryColor: '#0d9488'
-  },
-  'ContextCompression': {
-    toolName: 'ContextCompression',
-    displayName: i18nService.t('components:flowChatCards.toolConfig.contextCompression.displayName'),
+  }),
+  'ContextCompression': makeToolCardConfig('ContextCompression', 'contextCompression', {
     icon: 'CC',
     requiresConfirmation: false,
     resultDisplayType: 'detailed',
-    description: i18nService.t('components:flowChatCards.toolConfig.contextCompression.description'),
     displayMode: 'standard',
     primaryColor: '#a855f7'
-  }
+  }),
 };
 
 export function getFlowChatCardConfig(toolName: string): ToolCardConfig {
