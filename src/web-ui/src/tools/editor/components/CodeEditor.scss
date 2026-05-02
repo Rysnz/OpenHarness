@@ -14,6 +14,9 @@ $_editor-loading-spinner-border: 3px;
 $_editor-error-icon-size: 48px;
 $_editor-padding-mobile: 20px;
 $_editor-padding-desktop: 32px;
+$_editor-link-underline-color: rgba(96, 165, 250, 0.8);
+$_editor-monaco-hover-font-size: 12px;
+$_editor-monaco-hover-text-color: #000000;
 
 // Main Component
 .code-editor-tool {
@@ -186,14 +189,14 @@ $_editor-padding-desktop: 32px;
     .monaco-editor {
       .ctrl-hover-underline {
         text-decoration: underline;
-        text-decoration-color: rgba(96, 165, 250, 0.8);
+        text-decoration-color: $_editor-link-underline-color;
         text-underline-offset: 2px;
         cursor: pointer !important;
       }
       
       .monaco-cross-file-link {
         text-decoration: underline;
-        text-decoration-color: rgba(96, 165, 250, 0.8);
+        text-decoration-color: $_editor-link-underline-color;
         text-decoration-thickness: 1px;
         text-underline-offset: 2px;
         cursor: pointer !important;
@@ -202,22 +205,22 @@ $_editor-padding-desktop: 32px;
     
     .monaco-hover,
     .monaco-editor-hover {
-      font-size: 12px !important;
+      font-size: $_editor-monaco-hover-font-size !important;
       
       .hover-row,
       .hover-contents {
-        font-size: 12px !important;
-        color: #000000 !important;
+        font-size: $_editor-monaco-hover-font-size !important;
+        color: $_editor-monaco-hover-text-color !important;
       }
       
       p, span, div {
-        font-size: 12px !important;
-        color: #000000 !important;
+        font-size: $_editor-monaco-hover-font-size !important;
+        color: $_editor-monaco-hover-text-color !important;
       }
       
       .markdown-string {
-        font-size: 12px !important;
-        color: #000000 !important;
+        font-size: $_editor-monaco-hover-font-size !important;
+        color: $_editor-monaco-hover-text-color !important;
       }
     }
   }
@@ -315,11 +318,11 @@ $_editor-padding-desktop: 32px;
   body > .monaco-hover,
   body > .monaco-editor-hover,
   .monaco-hover-content {
-    font-size: 12px !important;
+    font-size: $_editor-monaco-hover-font-size !important;
     
     * {
-      font-size: 12px !important;
-      color: #000000 !important;
+      font-size: $_editor-monaco-hover-font-size !important;
+      color: $_editor-monaco-hover-text-color !important;
     }
   }
 }
