@@ -17,10 +17,80 @@ import type { FlowImageAnalysisItem } from '../types/flow-chat';
 import { Button } from '@/component-library';
 import './ImageAnalysisCard.scss';
 
+type AnalysisStatus = FlowImageAnalysisItem['status'];
+
 export interface ImageAnalysisCardProps {
   analysisItem: FlowImageAnalysisItem;
   onRetry?: () => void;
   onExpand?: () => void;
+}
+
+const getAnalysisDuration = (result: FlowImageAnalysisItem['result']): string => {
+  return result?.analysis_time_ms ? `${result.analysis_time_ms}ms` : '';
+};
+
+function StatusLine({
+  status,
+  duration,
+  onRetry,
+}: {
+  status: AnalysisStatus;
+  duration: string;
+  onRetry?: () => void;
+}) {
+  if (status === 'analyzing') {
+    return (
+      <div className="image-analysis-card__status analyzing">
+        <Loader className="spinner" size={14} />
+        <span>AI is analyzing the image...</span>
+      </div>
+    );
+  }
+
+  if (status === 'completed') {
+    return (
+      <div className="image-analysis-card__status completed">
+        <CheckCircle className="icon" size={14} />
+        <span>Analysis complete</span>
+        {duration && <span className="time">{duration}</span>}
+      </div>
+    );
+  }
+
+  if (status !== 'error') {
+    return null;
+  }
+
+  return (
+    <div className="image-analysis-card__status error">
+      <AlertCircle className="icon" size={14} />
+      <span>Analysis failed</span>
+      {onRetry && (
+        <Button variant="secondary" size="small" className="retry-btn" onClick={onRetry}>
+          Retry
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function ImageThumbnail({ imageContext }: { imageContext: FlowImageAnalysisItem['imageContext'] }) {
+  const imageUrl = imageContext.thumbnailUrl || imageContext.dataUrl;
+
+  if (!imageUrl) {
+    return (
+      <div className="image-analysis-card__thumbnail-placeholder">
+        <Eye size={24} />
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={imageUrl}
+      alt={imageContext.imageName}
+    />
+  );
 }
 
 export const ImageAnalysisCard: React.FC<ImageAnalysisCardProps> = ({
@@ -29,25 +99,13 @@ export const ImageAnalysisCard: React.FC<ImageAnalysisCardProps> = ({
 }) => {
   const [expanded, setExpanded] = useState(false);
   const { imageContext, result, status, error } = analysisItem;
-  
-  const duration = result?.analysis_time_ms 
-    ? `${result.analysis_time_ms}ms`
-    : '';
-  
+  const duration = getAnalysisDuration(result);
+
   return (
     <div className="image-analysis-card" data-status={status}>
       <div className="image-analysis-card__header">
         <div className="image-analysis-card__thumbnail">
-          {imageContext.thumbnailUrl || imageContext.dataUrl ? (
-            <img 
-              src={imageContext.thumbnailUrl || imageContext.dataUrl} 
-              alt={imageContext.imageName}
-            />
-          ) : (
-            <div className="image-analysis-card__thumbnail-placeholder">
-              <Eye size={24} />
-            </div>
-          )}
+          <ImageThumbnail imageContext={imageContext} />
         </div>
         
         <div className="image-analysis-card__info">
@@ -55,34 +113,7 @@ export const ImageAnalysisCard: React.FC<ImageAnalysisCardProps> = ({
             {imageContext.imageName}
           </div>
           
-          {status === 'analyzing' && (
-            <div className="image-analysis-card__status analyzing">
-              <Loader className="spinner" size={14} />
-              <span>AI is analyzing the image...</span>
-            </div>
-          )}
-          
-          {status === 'completed' && result && (
-            <div className="image-analysis-card__status completed">
-              <CheckCircle className="icon" size={14} />
-              <span>Analysis complete</span>
-              {duration && (
-                <span className="time">{duration}</span>
-              )}
-            </div>
-          )}
-          
-          {status === 'error' && (
-            <div className="image-analysis-card__status error">
-              <AlertCircle className="icon" size={14} />
-              <span>Analysis failed</span>
-              {onRetry && (
-                <Button variant="secondary" size="small" className="retry-btn" onClick={onRetry}>
-                  Retry
-                </Button>
-              )}
-            </div>
-          )}
+          <StatusLine status={status} duration={duration} onRetry={onRetry} />
         </div>
       </div>
       
@@ -97,7 +128,7 @@ export const ImageAnalysisCard: React.FC<ImageAnalysisCardProps> = ({
             variant="ghost"
             size="small"
             className="image-analysis-card__expand-btn"
-            onClick={() => setExpanded(!expanded)}
+            onClick={() => setExpanded(value => !value)}
           >
             {expanded ? (
               <>
