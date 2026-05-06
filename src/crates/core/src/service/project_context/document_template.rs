@@ -1,27 +1,10 @@
-pub const AGENTS_MD_TEMPLATE: &str = r#"# AGENTS.md
-
-This file provides guidance for AI agents working with this codebase.
-
-## Project Overview
-
-<!-- Describe your project here -->
-
-## Directory Structure
-
-<!-- Explain the key directories -->
-
-## Development Guidelines
-
-<!-- Add coding standards and conventions -->
-
-## Common Tasks
-
-<!-- List frequently performed tasks -->
-"#;
-
-pub const CLAUDE_MD_TEMPLATE: &str = r#"# CLAUDE.md
-
-This file provides guidance for AI agents working with this codebase.
+macro_rules! agent_guide_template {
+    ($title:literal) => {
+        concat!(
+            "# ",
+            $title,
+            "\n\n",
+            "This file provides guidance for AI agents working with this codebase.
 
 ## Project Overview
 
@@ -38,28 +21,16 @@ This file provides guidance for AI agents working with this codebase.
 ## Common Tasks
 
 <!-- List frequently performed tasks -->
-"#;
+"
+        )
+    };
+}
 
-pub const COPILOT_INSTRUCTIONS_MD_TEMPLATE: &str = r#"# COPILOT_INSTRUCTIONS.md
+pub const AGENTS_MD_TEMPLATE: &str = agent_guide_template!("AGENTS.md");
 
-This file provides guidance for AI agents working with this codebase.
+pub const CLAUDE_MD_TEMPLATE: &str = agent_guide_template!("CLAUDE.md");
 
-## Project Overview
-
-<!-- Describe your project here -->
-
-## Directory Structure
-
-<!-- Explain the key directories -->
-
-## Development Guidelines
-
-<!-- Add coding standards and conventions -->
-
-## Common Tasks
-
-<!-- List frequently performed tasks -->
-"#;
+pub const COPILOT_INSTRUCTIONS_MD_TEMPLATE: &str = agent_guide_template!("COPILOT_INSTRUCTIONS.md");
 
 pub const ARCHITECTURE_MD_TEMPLATE: &str = r#"# Architecture
 

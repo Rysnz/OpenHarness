@@ -3,83 +3,19 @@ import type { ModalPage } from '../types';
 import MediaRenderer from './MediaRenderer';
 import { useAnnouncementI18n } from '../hooks/useAnnouncementI18n';
 
-interface Props {
+const ANNOUNCEMENT_KEY_PREFIX = 'announcements.';
+
+interface FeatureModalPageProps {
   page: ModalPage;
   active: boolean;
 }
 
-/**
- * Renders a single page inside the FeatureModal.
- *
- * Handles i18n key resolution and Markdown body rendering (simple HTML via
- * dangerouslySetInnerHTML – body content is authored internally so this is safe).
- */
-const FeatureModalPage: React.FC<Props> = ({ page, active }) => {
+const FeatureModalPage: React.FC<FeatureModalPageProps> = ({ page, active }) => {
   const { t } = useAnnouncementI18n();
-
-  const resolve = (key: string) => (key.startsWith('announcements.') ? t(key) : key);
-
-  /**
-   * Lightweight Markdown → HTML for announcement body content.
-   *
-   * Supported syntax:
-   *   - **bold**
-   *   - `inline code`
-   *   - Pipe tables (|---|)
-   *   - Blank-line paragraph breaks
-   *   - Single line-break → <br> within a paragraph
-   */
-  function renderBody(raw: string): string {
-    const resolved = resolve(raw);
-
-    // Split into blocks on double newline.
-    const blocks = resolved.split(/\n{2,}/);
-
-    const htmlBlocks = blocks.map((block) => {
-      const trimmed = block.trim();
-
-      // ── Table detection: block must have at least 3 lines where one is a separator row ──
-      const lines = trimmed.split('\n');
-      const isSeparatorRow = (l: string) => /^\|[\s|:-]+\|$/.test(l.trim());
-      if (lines.length >= 2 && lines.some(isSeparatorRow)) {
-        const rows = lines.filter((l) => !isSeparatorRow(l));
-        const toTd = (l: string, tag: 'th' | 'td') =>
-          l
-            .split('|')
-            .filter((_, i, a) => i > 0 && i < a.length - 1) // drop leading/trailing empty
-            .map((cell) => `<${tag}>${inlineMarkdown(cell.trim())}</${tag}>`)
-            .join('');
-
-        const [header, ...body] = rows;
-        return [
-          '<table class="md-table">',
-          `<thead><tr>${toTd(header, 'th')}</tr></thead>`,
-          `<tbody>${body.map((r) => `<tr>${toTd(r, 'td')}</tr>`).join('')}</tbody>`,
-          '</table>',
-        ].join('');
-      }
-
-      // ── Regular paragraph ──
-      const inner = lines
-        .map((l) => inlineMarkdown(l))
-        .join('<br>');
-      return `<p>${inner}</p>`;
-    });
-
-    return htmlBlocks.join('\n');
-  }
-
-  /** Apply inline Markdown (bold, code) to a single line. */
-  function inlineMarkdown(line: string): string {
-    return line
-      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-      .replace(/`([^`]+)`/g, '<code>$1</code>');
-  }
-
-  const layoutClass = `feature-modal-page--${page.layout}`;
+  const resolveText = (key: string) => (key.startsWith(ANNOUNCEMENT_KEY_PREFIX) ? t(key) : key);
 
   return (
-    <div className={`feature-modal-page ${layoutClass}`}>
+    <div className={`feature-modal-page feature-modal-page--${page.layout}`}>
       {page.media && (
         <div className="feature-modal-page__media">
           <MediaRenderer media={page.media} active={active} />
@@ -87,11 +23,11 @@ const FeatureModalPage: React.FC<Props> = ({ page, active }) => {
       )}
       <div className="feature-modal-page__text">
         <div className="feature-modal-page__eyebrow" aria-hidden />
-        <h2 className="feature-modal-page__title">{resolve(page.title)}</h2>
+        <h2 className="feature-modal-page__title">{resolveText(page.title)}</h2>
         <div className="feature-modal-page__rule" aria-hidden />
         <div
           className="feature-modal-page__body"
-          dangerouslySetInnerHTML={{ __html: renderBody(page.body) }}
+          dangerouslySetInnerHTML={{ __html: renderAnnouncementBody(resolveText(page.body)) }}
         />
       </div>
     </div>
@@ -99,3 +35,54 @@ const FeatureModalPage: React.FC<Props> = ({ page, active }) => {
 };
 
 export default FeatureModalPage;
+
+function renderAnnouncementBody(body: string): string {
+  return body
+    .split(/\n{2,}/)
+    .map((block) => renderMarkdownBlock(block.trim()))
+    .join('\n');
+}
+
+function renderMarkdownBlock(block: string): string {
+  const lines = block.split('\n');
+
+  if (isTableBlock(lines)) {
+    return renderTable(lines);
+  }
+
+  return `<p>${lines.map(inlineMarkdown).join('<br>')}</p>`;
+}
+
+function isTableBlock(lines: string[]): boolean {
+  return lines.length >= 2 && lines.some(isSeparatorRow);
+}
+
+function isSeparatorRow(line: string): boolean {
+  return /^\|[\s|:-]+\|$/.test(line.trim());
+}
+
+function renderTable(lines: string[]): string {
+  const rows = lines.filter((line) => !isSeparatorRow(line));
+  const [header, ...bodyRows] = rows;
+
+  return [
+    '<table class="md-table">',
+    `<thead><tr>${renderCells(header, 'th')}</tr></thead>`,
+    `<tbody>${bodyRows.map((row) => `<tr>${renderCells(row, 'td')}</tr>`).join('')}</tbody>`,
+    '</table>',
+  ].join('');
+}
+
+function renderCells(row: string, tag: 'th' | 'td'): string {
+  return row
+    .split('|')
+    .filter((_, index, cells) => index > 0 && index < cells.length - 1)
+    .map((cell) => `<${tag}>${inlineMarkdown(cell.trim())}</${tag}>`)
+    .join('');
+}
+
+function inlineMarkdown(line: string): string {
+  return line
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>');
+}
