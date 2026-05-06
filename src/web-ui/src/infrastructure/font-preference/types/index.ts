@@ -1,29 +1,20 @@
-
 export type FontSizeLevel = 'compact' | 'small' | 'default' | 'medium' | 'large' | 'custom';
+export type PresetFontSizeLevel = Exclude<FontSizeLevel, 'custom'>;
 
 export interface UiFontSizePreference {
   level: FontSizeLevel;
-  /** Only used when level === 'custom'. Range: 12–20. */
   customPx?: number;
 }
 
 export type FlowChatFontMode = 'sync' | 'lift' | 'independent';
 
-/**
- * Flow chat typographic scale vs global UI:
- * - `sync`: same tokens as UI
- * - `lift`: UI baseline + 1px (cap 20), default
- * - `independent`: custom baseline px
- */
 export interface FlowChatFontSizePreference {
   mode: FlowChatFontMode;
-  /** When `mode === 'independent'`, baseline px (12–20) for the flow-chat token ladder. */
   basePx?: number;
 }
 
 export interface FontPreference {
   uiSize: UiFontSizePreference;
-  /** Conversation / flow chat panel font scale (separate from global UI). */
   flowChat: FlowChatFontSizePreference;
 }
 
@@ -39,29 +30,29 @@ export interface FontSizeTokens {
   '5xl': string;
 }
 
-export type FontSizeLevelPresets = Record<Exclude<FontSizeLevel, 'custom'>, FontSizeTokens>;
+export type FontSizeLevelPresets = Record<PresetFontSizeLevel, FontSizeTokens>;
 
-/** UI baseline (px) for each preset level. Default = 14. */
-export const PRESET_UI_BASE_PX: Record<Exclude<FontSizeLevel, 'custom'>, number> = {
+const DEFAULT_UI_BASE_PX = 14;
+const MIN_FONT_BASE_PX = 12;
+const MAX_FONT_BASE_PX = 20;
+const FLOW_CHAT_LIFT_PX = 1;
+
+export const PRESET_UI_BASE_PX: Record<PresetFontSizeLevel, number> = {
   compact: 12,
   small: 13,
-  default: 14,
+  default: DEFAULT_UI_BASE_PX,
   medium: 15,
   large: 16,
 };
 
-/**
- * Derive font size tokens from a custom base px value.
- * Other steps are calculated relative to base with fixed offsets.
- */
 export function deriveFontSizeTokens(basePx: number): FontSizeTokens {
-  const b = Math.max(12, Math.min(20, basePx));
+  const b = clampFontBase(basePx);
   return {
-    xs:   `${b - 2}px`,
-    sm:   `${b - 1}px`,
+    xs: `${b - 2}px`,
+    sm: `${b - 1}px`,
     base: `${b}px`,
-    lg:   `${b + 1}px`,
-    xl:   `${b + 2}px`,
+    lg: `${b + 1}px`,
+    xl: `${b + 2}px`,
     '2xl': `${b + 4}px`,
     '3xl': `${b + 8}px`,
     '4xl': `${b + 12}px`,
@@ -69,7 +60,6 @@ export function deriveFontSizeTokens(basePx: number): FontSizeTokens {
   };
 }
 
-/** Preset levels share the same formula as custom UI size (deriveFontSizeTokens). */
 export const UI_FONT_SIZE_PRESETS: FontSizeLevelPresets = {
   compact: deriveFontSizeTokens(PRESET_UI_BASE_PX.compact),
   small: deriveFontSizeTokens(PRESET_UI_BASE_PX.small),
@@ -79,31 +69,29 @@ export const UI_FONT_SIZE_PRESETS: FontSizeLevelPresets = {
 };
 
 export function resolveFontSizeTokens(uiSize: UiFontSizePreference): FontSizeTokens {
-  if (uiSize.level === 'custom') {
-    return deriveFontSizeTokens(uiSize.customPx ?? 14);
-  }
-  return UI_FONT_SIZE_PRESETS[uiSize.level];
+  return uiSize.level === 'custom'
+    ? deriveFontSizeTokens(uiSize.customPx ?? DEFAULT_UI_BASE_PX)
+    : UI_FONT_SIZE_PRESETS[uiSize.level];
 }
 
 export function resolveFlowChatFontSizeTokens(pref: FontPreference): FontSizeTokens {
-  if (pref.flowChat.mode === 'independent') {
-    return deriveFontSizeTokens(pref.flowChat.basePx ?? 14);
+  const { flowChat, uiSize } = pref;
+
+  if (flowChat.mode === 'independent') {
+    return deriveFontSizeTokens(flowChat.basePx ?? DEFAULT_UI_BASE_PX);
   }
-  if (pref.flowChat.mode === 'lift') {
-    const ui = resolveFontSizeTokens(pref.uiSize);
-    const uiBase = parseInt(ui.base, 10);
-    const bumped = Number.isNaN(uiBase) ? 15 : Math.min(20, uiBase + 1);
-    return deriveFontSizeTokens(bumped);
+
+  if (flowChat.mode === 'lift') {
+    return deriveFontSizeTokens(resolveLiftedBasePx(uiSize));
   }
-  return resolveFontSizeTokens(pref.uiSize);
+
+  return resolveFontSizeTokens(uiSize);
 }
 
 export const DEFAULT_FONT_PREFERENCE: FontPreference = {
   uiSize: { level: 'default' },
   flowChat: { mode: 'lift' },
 };
-
-// ---- Events ----
 
 export type FontPreferenceEventType = 'font:before-change' | 'font:after-change';
 
@@ -115,3 +103,13 @@ export interface FontPreferenceEvent {
 }
 
 export type FontPreferenceEventListener = (event: FontPreferenceEvent) => void | Promise<void>;
+
+function clampFontBase(basePx: number): number {
+  return Math.max(MIN_FONT_BASE_PX, Math.min(MAX_FONT_BASE_PX, basePx));
+}
+
+function resolveLiftedBasePx(uiSize: UiFontSizePreference): number {
+  const uiBase = parseInt(resolveFontSizeTokens(uiSize).base, 10);
+  const safeBase = Number.isNaN(uiBase) ? DEFAULT_UI_BASE_PX : uiBase;
+  return clampFontBase(safeBase + FLOW_CHAT_LIFT_PX);
+}

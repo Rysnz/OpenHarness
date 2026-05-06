@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Check, RotateCcw, X } from 'lucide-react';
 import { Button } from '@/component-library';
 import { InlineMarkdownPreview } from './InlineMarkdownPreview';
@@ -27,6 +27,11 @@ interface InlineAiPreviewBlockProps {
   onRetry: () => void;
 }
 
+function stopEditorWidgetFocus(event: React.SyntheticEvent<HTMLElement>) {
+  event.preventDefault();
+  event.stopPropagation();
+}
+
 export const InlineAiPreviewBlock: React.FC<InlineAiPreviewBlockProps> = ({
   status,
   response,
@@ -38,32 +43,24 @@ export const InlineAiPreviewBlock: React.FC<InlineAiPreviewBlockProps> = ({
   onReject,
   onRetry,
 }) => {
-  const handlePointerDown: React.PointerEventHandler<HTMLElement> = (event) => {
-    // Keep ProseMirror from stealing focus and remounting the widget before click fires.
-    event.preventDefault();
-    event.stopPropagation();
-  };
-
-  const handleMouseDown: React.MouseEventHandler<HTMLElement> = (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-  };
-
-  const statusText =
-    status === 'submitting' || status === 'streaming'
-      ? labels.streaming
-      : status === 'error'
-        ? labels.error
-        : labels.ready;
-  const previewStateClass = `m-editor-inline-ai-preview--${status}`;
+  const statusText = resolveStatusText(status, labels);
+  const className = useMemo(
+    () =>
+      [
+        'm-editor-inline-ai-preview',
+        'm-editor-inline-ai-preview--inline',
+        `m-editor-inline-ai-preview--${status}`,
+      ].join(' '),
+    [status],
+  );
 
   return (
     <div
-      className={`m-editor-inline-ai-preview m-editor-inline-ai-preview--inline ${previewStateClass}`}
+      className={className}
       data-testid="md-inline-ai-preview"
       data-status={status}
-      onPointerDownCapture={handlePointerDown}
-      onMouseDownCapture={handleMouseDown}
+      onPointerDownCapture={stopEditorWidgetFocus}
+      onMouseDownCapture={stopEditorWidgetFocus}
     >
       <div className="m-editor-inline-ai-preview__header">
         <span className="m-editor-inline-ai-preview__title">{labels.title}</span>
@@ -73,9 +70,18 @@ export const InlineAiPreviewBlock: React.FC<InlineAiPreviewBlockProps> = ({
         {response ? (
           <InlineMarkdownPreview value={response} basePath={basePath} />
         ) : (
-          <div className="m-editor-inline-ai-preview__placeholder" data-testid="md-inline-ai-preview-placeholder">{labels.streaming}</div>
+          <div
+            className="m-editor-inline-ai-preview__placeholder"
+            data-testid="md-inline-ai-preview-placeholder"
+          >
+            {labels.streaming}
+          </div>
         )}
-        {error && <div className="m-editor-inline-ai__error" data-testid="md-inline-ai-preview-error">{error}</div>}
+        {error && (
+          <div className="m-editor-inline-ai__error" data-testid="md-inline-ai-preview-error">
+            {error}
+          </div>
+        )}
       </div>
       <div className="m-editor-inline-ai-preview__actions">
         {canAccept && (
@@ -117,3 +123,18 @@ export const InlineAiPreviewBlock: React.FC<InlineAiPreviewBlockProps> = ({
     </div>
   );
 };
+
+function resolveStatusText(
+  status: InlineAiPreviewStatus,
+  labels: InlineAiPreviewBlockLabels,
+): string {
+  switch (status) {
+    case 'submitting':
+    case 'streaming':
+      return labels.streaming;
+    case 'error':
+      return labels.error;
+    case 'ready':
+      return labels.ready;
+  }
+}

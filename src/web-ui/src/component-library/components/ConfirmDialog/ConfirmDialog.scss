@@ -1,8 +1,17 @@
-/**
- * ConfirmDialog styles
- * Icon top-centered; content uses full width of a wide (landscape) modal.
- */
 @use '../../styles/tokens' as *;
+
+@mixin confirm-center($size) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: $size;
+  height: $size;
+}
+
+@mixin confirm-tone($token) {
+  background: color-mix(in srgb, var(#{$token}) 15%, transparent);
+  color: var(#{$token});
+}
 
 .confirm-dialog {
   display: flex;
@@ -14,13 +23,9 @@
   padding-top: $size-gap-16;
 
   &__icon {
+    @include confirm-center(48px);
     flex-shrink: 0;
-    width: 48px;
-    height: 48px;
     margin: 0 auto $size-gap-4;
-    display: flex;
-    align-items: center;
-    justify-content: center;
     border-radius: 50%;
 
     svg {
@@ -29,23 +34,19 @@
   }
 
   &--info &__icon {
-    background: color-mix(in srgb, var(--color-info) 15%, transparent);
-    color: var(--color-info);
+    @include confirm-tone(--color-info);
   }
 
   &--warning &__icon {
-    background: color-mix(in srgb, var(--color-warning) 15%, transparent);
-    color: var(--color-warning);
+    @include confirm-tone(--color-warning);
   }
 
   &--error &__icon {
-    background: color-mix(in srgb, var(--color-error) 15%, transparent);
-    color: var(--color-error);
+    @include confirm-tone(--color-error);
   }
 
   &--success &__icon {
-    background: color-mix(in srgb, var(--color-success) 15%, transparent);
-    color: var(--color-success);
+    @include confirm-tone(--color-success);
   }
 
   &__content {
@@ -56,12 +57,12 @@
   }
 
   &__title {
+    margin: 0 0 $size-gap-3;
+    color: var(--color-text-primary);
     font-size: var(--font-size-lg);
     font-weight: $font-weight-semibold;
     line-height: 1.35;
     letter-spacing: -0.01em;
-    color: var(--color-text-primary);
-    margin: 0 0 $size-gap-3;
     text-align: center;
   }
 
@@ -70,9 +71,9 @@
   }
 
   &__message {
+    color: var(--color-text-secondary);
     font-size: var(--font-size-sm);
     line-height: 1.55;
-    color: var(--color-text-secondary);
     text-align: left;
 
     > *:first-child {
@@ -84,76 +85,74 @@
     }
   }
 
-  /** Lead line before bullet list (e.g. “This will:”) */
   &__message-intro {
     margin: 0 0 $size-gap-3;
+    color: var(--color-text-primary);
     font-size: var(--font-size-sm);
     font-weight: $font-weight-medium;
     line-height: 1.5;
-    color: var(--color-text-primary);
   }
 
-  /** Structured bullet list inside confirm body */
   &__bullet-list {
     list-style: none;
     margin: 0;
     padding: $size-gap-3 $size-gap-5;
-    border-radius: $size-radius-base;
     background: var(--color-bg-subtle);
     border: 1px solid var(--color-border);
-  }
+    border-radius: $size-radius-base;
 
-  &__bullet-list li {
-    position: relative;
-    margin: 0;
-    padding-left: $size-gap-5;
-    font-size: var(--font-size-sm);
-    line-height: 1.55;
-    color: var(--color-text-secondary);
+    li {
+      position: relative;
+      margin: 0;
+      padding-left: $size-gap-5;
+      color: var(--color-text-secondary);
+      font-size: var(--font-size-sm);
+      line-height: 1.55;
 
-    &::before {
-      content: '';
-      position: absolute;
-      left: 2px;
-      top: 0.55em;
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: color-mix(in srgb, var(--color-text-secondary) 45%, transparent);
+      &::before {
+        content: '';
+        position: absolute;
+        top: 0.55em;
+        left: 2px;
+        width: 6px;
+        height: 6px;
+        background: color-mix(in srgb, var(--color-text-secondary) 45%, transparent);
+        border-radius: 50%;
+      }
+
+      + li {
+        margin-top: $size-gap-2;
+      }
     }
-  }
-
-  &__bullet-list li + li {
-    margin-top: $size-gap-2;
   }
 
   &__preview {
     margin-top: $size-gap-3;
     padding: $size-gap-3 $size-gap-4;
+    overflow: auto;
     background: var(--color-bg-subtle);
     border: 1px solid var(--color-border);
     border-radius: $size-radius-base;
     text-align: left;
-    overflow: auto;
 
     pre {
       margin: 0;
       padding: 0;
+      color: var(--color-text-primary);
       font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
       font-size: var(--font-size-xs);
-      color: var(--color-text-primary);
+      line-height: 1.5;
       white-space: pre-wrap;
       word-break: break-all;
-      line-height: 1.5;
     }
   }
 
   &__actions {
     display: flex;
     flex-wrap: wrap;
-    gap: $size-gap-2;
-    justify-content: flex-end;
     align-items: center;
+    justify-content: flex-end;
+    gap: $size-gap-2;
     padding: $size-gap-4 $size-gap-6 $size-gap-5;
     border-top: 1px solid var(--color-border);
 
