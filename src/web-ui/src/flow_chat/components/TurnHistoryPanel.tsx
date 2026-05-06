@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { snapshotAPI } from '@/infrastructure/api';
 import type { TurnSnapshot } from '@/infrastructure/api/service-api/SnapshotAPI';
 import { TurnRollbackButton } from './TurnRollbackButton';
@@ -6,15 +6,12 @@ import { createLogger } from '@/shared/utils/logger';
 import './TurnHistoryPanel.scss';
 
 const log = createLogger('TurnHistoryPanel');
+const PREVIEW_FILE_LIMIT = 3;
 
 interface TurnHistoryPanelProps {
   sessionId: string;
 }
 
-/**
- * Turn history panel.
- * Shows all turns in the current session and allows rollback.
- */
 export const TurnHistoryPanel: React.FC<TurnHistoryPanelProps> = ({ sessionId }) => {
   const [turns, setTurns] = useState<TurnSnapshot[]>([]);
   const [loading, setLoading] = useState(false);
@@ -22,7 +19,7 @@ export const TurnHistoryPanel: React.FC<TurnHistoryPanelProps> = ({ sessionId })
 
   const loadTurns = useCallback(async () => {
     if (!sessionId) return;
-    
+
     setLoading(true);
     try {
       const turnList = await snapshotAPI.getSessionTurnSnapshots(sessionId);
@@ -39,9 +36,17 @@ export const TurnHistoryPanel: React.FC<TurnHistoryPanelProps> = ({ sessionId })
     void loadTurns();
   }, [loadTurns]);
 
-  const handleRollbackComplete = () => {
+  const handleRollbackComplete = useCallback(() => {
     void loadTurns();
-  };
+  }, [loadTurns]);
+
+  const currentTurnKey = useMemo(
+    () => {
+      const currentTurn = turns[currentTurnIndex];
+      return currentTurn ? turnKey(currentTurn) : null;
+    },
+    [currentTurnIndex, turns],
+  );
 
   if (loading) {
     return <div className="turn-history-panel-loading">Loading...</div>;
@@ -64,43 +69,76 @@ export const TurnHistoryPanel: React.FC<TurnHistoryPanelProps> = ({ sessionId })
       </div>
 
       <div className="turn-history-list">
-        {turns.map((turn, index) => (
-          <div 
-            key={`${turn.sessionId}-${turn.turnIndex}`} 
-            className={`turn-history-item ${index === currentTurnIndex ? 'current' : ''}`}
-          >
-            <div className="turn-item-header">
-              <span className="turn-index">Turn {index + 1}</span>
-              <TurnRollbackButton
-                sessionId={turn.sessionId}
-                turnIndex={turn.turnIndex}
-                isCurrent={index === currentTurnIndex}
-                onRollbackComplete={handleRollbackComplete}
-              />
-            </div>
-            
-            {turn.modifiedFiles.length > 0 && (
-              <div className="turn-item-files">
-                <span className="files-label">Modified files:</span>
-                <ul className="files-list">
-                  {turn.modifiedFiles.slice(0, 3).map((file: string, fileIndex: number) => (
-                    <li key={fileIndex} className="file-item">{file}</li>
-                  ))}
-                  {turn.modifiedFiles.length > 3 && (
-                    <li className="file-item-more">
-                      {turn.modifiedFiles.length - 3} more files...
-                    </li>
-                  )}
-                </ul>
-              </div>
-            )}
-
-            <div className="turn-item-time">
-              {new Date(turn.timestamp * 1000).toLocaleString()}
-            </div>
-          </div>
-        ))}
+        {turns.map((turn, index) => {
+          const isCurrent = turnKey(turn) === currentTurnKey;
+          return (
+            <TurnHistoryItem
+              key={turnKey(turn)}
+              turn={turn}
+              displayIndex={index + 1}
+              isCurrent={isCurrent}
+              onRollbackComplete={handleRollbackComplete}
+            />
+          );
+        })}
       </div>
     </div>
   );
 };
+
+interface TurnHistoryItemProps {
+  turn: TurnSnapshot;
+  displayIndex: number;
+  isCurrent: boolean;
+  onRollbackComplete: () => void;
+}
+
+const TurnHistoryItem: React.FC<TurnHistoryItemProps> = ({
+  turn,
+  displayIndex,
+  isCurrent,
+  onRollbackComplete,
+}) => (
+  <div className={`turn-history-item ${isCurrent ? 'current' : ''}`}>
+    <div className="turn-item-header">
+      <span className="turn-index">Turn {displayIndex}</span>
+      <TurnRollbackButton
+        sessionId={turn.sessionId}
+        turnIndex={turn.turnIndex}
+        isCurrent={isCurrent}
+        onRollbackComplete={onRollbackComplete}
+      />
+    </div>
+
+    {turn.modifiedFiles.length > 0 && <ModifiedFilesPreview files={turn.modifiedFiles} />}
+
+    <div className="turn-item-time">{formatTurnTimestamp(turn.timestamp)}</div>
+  </div>
+);
+
+const ModifiedFilesPreview: React.FC<{ files: string[] }> = ({ files }) => {
+  const visibleFiles = files.slice(0, PREVIEW_FILE_LIMIT);
+  const hiddenFileCount = files.length - visibleFiles.length;
+
+  return (
+    <div className="turn-item-files">
+      <span className="files-label">Modified files:</span>
+      <ul className="files-list">
+        {visibleFiles.map((file, index) => (
+          <li key={`${file}-${index}`} className="file-item">
+            {file}
+          </li>
+        ))}
+        {hiddenFileCount > 0 && <li className="file-item-more">{hiddenFileCount} more files...</li>}
+      </ul>
+    </div>
+  );
+};
+
+function turnKey(turn: TurnSnapshot): string {
+  return `${turn.sessionId}-${turn.turnIndex}`;
+}
+
+function formatTurnTimestamp(timestamp: number): string {
+  return new Date(timestamp * 1000).toLocaleString();
+}

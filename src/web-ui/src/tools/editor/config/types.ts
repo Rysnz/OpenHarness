@@ -1,25 +1,41 @@
-/**
- * Editor configuration types.
- * Uses camelCase (Tauri convention); auto-converted to snake_case for backend.
- */
+export type MinimapSide = 'left' | 'right';
+export type MinimapSize = 'proportional' | 'fill' | 'fit';
+export type BooleanishMode = 'active' | 'true' | 'false';
+export type ScrollbarVisibility = 'auto' | 'visible' | 'hidden';
+export type InlayHintsMode = 'on' | 'off' | 'offUnlessPressed' | 'onUnlessPressed';
+export type EditorFontWeight = 'normal' | 'bold';
+export type EditorCursorStyle =
+  | 'line'
+  | 'block'
+  | 'underline'
+  | 'line-thin'
+  | 'block-outline'
+  | 'underline-thin';
+export type EditorCursorBlinking = 'blink' | 'smooth' | 'phase' | 'expand' | 'solid';
+export type EditorWhitespaceRendering = 'none' | 'boundary' | 'selection' | 'trailing' | 'all';
+export type EditorLineHighlight = 'none' | 'gutter' | 'line' | 'all';
+export type EditorWordWrap = 'off' | 'on' | 'wordWrapColumn' | 'bounded';
+export type EditorAutoSave = 'off' | 'afterDelay' | 'onFocusChange' | 'onWindowChange';
+export type EditorLineNumbers = 'on' | 'off' | 'relative' | 'interval';
+export type EditorPresetName = 'readonly' | 'minimal' | 'standard' | 'full' | 'diff';
 
 export interface MinimapConfig {
   enabled: boolean;
-  side: 'left' | 'right';
-  size: 'proportional' | 'fill' | 'fit';
+  side: MinimapSide;
+  size: MinimapSize;
 }
 
 export interface GuidesConfig {
   indentation: boolean;
   bracketPairs: boolean;
-  bracketPairsHorizontal: 'active' | 'true' | 'false';
+  bracketPairsHorizontal: BooleanishMode;
   highlightActiveBracketPair: boolean;
   highlightActiveIndentation: boolean;
 }
 
 export interface ScrollbarConfig {
-  vertical: 'auto' | 'visible' | 'hidden';
-  horizontal: 'auto' | 'visible' | 'hidden';
+  vertical: ScrollbarVisibility;
+  horizontal: ScrollbarVisibility;
   verticalScrollbarSize: number;
   horizontalScrollbarSize: number;
   useShadows: boolean;
@@ -46,45 +62,37 @@ export interface QuickSuggestionsConfig {
 }
 
 export interface InlayHintsConfig {
-  enabled: 'on' | 'off' | 'offUnlessPressed' | 'onUnlessPressed';
+  enabled: InlayHintsMode;
   fontSize: number;
   fontFamily: string;
   padding: boolean;
 }
 
-/**
- * Full editor configuration.
- */
 export interface EditorConfig {
-  // Appearance
   fontSize: number;
   fontFamily: string;
-  fontWeight: 'normal' | 'bold';
-  /** Line height multiplier */
+  fontWeight: EditorFontWeight;
   lineHeight: number;
   theme: string;
-  cursorStyle: 'line' | 'block' | 'underline' | 'line-thin' | 'block-outline' | 'underline-thin';
-  cursorBlinking: 'blink' | 'smooth' | 'phase' | 'expand' | 'solid';
-  renderWhitespace: 'none' | 'boundary' | 'selection' | 'trailing' | 'all';
-  renderLineHighlight: 'none' | 'gutter' | 'line' | 'all';
+  cursorStyle: EditorCursorStyle;
+  cursorBlinking: EditorCursorBlinking;
+  renderWhitespace: EditorWhitespaceRendering;
+  renderLineHighlight: EditorLineHighlight;
 
-  // Behavior
   tabSize: number;
   insertSpaces: boolean;
-  wordWrap: 'off' | 'on' | 'wordWrapColumn' | 'bounded';
-  autoSave: 'off' | 'afterDelay' | 'onFocusChange' | 'onWindowChange';
+  wordWrap: EditorWordWrap;
+  autoSave: EditorAutoSave;
   autoSaveDelay: number;
   scrollBeyondLastLine: boolean;
   smoothScrolling: boolean;
 
-  // Features
-  lineNumbers: 'on' | 'off' | 'relative' | 'interval';
+  lineNumbers: EditorLineNumbers;
   minimap: MinimapConfig;
   formatOnSave: boolean;
   formatOnPaste: boolean;
   trimAutoWhitespace: boolean;
 
-  // Advanced
   semanticHighlighting: boolean;
   bracketPairColorization: boolean;
   guides: GuidesConfig;
@@ -95,7 +103,6 @@ export interface EditorConfig {
   inlayHints: InlayHintsConfig;
 }
 
-/** Partial editor config for overrides */
 export type EditorConfigPartial = Partial<EditorConfig> & {
   minimap?: Partial<MinimapConfig>;
   guides?: Partial<GuidesConfig>;
@@ -106,9 +113,6 @@ export type EditorConfigPartial = Partial<EditorConfig> & {
   inlayHints?: Partial<InlayHintsConfig>;
 };
 
-export type EditorPresetName = 'readonly' | 'minimal' | 'standard' | 'full' | 'diff';
-
-/** Preset config including runtime properties */
 export interface EditorPresetConfig extends EditorConfigPartial {
   readOnly?: boolean;
   enableLsp?: boolean;
