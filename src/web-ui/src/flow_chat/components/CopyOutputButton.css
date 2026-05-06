@@ -1,38 +1,38 @@
-/**
- * Copy output button styles
- * Rendered in the dedicated footer area of a dialog turn
- */
-
 .copy-output-button-group {
   display: flex;
-  gap: 8px;
   align-items: center;
+  gap: 8px;
 }
 
 .copy-output-button {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 4px;
+  min-width: 60px;
   padding: 6px 10px;
   background: rgba(0, 0, 0, 0.7);
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 6px;
   color: rgba(255, 255, 255, 0.8);
+  font-family: var(--font-family-sans, 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
   font-size: 11px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  min-width: 60px;
-  justify-content: center;
   opacity: 0;
   transform: translateY(4px);
+  transition:
+    background 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+    color 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   pointer-events: none;
-  font-family: var(--font-family-sans, 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
-/* Show buttons when parent is hovered */
 .copy-button-area:hover .copy-output-button,
 .flow-chat-dialog-turn:hover .copy-output-button {
   opacity: 1;
@@ -75,61 +75,54 @@
   transition: transform 0.2s ease;
 }
 
-.copy-output-button:hover .button-icon {
-  transform: scale(1.1);
-}
-
 .button-text {
   font-weight: 600;
   letter-spacing: 0.3px;
   white-space: nowrap;
-  transition: all 0.2s ease;
+  transition: opacity 0.2s ease;
+}
+
+.copy-output-button:hover .button-icon {
+  transform: scale(1.1);
 }
 
 @media (max-width: 768px) {
   .copy-output-button {
-    padding: 5px 8px;
-    font-size: 10px;
-    min-width: 50px;
     bottom: 6px;
     right: 8px;
+    min-width: 32px;
+    padding: 6px;
+    font-size: 10px;
   }
-  
+
   .button-text {
     display: none;
   }
-  
-  .copy-output-button {
-    min-width: 32px;
-    padding: 6px;
-  }
 }
 
-/* High contrast mode support */
 @media (prefers-contrast: high) {
   .copy-output-button {
     background: rgba(0, 0, 0, 0.9);
     border-color: rgba(255, 255, 255, 0.6);
     color: white;
   }
-  
+
   .copy-output-button:hover {
     background: rgba(59, 130, 246, 1);
     border-color: rgba(59, 130, 246, 1);
   }
 }
 
-/* Reduced motion mode support */
 @media (prefers-reduced-motion: reduce) {
   .copy-output-button {
     transition: none;
   }
-  
+
   .button-icon,
   .button-text {
     transition: none;
   }
-  
+
   .copy-output-button:hover .button-icon {
     transform: none;
   }

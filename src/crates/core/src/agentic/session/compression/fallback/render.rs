@@ -1,52 +1,46 @@
 use crate::agentic::core::{
-    CompressedMessage, CompressedMessageRole, CompressionEntry, CompressionPayload,
+    CompressedMessage, CompressedMessageRole, CompressedTodoSnapshot, CompressionEntry,
+    CompressionPayload,
 };
 use serde_json::{json, Value};
 
+const EMPTY_HISTORY_MESSAGE: &str =
+    "No detailed historical entries fit within the remaining context budget.";
+
 pub(super) fn render_payload_for_model(payload: &CompressionPayload) -> String {
     if payload.entries.is_empty() {
-        return "No detailed historical entries fit within the remaining context budget."
-            .to_string();
+        return EMPTY_HISTORY_MESSAGE.to_string();
     }
 
-    let mut sections = Vec::new();
+    payload
+        .entries
+        .iter()
+        .enumerate()
+        .map(|(index, entry)| render_entry(index + 1, entry))
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
 
-    for (index, entry) in payload.entries.iter().enumerate() {
-        match entry {
-            CompressionEntry::ModelSummary { text } => {
-                sections.push(format!(
-                    "Earlier summarized history {}:\n{}",
-                    index + 1,
-                    text
-                ));
+fn render_entry(position: usize, entry: &CompressionEntry) -> String {
+    match entry {
+        CompressionEntry::ModelSummary { text } => {
+            format!("Earlier summarized history {position}:\n{text}")
+        }
+        CompressionEntry::Turn { messages, todo, .. } => {
+            let mut lines = vec![format!("Historical turn {position}:")];
+            let mut previous_role = None;
+
+            for message in messages {
+                render_compressed_message(&mut lines, message, &mut previous_role);
             }
-            CompressionEntry::Turn { messages, todo, .. } => {
-                let mut lines = vec![format!("Historical turn {}:", index + 1)];
-                let mut previous_role = None;
-                for message in messages {
-                    render_compressed_message(&mut lines, message, &mut previous_role);
-                }
-                if let Some(todo) = todo {
-                    lines.push("Latest task list for this turn:".to_string());
-                    if todo.todos.is_empty() {
-                        if let Some(summary) = todo.summary.as_ref() {
-                            lines.push(format!("- {}", summary));
-                        }
-                    } else {
-                        for todo_item in &todo.todos {
-                            lines.push(format!("- [{}] {}", todo_item.status, todo_item.content));
-                        }
-                        if let Some(summary) = todo.summary.as_ref() {
-                            lines.push(format!("Task list note: {}", summary));
-                        }
-                    }
-                }
-                sections.push(lines.join("\n"));
+
+            if let Some(todo) = todo {
+                append_todo_lines(&mut lines, todo);
             }
+
+            lines.join("\n")
         }
     }
-
-    sections.join("\n\n")
 }
 
 fn render_compressed_message(
@@ -83,6 +77,27 @@ fn render_compressed_message(
     }
 
     *previous_role = Some(message.role);
+}
+
+fn append_todo_lines(lines: &mut Vec<String>, todo: &CompressedTodoSnapshot) {
+    lines.push("Latest task list for this turn:".to_string());
+
+    if todo.todos.is_empty() {
+        if let Some(summary) = todo.summary.as_ref() {
+            lines.push(format!("- {summary}"));
+        }
+        return;
+    }
+
+    lines.extend(
+        todo.todos
+            .iter()
+            .map(|item| format!("- [{}] {}", item.status, item.content)),
+    );
+
+    if let Some(summary) = todo.summary.as_ref() {
+        lines.push(format!("Task list note: {summary}"));
+    }
 }
 
 fn render_tool_arguments(arguments: &Value) -> String {

@@ -1,24 +1,66 @@
 pub(super) fn script() -> &'static str {
     r####"
-    const deleteSelectionOrPreviousChar = (target, value, start, end) => {
+    const selectionBounds = (target, fallbackLength) => ({
+      start: typeof target.selectionStart === "number" ? target.selectionStart : fallbackLength,
+      end: typeof target.selectionEnd === "number" ? target.selectionEnd : fallbackLength,
+    });
+
+    const replaceTextRange = (target, value, start, end, replacement = "") => {
+      setElementValue(target, value.slice(0, start) + replacement + value.slice(end));
+    };
+
+    const removeBackward = (target, value, start, end) => {
       if (start !== end) {
-        setElementValue(target, value.slice(0, start) + value.slice(end));
+        replaceTextRange(target, value, start, end);
         setSelectionRange(target, start, start);
         return;
       }
-      if (start > 0) {
-        setElementValue(target, value.slice(0, start - 1) + value.slice(end));
-        setSelectionRange(target, start - 1, start - 1);
+
+      if (start === 0) {
+        return;
       }
+
+      replaceTextRange(target, value, start - 1, end);
+      setSelectionRange(target, start - 1, start - 1);
     };
 
-    const deleteSelectionOrNextChar = (target, value, start, end) => {
-      if (start !== end) {
-        setElementValue(target, value.slice(0, start) + value.slice(end));
-      } else {
-        setElementValue(target, value.slice(0, start) + value.slice(start + 1));
-      }
+    const removeForward = (target, value, start, end) => {
+      const deleteEnd = start === end ? start + 1 : end;
+      replaceTextRange(target, value, start, deleteEnd);
       setSelectionRange(target, start, start);
+    };
+
+    const deleteEditableContent = (target, direction) => {
+      const value = String(getElementValue(target) || "");
+      const { start, end } = selectionBounds(target, value.length);
+      const inputType = direction === "backward" ? "deleteContentBackward" : "deleteContentForward";
+
+      if (!dispatchBeforeInputEvent(target, inputType, null)) {
+        return;
+      }
+
+      if (direction === "backward") {
+        removeBackward(target, value, start, end);
+      } else {
+        removeForward(target, value, start, end);
+      }
+
+      emitInputEvents(target, inputType, null);
+    };
+
+    const moveEditableCaret = (target, key) => {
+      const caretMoves = {
+        ArrowLeft: "left",
+        ArrowRight: "right",
+        Home: "start",
+        End: "end",
+      };
+      const direction = caretMoves[key];
+      if (direction) {
+        moveCaret(target, direction);
+        return true;
+      }
+      return false;
     };
 
     const applySpecialKey = (target, key, modifiers, frameContext = currentFrameContext) => {
@@ -39,46 +81,16 @@ pub(super) fn script() -> &'static str {
       }
 
       if (key === "Backspace" && isInputLike) {
-        const value = String(getElementValue(target) || "");
-        const start = typeof target.selectionStart === "number" ? target.selectionStart : value.length;
-        const end = typeof target.selectionEnd === "number" ? target.selectionEnd : value.length;
-        if (!dispatchBeforeInputEvent(target, "deleteContentBackward", null)) {
-          return;
-        }
-        deleteSelectionOrPreviousChar(target, value, start, end);
-        emitInputEvents(target, "deleteContentBackward", null);
+        deleteEditableContent(target, "backward");
         return;
       }
 
       if (key === "Delete" && isInputLike) {
-        const value = String(getElementValue(target) || "");
-        const start = typeof target.selectionStart === "number" ? target.selectionStart : value.length;
-        const end = typeof target.selectionEnd === "number" ? target.selectionEnd : value.length;
-        if (!dispatchBeforeInputEvent(target, "deleteContentForward", null)) {
-          return;
-        }
-        deleteSelectionOrNextChar(target, value, start, end);
-        emitInputEvents(target, "deleteContentForward", null);
+        deleteEditableContent(target, "forward");
         return;
       }
 
-      if (key === "ArrowLeft" && isInputLike) {
-        moveCaret(target, "left");
-        return;
-      }
-
-      if (key === "ArrowRight" && isInputLike) {
-        moveCaret(target, "right");
-        return;
-      }
-
-      if (key === "Home" && isInputLike) {
-        moveCaret(target, "start");
-        return;
-      }
-
-      if (key === "End" && isInputLike) {
-        moveCaret(target, "end");
+      if (isInputLike && moveEditableCaret(target, key)) {
         return;
       }
 

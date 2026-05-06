@@ -1,5 +1,3 @@
- 
-
 import { BaseCommand } from '../BaseCommand';
 import { CommandResult } from '../../types/command.types';
 import { MenuContext, ContextType, EditorContext } from '../../types/context.types';
@@ -23,77 +21,52 @@ export class SelectAllCommand extends BaseCommand {
   }
 
   canExecute(context: MenuContext): boolean {
-    
-    return [
-      ContextType.EDITOR,
-      ContextType.SELECTION
-    ].includes(context.type);
+    return context.type === ContextType.EDITOR || context.type === ContextType.SELECTION;
   }
 
   async execute(context: MenuContext): Promise<CommandResult> {
     try {
       const t = i18nService.getT();
-      
+
       if (context.type === ContextType.EDITOR) {
         return await this.executeForEditor(context as EditorContext);
       }
-      
-      
-      const success = document.execCommand('selectAll');
-      
-      if (success) {
-        return this.success(t('common:contextMenu.status.selectAllSuccess'));
-      } else {
-        
-        const range = document.createRange();
-        range.selectNodeContents(context.targetElement);
-        const selection = window.getSelection();
-        selection?.removeAllRanges();
-        selection?.addRange(range);
-        
-        return this.success(t('common:contextMenu.status.selectAllSuccess'));
-      }
+
+      selectDocumentTarget(context.targetElement);
+      return this.success(t('common:contextMenu.status.selectAllSuccess'));
     } catch (error) {
       const t = i18nService.getT();
       return this.failure(t('errors:contextMenu.selectAllFailed'), error as Error);
     }
   }
-  
-   
+
   private async executeForEditor(context: EditorContext): Promise<CommandResult> {
     try {
       const t = i18nService.getT();
-      
       const editor = MonacoHelper.getEditorFromElement(context.targetElement);
-      
+
       if (!editor) {
         log.warn('Editor instance not found, using fallback method');
-        
-        const success = document.execCommand('selectAll');
-        return success
+
+        return tryLegacySelectAll()
           ? this.success(t('common:contextMenu.status.selectAllSuccess'))
           : this.failure(t('errors:contextMenu.selectAllFailed'));
       }
-      
+
       const model = editor.getModel();
       if (!model) {
         return this.failure(t('errors:contextMenu.editorModelUnavailable'));
       }
-      
-      
+
       const lastLine = model.getLineCount();
-      const lastColumn = model.getLineMaxColumn(lastLine);
-      
       editor.setSelection({
         startLineNumber: 1,
         startColumn: 1,
         endLineNumber: lastLine,
-        endColumn: lastColumn
+        endColumn: model.getLineMaxColumn(lastLine)
       });
-      
-      
       editor.focus();
-      
+
       return this.success(t('common:contextMenu.status.selectAllSuccess'));
     } catch (error) {
       log.error('Failed to select all in Monaco editor', error as Error);
@@ -101,5 +74,22 @@ export class SelectAllCommand extends BaseCommand {
       return this.failure(t('errors:contextMenu.selectAllFailed'), error as Error);
     }
   }
+}
+
+function tryLegacySelectAll(): boolean {
+  return document.execCommand('selectAll');
+}
+
+function selectDocumentTarget(target: HTMLElement): void {
+  if (tryLegacySelectAll()) {
+    return;
+  }
+
+  const range = document.createRange();
+  range.selectNodeContents(target);
+
+  const selection = window.getSelection();
+  selection?.removeAllRanges();
+  selection?.addRange(range);
 }
 

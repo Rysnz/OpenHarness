@@ -1,12 +1,8 @@
-/**
- * Subscribe to the active session state.
- * Processing status now comes from SessionStateMachine.
- */
-
 import { useState, useEffect } from 'react';
 import { flowChatStore } from '../store/FlowChatStore';
 import { stateMachineManager } from '../state-machine';
 import { ProcessingPhase } from '../state-machine/types';
+import type { Session } from '../types/flow-chat';
 
 export interface ActiveSessionState {
   sessionId: string | null;
@@ -16,65 +12,50 @@ export interface ActiveSessionState {
   status: 'active' | 'idle' | 'error';
 }
 
+const buildActiveSessionState = (session: Session | null | undefined): ActiveSessionState => {
+  const machine = session ? stateMachineManager.get(session.sessionId) : null;
+
+  return {
+    sessionId: session?.sessionId || null,
+    isProcessing: machine?.getCurrentState() === 'processing',
+    processingPhase: machine?.getContext().processingPhase || null,
+    error: session?.error || null,
+    status: session?.status || 'idle'
+  };
+};
+
+const isSameSessionState = (left: ActiveSessionState, right: ActiveSessionState): boolean =>
+  left.sessionId === right.sessionId &&
+  left.isProcessing === right.isProcessing &&
+  left.processingPhase === right.processingPhase &&
+  left.error === right.error &&
+  left.status === right.status;
+
 export const useActiveSessionState = (): ActiveSessionState => {
-  const [sessionState, setSessionState] = useState<ActiveSessionState>(() => {
-    const session = flowChatStore.getActiveSession();
-    const machine = session ? stateMachineManager.get(session.sessionId) : null;
-    const isProcessing = machine ? machine.getCurrentState() === 'processing' : false;
-    const processingPhase = machine ? machine.getContext().processingPhase : null;
-    
-    return {
-      sessionId: session?.sessionId || null,
-      isProcessing,
-      processingPhase,
-      error: session?.error || null,
-      status: session?.status || 'idle'
-    };
-  });
+  const [sessionState, setSessionState] = useState<ActiveSessionState>(() =>
+    buildActiveSessionState(flowChatStore.getActiveSession())
+  );
 
   useEffect(() => {
     const unsubscribeStore = flowChatStore.subscribe((newState) => {
       const session = newState.sessions.get(newState.activeSessionId || '');
-      const machine = session ? stateMachineManager.get(session.sessionId) : null;
-      const isProcessing = machine ? machine.getCurrentState() === 'processing' : false;
-      const processingPhase = machine ? machine.getContext().processingPhase : null;
-      
-      setSessionState(prev => {
-        const newSessionState: ActiveSessionState = {
-          sessionId: session?.sessionId || null,
-          isProcessing,
-          processingPhase,
-          error: session?.error || null,
-          status: session?.status || 'idle'
-        };
-        
-        // Shallow compare to avoid unnecessary updates.
-        if (
-          prev.sessionId === newSessionState.sessionId &&
-          prev.isProcessing === newSessionState.isProcessing &&
-          prev.processingPhase === newSessionState.processingPhase &&
-          prev.error === newSessionState.error &&
-          prev.status === newSessionState.status
-        ) {
-          return prev;
-        }
-        
-        return newSessionState;
-      });
+      const nextState = buildActiveSessionState(session);
+      setSessionState((prev) => (isSameSessionState(prev, nextState) ? prev : nextState));
     });
-    
-    // Keep processing fields in sync with the state machine.
+
     const unsubscribeMachine = stateMachineManager.subscribeGlobal((sessionId, machineSnapshot) => {
       const currentSession = flowChatStore.getActiveSession();
-      if (currentSession?.sessionId === sessionId) {
-        const state = machineSnapshot.currentState;
-        const isProcessing = state === 'processing';
-        const processingPhase = machineSnapshot.context.processingPhase;
-        setSessionState(prev => {
-          if (prev.isProcessing === isProcessing && prev.processingPhase === processingPhase) return prev;
-          return { ...prev, isProcessing, processingPhase };
-        });
+      if (currentSession?.sessionId !== sessionId) {
+        return;
       }
+
+      const isProcessing = machineSnapshot.currentState === 'processing';
+      const processingPhase = machineSnapshot.context.processingPhase;
+      setSessionState((prev) =>
+        prev.isProcessing === isProcessing && prev.processingPhase === processingPhase
+          ? prev
+          : { ...prev, isProcessing, processingPhase }
+      );
     });
 
     return () => {
