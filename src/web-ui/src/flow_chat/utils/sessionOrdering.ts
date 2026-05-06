@@ -1,28 +1,21 @@
 import type { Session } from '../types/flow-chat';
 import { isSamePath, normalizeRemoteWorkspacePath } from '@/shared/utils/pathUtils';
 
-/** Extract `host` from our saved form `ssh-{user}@{host}:{port}` (used when metadata omits `remoteSshHost`). */
+const SSH_CONNECTION_PATTERN = /^ssh-[^@]+@(.+):(\d+)$/;
+
 function hostFromSshConnectionId(connectionId: string): string | null {
-  const t = connectionId.trim();
-  const m = t.match(/^ssh-[^@]+@(.+):(\d+)$/);
-  return m ? m[1].trim().toLowerCase() : null;
+  const match = connectionId.trim().match(SSH_CONNECTION_PATTERN);
+  return match?.[1].trim().toLowerCase() || null;
 }
 
-/** Row-level SSH host: prefer workspace metadata, else parse from `connectionId` (sidebar may lack `sshHost`). */
 function effectiveWorkspaceSshHost(
   remoteSshHost?: string | null,
   remoteConnectionId?: string | null
 ): string {
-  const h = remoteSshHost?.trim().toLowerCase() ?? '';
-  if (h) return h;
-  return hostFromSshConnectionId(remoteConnectionId?.trim() ?? '') ?? '';
+  const explicitHost = remoteSshHost?.trim().toLowerCase() ?? '';
+  return explicitHost || hostFromSshConnectionId(remoteConnectionId ?? '') || '';
 }
 
-/**
- * Whether a persisted session belongs to a nav row for this workspace.
- * Remote workspaces are scoped by **SSH host + normalized remote root** (and connection id when present).
- * We must never treat "same host" as sufficient: two tabs to the same server at `/a` vs `/b` are distinct.
- */
 export function sessionBelongsToWorkspaceNavRow(
   session: Pick<Session, 'workspacePath' | 'remoteConnectionId' | 'remoteSshHost'>,
   workspacePath: string,
@@ -34,31 +27,35 @@ export function sessionBelongsToWorkspaceNavRow(
     isSamePath(sessionRoot, workspacePath) ||
     normalizeRemoteWorkspacePath(sessionRoot) === normalizeRemoteWorkspacePath(workspacePath);
 
-  const wsConn = remoteConnectionId?.trim() ?? '';
-  const sessConn = session.remoteConnectionId?.trim() ?? '';
-  const wsHostEff = effectiveWorkspaceSshHost(remoteSshHost, remoteConnectionId);
-  const sessHost = session.remoteSshHost?.trim().toLowerCase() ?? '';
-  const sessConnHost = hostFromSshConnectionId(sessConn);
-  const wsConnHost = hostFromSshConnectionId(wsConn);
+  const workspaceConnection = remoteConnectionId?.trim() ?? '';
+  const sessionConnection = session.remoteConnectionId?.trim() ?? '';
+  const workspaceHost = effectiveWorkspaceSshHost(remoteSshHost, remoteConnectionId);
+  const sessionHost = session.remoteSshHost?.trim().toLowerCase() ?? '';
+  const sessionConnectionHost = hostFromSshConnectionId(sessionConnection);
+  const workspaceConnectionHost = hostFromSshConnectionId(workspaceConnection);
 
-  if (wsHostEff.length > 0) {
-    // Host match alone is insufficient (same server, different remote folders).
-    if (sessHost === wsHostEff && pathsMatch) {
+  if (workspaceHost.length > 0) {
+    if (sessionHost === workspaceHost && pathsMatch) {
       return true;
     }
-    if (sessConnHost === wsHostEff && pathsMatch) {
+
+    if (sessionConnectionHost === workspaceHost && pathsMatch) {
       return true;
     }
-    if (sessConnHost && wsConnHost && sessConnHost === wsConnHost) {
+
+    if (sessionConnectionHost && workspaceConnectionHost && sessionConnectionHost === workspaceConnectionHost) {
       return pathsMatch;
     }
   }
 
-  if (!pathsMatch) return false;
-
-  if (wsConn.length > 0 || sessConn.length > 0) {
-    return sessConn === wsConn;
+  if (!pathsMatch) {
+    return false;
   }
+
+  if (workspaceConnection.length > 0 || sessionConnection.length > 0) {
+    return sessionConnection === workspaceConnection;
+  }
+
   return true;
 }
 
@@ -70,14 +67,14 @@ export function compareSessionsForDisplay(
   a: Pick<Session, 'sessionId' | 'createdAt' | 'lastFinishedAt'>,
   b: Pick<Session, 'sessionId' | 'createdAt' | 'lastFinishedAt'>
 ): number {
-  const timestampDiff = getSessionSortTimestamp(b) - getSessionSortTimestamp(a);
-  if (timestampDiff !== 0) {
-    return timestampDiff;
+  const byActivity = getSessionSortTimestamp(b) - getSessionSortTimestamp(a);
+  if (byActivity !== 0) {
+    return byActivity;
   }
 
-  const createdAtDiff = b.createdAt - a.createdAt;
-  if (createdAtDiff !== 0) {
-    return createdAtDiff;
+  const byCreation = b.createdAt - a.createdAt;
+  if (byCreation !== 0) {
+    return byCreation;
   }
 
   return a.sessionId.localeCompare(b.sessionId);
