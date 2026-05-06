@@ -1,14 +1,10 @@
-//! Image context provider and shared in-memory image storage.
-//!
-//! Through dependency injection mode, tools can access image context without
-//! directly depending on specific implementations.
+//! Shared image context storage for tools.
 
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, LazyLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Image context data
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImageContextData {
     pub id: String,
@@ -26,21 +22,14 @@ static IMAGE_STORAGE: LazyLock<DashMap<String, (ImageContextData, u64)>> =
     LazyLock::new(DashMap::new);
 const DEFAULT_IMAGE_MAX_AGE_SECS: u64 = 300;
 
-/// Image context provider trait
-///
-/// Types that implement this trait can provide image data access capabilities to tools
 pub trait ImageContextProvider: Send + Sync + std::fmt::Debug {
-    /// Get image context data by image_id
     fn get_image(&self, image_id: &str) -> Option<ImageContextData>;
 
-    /// Optional: delete image context (clean up after use)
     fn remove_image(&self, image_id: &str) {
-        // Default implementation: do nothing
         let _ = image_id;
     }
 }
 
-/// Optional wrapper type, for convenience
 pub type ImageContextProviderRef = Arc<dyn ImageContextProvider>;
 
 pub fn store_image_context(image: ImageContextData) {
@@ -67,22 +56,17 @@ pub fn remove_image_context(image_id: &str) {
 }
 
 pub fn format_image_context_reference(image: &ImageContextData) -> String {
-    let size_label = if image.file_size > 0 {
-        format!(" ({:.1}KB)", image.file_size as f64 / 1024.0)
-    } else {
-        String::new()
-    };
+    let size_label = format_image_size(image.file_size);
 
-    if let Some(image_path) = &image.image_path {
-        format!(
+    match image.image_path.as_deref() {
+        Some(image_path) => format!(
             "[Image: {}{}]\nPath: {}",
             image.image_name, size_label, image_path
-        )
-    } else {
-        format!(
+        ),
+        None => format!(
             "[Image: {}{} (from clipboard)]\nImage ID: {}",
             image.image_name, size_label, image.id
-        )
+        ),
     }
 }
 
@@ -113,6 +97,13 @@ fn cleanup_expired_images(max_age_secs: u64) {
 
     for key in expired_keys {
         IMAGE_STORAGE.remove(&key);
+    }
+}
+
+fn format_image_size(file_size: usize) -> String {
+    match file_size {
+        0 => String::new(),
+        size => format!(" ({:.1}KB)", size as f64 / 1024.0),
     }
 }
 

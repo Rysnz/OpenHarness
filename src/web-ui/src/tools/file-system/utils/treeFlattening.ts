@@ -1,18 +1,22 @@
 import { FileSystemNode, FlatFileNode } from '../types';
 import { expandedFoldersContains } from '@/shared/utils/pathUtils';
 
+interface FlattenCursor {
+  parentPath: string | null;
+  depth: number;
+}
+
 function nodeToFlatNode(
   node: FileSystemNode,
-  parentPath: string | null,
-  depth: number,
+  cursor: FlattenCursor,
   childrenLoaded: boolean
 ): FlatFileNode {
   return {
     path: node.path,
     name: node.name,
-    parentPath,
+    parentPath: cursor.parentPath,
     isDirectory: node.isDirectory,
-    depth,
+    depth: cursor.depth,
     childrenLoaded,
     isLoading: false,
     size: node.size,
@@ -20,6 +24,17 @@ function nodeToFlatNode(
     lastModified: node.lastModified,
     isCompressed: node.isCompressed,
     originalNode: node,
+  };
+}
+
+function hasLoadedChildren(node: FileSystemNode): boolean {
+  return Boolean(node.children?.length);
+}
+
+function childCursor(node: FileSystemNode, cursor: FlattenCursor): FlattenCursor {
+  return {
+    parentPath: node.path,
+    depth: cursor.depth + 1,
   };
 }
 
@@ -31,24 +46,26 @@ export function flattenFileTree(
   depth: number = 0
 ): FlatFileNode[] {
   const result: FlatFileNode[] = [];
+  const cursor = { parentPath, depth };
 
   for (const node of nodes) {
     const isExpanded = expandedFoldersContains(expandedFolders, node.path);
-    const hasChildren = node.children && node.children.length > 0;
+    const hasChildren = hasLoadedChildren(node);
     const childrenLoaded = node.isDirectory ? (node.children !== undefined) : true;
 
     result.push({
-      ...nodeToFlatNode(node, parentPath, depth, childrenLoaded),
+      ...nodeToFlatNode(node, cursor, childrenLoaded),
       isLoading: loadingPaths.has(node.path),
     });
 
     if (node.isDirectory && isExpanded && hasChildren) {
+      const next = childCursor(node, cursor);
       const childNodes = flattenFileTree(
         node.children!,
         expandedFolders,
         loadingPaths,
-        node.path,
-        depth + 1
+        next.parentPath,
+        next.depth
       );
       result.push(...childNodes);
     }
@@ -80,10 +97,8 @@ export function findNodeIndex(flatNodes: FlatFileNode[], path: string): number {
 
 export function getAncestorPaths(path: string, workspacePath?: string): string[] {
   const ancestors: string[] = [];
-  
   const normalizedPath = path.replace(/\\/g, '/');
   const normalizedWorkspace = workspacePath?.replace(/\\/g, '/') || '';
-  
   let currentPath = normalizedPath;
   
   while (currentPath && currentPath !== normalizedWorkspace) {
@@ -99,9 +114,6 @@ export function getAncestorPaths(path: string, workspacePath?: string): string[]
   return ancestors.reverse();
 }
 
-/**
- * Update a node's children in the tree and return a new structure.
- */
 export function updateNodeChildren(
   nodes: FileSystemNode[],
   targetPath: string,
@@ -111,7 +123,7 @@ export function updateNodeChildren(
     if (node.path === targetPath) {
       return {
         ...node,
-        children: children,
+        children,
       };
     }
     

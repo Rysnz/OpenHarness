@@ -1,75 +1,86 @@
-//! Permission policy — resolve manifest permissions to JSON policy for JS Worker.
+//! Resolve miniapp manifest permissions into the worker policy payload.
 
-use crate::miniapp::types::{MiniAppPermissions, PathScope};
-use serde_json::{Map, Value};
-use std::path::Path;
+use crate::miniapp::types::{FsPermissions, MiniAppPermissions, PathScope};
+use serde_json::{json, Map, Value};
+use std::path::{Path, PathBuf};
 
-/// Resolve permission manifest to a JSON policy object passed to the Worker as startup argument.
-/// Path variables {appdata}, {workspace}, {home} are resolved to absolute paths.
-/// `granted_paths` are user-granted paths (e.g. from grant_path) to include in read+write.
 pub fn resolve_policy(
     perms: &MiniAppPermissions,
     app_id: &str,
     app_data_dir: &Path,
     workspace_dir: Option<&Path>,
-    granted_paths: &[std::path::PathBuf],
+    granted_paths: &[PathBuf],
 ) -> Value {
     let mut policy = Map::new();
 
-    if let Some(ref fs) = perms.fs {
-        let read = resolve_fs_scopes(
-            fs.read.as_deref().unwrap_or(&[]),
-            app_id,
-            app_data_dir,
-            workspace_dir,
-        );
-        let write = resolve_fs_scopes(
-            fs.write.as_deref().unwrap_or(&[]),
-            app_id,
-            app_data_dir,
-            workspace_dir,
-        );
-        let mut read_paths: Vec<String> = read.into_iter().collect();
-        let mut write_paths: Vec<String> = write.into_iter().collect();
-        for gp in granted_paths {
-            if let Some(s) = gp.to_str() {
-                read_paths.push(s.to_string());
-                write_paths.push(s.to_string());
-            }
-        }
-        if !read_paths.is_empty() || !write_paths.is_empty() {
-            let mut fs_map = Map::new();
-            fs_map.insert(
-                "read".to_string(),
-                Value::Array(read_paths.into_iter().map(Value::String).collect()),
-            );
-            fs_map.insert(
-                "write".to_string(),
-                Value::Array(write_paths.into_iter().map(Value::String).collect()),
-            );
-            policy.insert("fs".to_string(), Value::Object(fs_map));
+    if let Some(fs) = perms.fs.as_ref() {
+        if let Some(fs_policy) =
+            resolve_fs_policy(fs, app_id, app_data_dir, workspace_dir, granted_paths)
+        {
+            policy.insert("fs".to_string(), fs_policy);
         }
     }
 
-    if let Some(ref shell) = perms.shell {
-        let allow = shell
-            .allow
-            .as_ref()
-            .map(|v| Value::Array(v.iter().map(|s| Value::String(s.clone())).collect()))
-            .unwrap_or_else(|| Value::Array(Vec::new()));
-        policy.insert("shell".to_string(), serde_json::json!({ "allow": allow }));
-    }
-
-    if let Some(ref net) = perms.net {
-        let allow = net
-            .allow
-            .as_ref()
-            .map(|v| Value::Array(v.iter().map(|s| Value::String(s.clone())).collect()))
-            .unwrap_or_else(|| Value::Array(Vec::new()));
-        policy.insert("net".to_string(), serde_json::json!({ "allow": allow }));
-    }
+    insert_allow_list(
+        &mut policy,
+        "shell",
+        perms.shell.as_ref().and_then(|shell| shell.allow.as_ref()),
+    );
+    insert_allow_list(
+        &mut policy,
+        "net",
+        perms.net.as_ref().and_then(|net| net.allow.as_ref()),
+    );
 
     Value::Object(policy)
+}
+
+fn resolve_fs_policy(
+    fs: &FsPermissions,
+    app_id: &str,
+    app_data_dir: &Path,
+    workspace_dir: Option<&Path>,
+    granted_paths: &[PathBuf],
+) -> Option<Value> {
+    let mut read_paths = resolve_fs_scopes(
+        fs.read.as_deref().unwrap_or(&[]),
+        app_id,
+        app_data_dir,
+        workspace_dir,
+    );
+    let mut write_paths = resolve_fs_scopes(
+        fs.write.as_deref().unwrap_or(&[]),
+        app_id,
+        app_data_dir,
+        workspace_dir,
+    );
+
+    append_granted_paths(&mut read_paths, granted_paths);
+    append_granted_paths(&mut write_paths, granted_paths);
+
+    if read_paths.is_empty() && write_paths.is_empty() {
+        return None;
+    }
+
+    Some(json!({
+        "read": read_paths,
+        "write": write_paths,
+    }))
+}
+
+fn insert_allow_list(policy: &mut Map<String, Value>, key: &str, allow: Option<&Vec<String>>) {
+    let allow = allow
+        .map(|items| Value::Array(items.iter().cloned().map(Value::String).collect()))
+        .unwrap_or_else(|| Value::Array(Vec::new()));
+    policy.insert(key.to_string(), json!({ "allow": allow }));
+}
+
+fn append_granted_paths(target: &mut Vec<String>, granted_paths: &[PathBuf]) {
+    target.extend(
+        granted_paths
+            .iter()
+            .filter_map(|path| path.to_str().map(str::to_string)),
+    );
 }
 
 fn resolve_fs_scopes(
@@ -78,26 +89,29 @@ fn resolve_fs_scopes(
     app_data_dir: &Path,
     workspace_dir: Option<&Path>,
 ) -> Vec<String> {
-    let mut result = Vec::with_capacity(scopes.len());
-    for s in scopes {
-        let scope = PathScope::from_manifest_value(s);
-        let paths = match &scope {
-            PathScope::AppData => vec![app_data_dir.to_path_buf()],
-            PathScope::Workspace => workspace_dir.map(|p| p.to_path_buf()).into_iter().collect(),
-            PathScope::UserSelected | PathScope::Home => {
-                if let PathScope::Home = scope {
-                    dirs::home_dir().into_iter().collect()
-                } else {
-                    Vec::new()
-                }
-            }
-            PathScope::Custom(paths) => paths.clone(),
-        };
-        for p in paths {
-            if let Some(s) = p.to_str() {
-                result.push(s.to_string());
-            }
-        }
+    scopes
+        .iter()
+        .flat_map(|scope| {
+            scope_paths(
+                PathScope::from_manifest_value(scope),
+                app_data_dir,
+                workspace_dir,
+            )
+        })
+        .filter_map(|path| path.to_str().map(str::to_string))
+        .collect()
+}
+
+fn scope_paths(
+    scope: PathScope,
+    app_data_dir: &Path,
+    workspace_dir: Option<&Path>,
+) -> Vec<PathBuf> {
+    match scope {
+        PathScope::AppData => vec![app_data_dir.to_path_buf()],
+        PathScope::Workspace => workspace_dir.map(Path::to_path_buf).into_iter().collect(),
+        PathScope::Home => dirs::home_dir().into_iter().collect(),
+        PathScope::UserSelected => Vec::new(),
+        PathScope::Custom(paths) => paths,
     }
-    result
 }

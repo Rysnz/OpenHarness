@@ -6,6 +6,9 @@ use crate::executor::BridgeExecutor;
 use crate::platform::WindowRect;
 use crate::server::response::WebDriverErrorResponse;
 
+const WINDOW_SETTLE_MS: u64 = 100;
+const WINDOW_MODE_SETTLE_MS: u64 = 50;
+
 impl BridgeExecutor {
     pub async fn get_window_rect(&self) -> Result<WindowRect, WebDriverErrorResponse> {
         let window = self.webview_window()?;
@@ -34,11 +37,12 @@ impl BridgeExecutor {
 
         if window.is_fullscreen().unwrap_or(false) {
             let _ = window.set_fullscreen(false);
-            tokio::time::sleep(Duration::from_millis(50)).await;
+            sleep_for_window_mode_change().await;
         }
+
         if window.is_maximized().unwrap_or(false) {
             let _ = window.unmaximize();
-            tokio::time::sleep(Duration::from_millis(50)).await;
+            sleep_for_window_mode_change().await;
         }
 
         window
@@ -49,15 +53,7 @@ impl BridgeExecutor {
                 ))
             })?;
 
-        let (chrome_width, chrome_height) =
-            if let (Ok(outer), Ok(inner)) = (window.outer_size(), window.inner_size()) {
-                (
-                    outer.width.saturating_sub(inner.width),
-                    outer.height.saturating_sub(inner.height),
-                )
-            } else {
-                (0, 0)
-            };
+        let (chrome_width, chrome_height) = window_chrome_size(&window);
 
         let inner_width = rect.width.saturating_sub(chrome_width);
         let inner_height = rect.height.saturating_sub(chrome_height);
@@ -74,7 +70,7 @@ impl BridgeExecutor {
         self.webview_window()?.maximize().map_err(|error| {
             WebDriverErrorResponse::unknown_error(format!("Failed to maximize window: {error}"))
         })?;
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        sleep_for_window_change().await;
         self.get_window_rect().await
     }
 
@@ -93,7 +89,29 @@ impl BridgeExecutor {
                     "Failed to fullscreen window: {error}"
                 ))
             })?;
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        sleep_for_window_change().await;
         self.get_window_rect().await
     }
+}
+
+fn window_chrome_size<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) -> (u32, u32) {
+    let Ok(outer) = window.outer_size() else {
+        return (0, 0);
+    };
+    let Ok(inner) = window.inner_size() else {
+        return (0, 0);
+    };
+
+    (
+        outer.width.saturating_sub(inner.width),
+        outer.height.saturating_sub(inner.height),
+    )
+}
+
+async fn sleep_for_window_mode_change() {
+    tokio::time::sleep(Duration::from_millis(WINDOW_MODE_SETTLE_MS)).await;
+}
+
+async fn sleep_for_window_change() {
+    tokio::time::sleep(Duration::from_millis(WINDOW_SETTLE_MS)).await;
 }
