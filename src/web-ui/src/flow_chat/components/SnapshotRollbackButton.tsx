@@ -1,15 +1,14 @@
-/**
- * Turn snapshot rollback button.
- * Allows rolling back to a specific dialog turn's code state.
- */
-
-import React, { useState } from 'react';
-import { RotateCcw, Check, AlertCircle, Loader2 } from 'lucide-react';
+import React, { useCallback, useState } from 'react';
+import { AlertCircle, Check, Loader2, RotateCcw } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { createLogger } from '@/shared/utils/logger';
 import './SnapshotRollbackButton.scss';
 
 const log = createLogger('SnapshotRollbackButton');
+const SUCCESS_RESET_MS = 3000;
+const ERROR_RESET_MS = 5000;
+
+type RollbackStatus = 'idle' | 'success' | 'error';
 
 export interface SnapshotRollbackButtonProps {
   sessionId: string;
@@ -26,77 +25,83 @@ export const SnapshotRollbackButton: React.FC<SnapshotRollbackButtonProps> = ({
   turnId,
   isCurrentTurn = false,
   onRollbackSuccess,
-  onRollbackError
+  onRollbackError,
 }) => {
   const [isRollingBack, setIsRollingBack] = useState(false);
-  const [rollbackStatus, setRollbackStatus] = useState<'idle' | 'success' | 'error'>('idle');
-  const [errorMessage, setErrorMessage] = useState<string>('');
+  const [rollbackStatus, setRollbackStatus] = useState<RollbackStatus>('idle');
+  const [errorMessage, setErrorMessage] = useState('');
 
-  const handleRollback = async () => {
+  const resetRollbackStatus = useCallback(() => {
+    setRollbackStatus('idle');
+    setErrorMessage('');
+  }, []);
+
+  const scheduleStatusReset = useCallback(
+    (delay: number) => {
+      setTimeout(resetRollbackStatus, delay);
+    },
+    [resetRollbackStatus],
+  );
+
+  const handleRollback = useCallback(async () => {
     if (isRollingBack || isCurrentTurn) return;
 
     try {
-      setIsRollingBack(true);
-      setRollbackStatus('idle');
-      setErrorMessage('');
-
+      beginRollback(setIsRollingBack, resetRollbackStatus);
       log.debug('Starting rollback', { sessionId, turnIndex, turnId });
 
-      // Call backend API to roll back.
       await invoke('rollback_to_turn', {
         sessionId,
-        turnIndex
+        turnIndex,
       });
 
       setRollbackStatus('success');
       onRollbackSuccess?.();
-
-      // Reset status after 3 seconds.
-      setTimeout(() => {
-        setRollbackStatus('idle');
-      }, 3000);
-
+      scheduleStatusReset(SUCCESS_RESET_MS);
     } catch (error) {
       log.error('Rollback failed', { sessionId, turnIndex, turnId, error });
-      const errorMsg = error instanceof Error ? error.message : String(error);
+      const errorMsg = errorToMessage(error);
       setErrorMessage(errorMsg);
       setRollbackStatus('error');
       onRollbackError?.(errorMsg);
-
-      // Reset error state after 5 seconds.
-      setTimeout(() => {
-        setRollbackStatus('idle');
-        setErrorMessage('');
-      }, 5000);
+      scheduleStatusReset(ERROR_RESET_MS);
     } finally {
       setIsRollingBack(false);
     }
-  };
+  }, [
+    isCurrentTurn,
+    isRollingBack,
+    onRollbackError,
+    onRollbackSuccess,
+    resetRollbackStatus,
+    scheduleStatusReset,
+    sessionId,
+    turnId,
+    turnIndex,
+  ]);
 
   if (isCurrentTurn) {
-    return (
-      <div className="snapshot-rollback-button snapshot-rollback-button--current">
-        <Check size={14} />
-        <span>Current code state</span>
-      </div>
-    );
+    return <RollbackStateLabel className="snapshot-rollback-button--current" icon={<Check size={14} />} label="Current code state" />;
   }
 
   if (rollbackStatus === 'success') {
     return (
-      <div className="snapshot-rollback-button snapshot-rollback-button--success">
-        <Check size={14} />
-        <span>Rolled back to this turn</span>
-      </div>
+      <RollbackStateLabel
+        className="snapshot-rollback-button--success"
+        icon={<Check size={14} />}
+        label="Rolled back to this turn"
+      />
     );
   }
 
   if (rollbackStatus === 'error') {
     return (
-      <div className="snapshot-rollback-button snapshot-rollback-button--error" title={errorMessage}>
-        <AlertCircle size={14} />
-        <span>Rollback failed</span>
-      </div>
+      <RollbackStateLabel
+        className="snapshot-rollback-button--error"
+        icon={<AlertCircle size={14} />}
+        label="Rollback failed"
+        title={errorMessage}
+      />
     );
   }
 
@@ -107,18 +112,51 @@ export const SnapshotRollbackButton: React.FC<SnapshotRollbackButtonProps> = ({
       disabled={isRollingBack}
       title={`Rollback to code state at turn ${turnIndex + 1}`}
     >
-      {isRollingBack ? (
-        <>
-          <Loader2 size={14} className="snapshot-rollback-button__spinner" />
-          <span>Rolling back...</span>
-        </>
-      ) : (
-        <>
-          <RotateCcw size={14} />
-          <span>Rollback to this turn</span>
-        </>
-      )}
+      <RollbackButtonContent isRollingBack={isRollingBack} />
     </button>
   );
 };
 
+interface RollbackStateLabelProps {
+  className: string;
+  icon: React.ReactNode;
+  label: string;
+  title?: string;
+}
+
+const RollbackStateLabel: React.FC<RollbackStateLabelProps> = ({
+  className,
+  icon,
+  label,
+  title,
+}) => (
+  <div className={`snapshot-rollback-button ${className}`} title={title}>
+    {icon}
+    <span>{label}</span>
+  </div>
+);
+
+const RollbackButtonContent: React.FC<{ isRollingBack: boolean }> = ({ isRollingBack }) =>
+  isRollingBack ? (
+    <>
+      <Loader2 size={14} className="snapshot-rollback-button__spinner" />
+      <span>Rolling back...</span>
+    </>
+  ) : (
+    <>
+      <RotateCcw size={14} />
+      <span>Rollback to this turn</span>
+    </>
+  );
+
+function beginRollback(
+  setIsRollingBack: React.Dispatch<React.SetStateAction<boolean>>,
+  resetRollbackStatus: () => void,
+): void {
+  setIsRollingBack(true);
+  resetRollbackStatus();
+}
+
+function errorToMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}

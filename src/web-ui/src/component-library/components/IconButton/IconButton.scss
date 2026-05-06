@@ -1,17 +1,64 @@
 @use '../../styles/tokens.scss' as tokens;
 
+$icon-btn-hover-bg: rgba(255, 255, 255, 0.08);
+$icon-btn-active-bg: rgba(255, 255, 255, 0.06);
+$icon-btn-focus-ring: rgba(96, 165, 250, 0.5);
+$icon-btn-primary: rgba(96, 165, 250, 0.2);
+$icon-btn-primary-hover: rgba(96, 165, 250, 0.3);
+$icon-btn-primary-active: rgba(96, 165, 250, 0.24);
+$icon-btn-danger-hover: rgba(199, 112, 112, 0.28);
+$icon-btn-danger-active: rgba(199, 112, 112, 0.22);
+$icon-btn-success: rgba(110, 184, 140, 0.18);
+$icon-btn-success-hover: rgba(110, 184, 140, 0.28);
+$icon-btn-success-active: rgba(110, 184, 140, 0.22);
+$icon-btn-warning: rgba(201, 148, 77, 0.18);
+$icon-btn-warning-hover: rgba(201, 148, 77, 0.28);
+$icon-btn-warning-active: rgba(201, 148, 77, 0.22);
+$icon-btn-ai: rgba(139, 92, 246, 0.18);
+$icon-btn-ai-hover: rgba(139, 92, 246, 0.28);
+$icon-btn-ai-active: rgba(139, 92, 246, 0.22);
+
+@mixin icon-button-box($button-size, $icon-size) {
+  width: $button-size;
+  height: $button-size;
+
+  svg {
+    width: $icon-size;
+    height: $icon-size;
+  }
+}
+
+@mixin icon-button-tone($background, $color, $hover-bg, $active-bg, $hover-color: null) {
+  background: $background;
+  color: $color;
+
+  &:hover:not(:disabled) {
+    background: $hover-bg;
+
+    @if $hover-color != null {
+      color: $hover-color;
+    }
+  }
+
+  &:active:not(:disabled) {
+    background: $active-bg;
+  }
+}
+
 .icon-btn {
+  position: relative;
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
   justify-content: center;
   padding: 0;
+  color: var(--color-text-secondary, #a0a0a0);
+  user-select: none;
+  background: transparent;
   border: none;
   border-radius: var(--size-radius-sm, 6px);
-  cursor: pointer;
-  position: relative;
   outline: none;
-  user-select: none;
-  flex-shrink: 0;
+  cursor: pointer;
   transform: scale(1);
   transform-origin: center;
   transition:
@@ -19,18 +66,15 @@
     background var(--motion-fast, 0.15s) var(--easing-standard, ease),
     color var(--motion-fast, 0.15s) var(--easing-standard, ease);
 
-  background: transparent;
-  color: var(--color-text-secondary, #a0a0a0);
-
   &:hover:not(:disabled) {
-    transform: scale(1.06);
-    background: rgba(255, 255, 255, 0.08);
     color: var(--color-accent-500, #60a5fa);
+    background: $icon-btn-hover-bg;
+    transform: scale(1.06);
   }
 
   &:active:not(:disabled) {
+    background: $icon-btn-active-bg;
     transform: scale(1.02);
-    background: rgba(255, 255, 255, 0.06);
   }
 
   svg {
@@ -40,122 +84,80 @@
   }
 
   &--xs {
-    width: 24px;
-    height: 24px;
-
-    svg {
-      width: 14px;
-      height: 14px;
-    }
+    @include icon-button-box(24px, 14px);
   }
 
   &--small {
-    width: 28px;
-    height: 28px;
-
-    svg {
-      width: 16px;
-      height: 16px;
-    }
+    @include icon-button-box(28px, 16px);
   }
 
   &--medium {
-    width: 32px;
-    height: 32px;
-
-    svg {
-      width: 16px;
-      height: 16px;
-    }
+    @include icon-button-box(32px, 16px);
   }
 
   &--large {
-    width: 40px;
-    height: 40px;
-
-    svg {
-      width: 20px;
-      height: 20px;
-    }
+    @include icon-button-box(40px, 20px);
   }
 
   &--circle {
     border-radius: 50%;
   }
 
-
   &--primary {
-    background: rgba(96, 165, 250, 0.20);
-    color: #ffffff;
-
-    &:hover:not(:disabled) {
-      background: rgba(96, 165, 250, 0.30);
-    }
-
-    &:active:not(:disabled) {
-      background: rgba(96, 165, 250, 0.24);
-    }
+    @include icon-button-tone(
+      $icon-btn-primary,
+      #ffffff,
+      $icon-btn-primary-hover,
+      $icon-btn-primary-active
+    );
   }
 
   &--danger {
-    background: transparent;
-    color: var(--color-text-secondary, #a0a0a0);
-
-    &:hover:not(:disabled) {
-      background: rgba(199, 112, 112, 0.28);
-      color: var(--color-error, #c77070);
-    }
+    @include icon-button-tone(
+      transparent,
+      var(--color-text-secondary, #a0a0a0),
+      $icon-btn-danger-hover,
+      $icon-btn-danger-active,
+      var(--color-error, #c77070)
+    );
 
     &:active:not(:disabled) {
-      background: rgba(199, 112, 112, 0.22);
       color: var(--color-error, #c77070);
     }
   }
 
   &--success {
-    background: rgba(110, 184, 140, 0.18);
-    color: var(--color-success, #6eb88c);
-
-    &:hover:not(:disabled) {
-      background: rgba(110, 184, 140, 0.28);
-      color: #ffffff;
-    }
-
-    &:active:not(:disabled) {
-      background: rgba(110, 184, 140, 0.22);
-    }
+    @include icon-button-tone(
+      $icon-btn-success,
+      var(--color-success, #6eb88c),
+      $icon-btn-success-hover,
+      $icon-btn-success-active,
+      #ffffff
+    );
   }
 
   &--warning {
-    background: rgba(201, 148, 77, 0.18);
-    color: var(--color-warning, #c9944d);
-
-    &:hover:not(:disabled) {
-      background: rgba(201, 148, 77, 0.28);
-      color: #ffffff;
-    }
-
-    &:active:not(:disabled) {
-      background: rgba(201, 148, 77, 0.22);
-    }
+    @include icon-button-tone(
+      $icon-btn-warning,
+      var(--color-warning, #c9944d),
+      $icon-btn-warning-hover,
+      $icon-btn-warning-active,
+      #ffffff
+    );
   }
 
   &--ai {
-    background: rgba(139, 92, 246, 0.18);
-    color: tokens.$color-purple-500;
-
-    &:hover:not(:disabled) {
-      background: rgba(139, 92, 246, 0.28);
-      color: #ffffff;
-    }
-
-    &:active:not(:disabled) {
-      background: rgba(139, 92, 246, 0.22);
-    }
+    @include icon-button-tone(
+      $icon-btn-ai,
+      tokens.$color-purple-500,
+      $icon-btn-ai-hover,
+      $icon-btn-ai-active,
+      #ffffff
+    );
   }
 
   &:focus-visible {
-    outline: 2px solid rgba(96, 165, 250, 0.5);
+    outline: 2px solid $icon-btn-focus-ring;
     outline-offset: 1px;
   }
 

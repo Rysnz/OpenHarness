@@ -1,4 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type Dispatch,
+  type RefObject,
+  type SetStateAction,
+} from 'react';
+
+const WORKSPACE_MENU_VIEWPORT_PADDING = 8;
+const WORKSPACE_MENU_ESTIMATED_WIDTH = 220;
+const WORKSPACE_MENU_TOP_OFFSET = 6;
 
 interface MenuPosition {
   top: number;
@@ -7,9 +19,9 @@ interface MenuPosition {
 
 interface UseShellNavMenuStateReturn {
   menuOpen: boolean;
-  setMenuOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  setMenuOpen: Dispatch<SetStateAction<boolean>>;
   workspaceMenuOpen: boolean;
-  setWorkspaceMenuOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  setWorkspaceMenuOpen: Dispatch<SetStateAction<boolean>>;
   workspaceMenuPosition: MenuPosition | null;
   menuRef: React.RefObject<HTMLDivElement>;
   workspaceMenuRef: React.RefObject<HTMLDivElement>;
@@ -27,6 +39,11 @@ export function useShellNavMenuState(
   const workspaceMenuRef = useRef<HTMLDivElement>(null);
   const workspaceTriggerRef = useRef<HTMLButtonElement>(null);
 
+  const closeMenus = useCallback(() => {
+    setMenuOpen(false);
+    setWorkspaceMenuOpen(false);
+  }, []);
+
   useEffect(() => {
     if (!menuOpen && !workspaceMenuOpen) {
       return;
@@ -34,23 +51,16 @@ export function useShellNavMenuState(
 
     const handleMouseDown = (event: MouseEvent) => {
       const target = event.target as Node | null;
-      if (
-        target &&
-        (menuRef.current?.contains(target) ||
-          workspaceMenuRef.current?.contains(target) ||
-          workspaceTriggerRef.current?.contains(target))
-      ) {
+      if (target && isMenuInteractionTarget(target, [menuRef, workspaceMenuRef, workspaceTriggerRef])) {
         return;
       }
 
-      setMenuOpen(false);
-      setWorkspaceMenuOpen(false);
+      closeMenus();
     };
 
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        setMenuOpen(false);
-        setWorkspaceMenuOpen(false);
+        closeMenus();
       }
     };
 
@@ -61,7 +71,7 @@ export function useShellNavMenuState(
       document.removeEventListener('mousedown', handleMouseDown);
       document.removeEventListener('keydown', handleEscape);
     };
-  }, [menuOpen, workspaceMenuOpen]);
+  }, [closeMenus, menuOpen, workspaceMenuOpen]);
 
   useEffect(() => {
     if (!hasMultipleWorkspaces && workspaceMenuOpen) {
@@ -76,13 +86,15 @@ export function useShellNavMenuState(
     }
 
     const rect = trigger.getBoundingClientRect();
-    const viewportPadding = 8;
-    const estimatedWidth = 220;
-    const maxLeft = window.innerWidth - estimatedWidth - viewportPadding;
+    const maxLeft =
+      window.innerWidth - WORKSPACE_MENU_ESTIMATED_WIDTH - WORKSPACE_MENU_VIEWPORT_PADDING;
 
     setWorkspaceMenuPosition({
-      top: Math.max(viewportPadding, rect.bottom + 6),
-      left: Math.max(viewportPadding, Math.min(rect.left, maxLeft)),
+      top: clampMenuCoordinate(
+        rect.bottom + WORKSPACE_MENU_TOP_OFFSET,
+        WORKSPACE_MENU_VIEWPORT_PADDING,
+      ),
+      left: clampMenuCoordinate(rect.left, WORKSPACE_MENU_VIEWPORT_PADDING, maxLeft),
     });
   }, []);
 
@@ -113,4 +125,16 @@ export function useShellNavMenuState(
     workspaceMenuRef,
     workspaceTriggerRef,
   };
+}
+
+type MenuRef =
+  | RefObject<HTMLDivElement>
+  | RefObject<HTMLButtonElement>;
+
+function isMenuInteractionTarget(target: Node, refs: MenuRef[]): boolean {
+  return refs.some((ref) => ref.current?.contains(target));
+}
+
+function clampMenuCoordinate(value: number, min: number, max = Number.POSITIVE_INFINITY): number {
+  return Math.max(min, Math.min(value, max));
 }
