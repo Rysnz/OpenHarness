@@ -10,26 +10,26 @@
   &__toolbar {
     display: flex;
     align-items: center;
+    flex-shrink: 0;
     gap: $size-gap-2;
     padding: $size-gap-2 $size-gap-3;
-    border-bottom: 1px solid var(--border-subtle);
     background: color-mix(in srgb, var(--element-bg-soft) 70%, transparent);
-    flex-shrink: 0;
+    border-bottom: 1px solid var(--border-subtle);
   }
 
   &__address {
+    display: flex;
+    align-items: center;
     flex: 1;
     min-width: 0;
     height: 30px;
-    display: flex;
-    align-items: center;
     gap: $size-gap-2;
     padding: 0 $size-gap-2;
+    overflow: hidden;
+    background: var(--color-bg-primary);
     border: 1px solid var(--border-subtle);
     border-radius: $size-radius-base;
-    background: var(--color-bg-primary);
     color: var(--color-text-muted);
-    overflow: hidden;
 
     svg {
       flex-shrink: 0;
@@ -39,22 +39,22 @@
       flex: 1;
       width: 0;
       min-width: 0;
-      border: none;
-      outline: none;
-      box-shadow: none;
-      background: transparent;
-      color: var(--color-text-primary);
-      font-size: var(--font-size-sm);
       appearance: none;
       -webkit-appearance: none;
+      background: transparent;
+      border: none;
       border-radius: 0;
+      outline: none;
+      box-shadow: none;
+      color: var(--color-text-primary);
+      font-size: var(--font-size-sm);
 
       &:focus,
       &:focus-visible,
       &:active {
+        border: none;
         outline: none;
         box-shadow: none;
-        border: none;
       }
     }
   }
@@ -62,25 +62,25 @@
   &__error {
     display: flex;
     align-items: center;
+    flex-shrink: 0;
     gap: $size-gap-2;
     margin: $size-gap-2 $size-gap-3 0;
     padding: $size-gap-2 $size-gap-3;
-    border-radius: $size-radius-base;
     background: color-mix(in srgb, var(--color-warning) 12%, transparent);
+    border-radius: $size-radius-base;
     color: var(--color-text-secondary);
     font-size: var(--font-size-xs);
-    flex-shrink: 0;
 
     svg {
-      color: var(--color-warning);
       flex-shrink: 0;
+      color: var(--color-warning);
     }
   }
 
   &__content {
+    position: relative;
     flex: 1;
     min-height: 0;
-    position: relative;
     background: var(--color-bg-primary);
   }
 
@@ -103,16 +103,16 @@
     align-items: center;
     justify-content: center;
     gap: $size-gap-2;
-    color: var(--color-text-muted);
-    font-size: var(--font-size-sm);
     background:
       radial-gradient(circle at top, color-mix(in srgb, var(--color-accent-500) 8%, transparent), transparent 42%),
       var(--color-bg-primary);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
 
     span {
       max-width: min(60%, 400px);
-      white-space: nowrap;
       overflow: hidden;
+      white-space: nowrap;
       text-overflow: ellipsis;
     }
   }

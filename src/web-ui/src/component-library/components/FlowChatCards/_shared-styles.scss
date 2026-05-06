@@ -1,26 +1,18 @@
-/**
- * FlowChat Cards shared styles
- */
 @use '../../styles/tokens.scss' as tokens;
 
-
 @mixin liquid-card-base {
+  position: relative;
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: tokens.$size-radius-lg;
   transition: all tokens.$motion-base tokens.$easing-standard;
-  position: relative;
 }
-
 
 @mixin status-indicator($r, $g, $b, $opacity: 0.8) {
   border-color: rgba($r, $g, $b, 0.5);
 }
 
-
-@mixin card-light-flow {
-}
-
+@mixin card-light-flow {}
 
 @mixin compact-hover {
   &:hover {
@@ -28,7 +20,6 @@
     border-color: rgba(255, 255, 255, 0.35);
   }
 }
-
 
 @mixin standard-hover {
   &:hover {
@@ -38,17 +29,16 @@
   }
 }
 
-
 @mixin liquid-icon {
   display: flex;
   align-items: center;
   justify-content: center;
   min-width: 32px;
   min-height: 32px;
+  padding: tokens.$size-gap-2;
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: tokens.$size-radius-base;
-  padding: tokens.$size-gap-2;
   transition: all tokens.$motion-base tokens.$easing-standard;
 
   svg {
@@ -66,7 +56,6 @@
   }
 }
 
-
 @mixin liquid-button($variant: 'default') {
   padding: tokens.$size-gap-2 tokens.$size-gap-4;
   border: 1px solid tokens.$border-base;
@@ -78,8 +67,8 @@
 
   @if $variant == 'success' {
     background: rgba(52, 211, 153, 0.10);
-    color: tokens.$color-success;
     border-color: tokens.$color-success-border;
+    color: tokens.$color-success;
 
     &:hover:not(:disabled) {
       background: rgba(52, 211, 153, 0.18);
@@ -87,8 +76,8 @@
     }
   } @else if $variant == 'error' {
     background: rgba(239, 68, 68, 0.10);
-    color: tokens.$color-error;
     border-color: tokens.$color-error-border;
+    color: tokens.$color-error;
 
     &:hover:not(:disabled) {
       background: rgba(239, 68, 68, 0.18);
@@ -96,8 +85,8 @@
     }
   } @else if $variant == 'primary' {
     background: rgba(96, 165, 250, 0.10);
-    color: tokens.$color-accent-500;
     border-color: tokens.$color-info-border;
+    color: tokens.$color-accent-500;
 
     &:hover:not(:disabled) {
       background: rgba(96, 165, 250, 0.18);
@@ -120,7 +109,6 @@
     cursor: default;
   }
 }
-
 
 $color-success: tokens.$color-success;
 $color-error: tokens.$color-error;
