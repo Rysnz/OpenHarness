@@ -1,10 +1,29 @@
-/**
- * Editor preset configurations for different use cases.
- */
-
 import type { EditorPresetConfig, EditorPresetName } from './types';
 
-/** Readonly preset: chat code blocks, doc preview, code display */
+const DEFAULT_MINIMAP = {
+  enabled: true,
+  side: 'right' as const,
+  size: 'proportional' as const,
+};
+
+const DISABLED_MINIMAP = {
+  ...DEFAULT_MINIMAP,
+  enabled: false,
+};
+
+const DISABLED_INLAY_HINTS = {
+  enabled: 'off' as const,
+  fontSize: 12,
+  fontFamily: "'Fira Code', Consolas, 'Courier New', monospace",
+  padding: false,
+};
+
+const BASE_INTERACTIVE_PRESET = {
+  readOnly: false,
+  contextmenu: true,
+  links: true,
+} satisfies EditorPresetConfig;
+
 export const PRESET_READONLY: EditorPresetConfig = {
   readOnly: true,
   enableLsp: false,
@@ -12,92 +31,44 @@ export const PRESET_READONLY: EditorPresetConfig = {
   links: true,
   folding: true,
   codeLens: false,
-  
-  minimap: {
-    enabled: false,
-    side: 'right',
-    size: 'proportional',
-  },
+  minimap: DISABLED_MINIMAP,
   lineNumbers: 'on',
   renderLineHighlight: 'none',
-  
   formatOnSave: false,
   formatOnPaste: false,
-  
   hover: {
     enabled: true,
     delay: 300,
     sticky: false,
     above: false,
   },
-  inlayHints: {
-    enabled: 'off',
-    fontSize: 12,
-    fontFamily: "'Fira Code', Consolas, 'Courier New', monospace",
-    padding: false,
-  },
+  inlayHints: DISABLED_INLAY_HINTS,
 };
 
-/** Minimal preset: config editing, code snippets, small editors */
 export const PRESET_MINIMAL: EditorPresetConfig = {
-  readOnly: false,
+  ...BASE_INTERACTIVE_PRESET,
   enableLsp: false,
-  contextmenu: true,
-  links: true,
   folding: false,
   codeLens: false,
-  
-  minimap: {
-    enabled: false,
-    side: 'right',
-    size: 'proportional',
-  },
+  minimap: DISABLED_MINIMAP,
   lineNumbers: 'on',
-  
   semanticHighlighting: false,
-  inlayHints: {
-    enabled: 'off',
-    fontSize: 12,
-    fontFamily: "'Fira Code', Consolas, 'Courier New', monospace",
-    padding: false,
-  },
+  inlayHints: DISABLED_INLAY_HINTS,
 };
 
-/** Standard preset: general code editing */
 export const PRESET_STANDARD: EditorPresetConfig = {
-  readOnly: false,
+  ...BASE_INTERACTIVE_PRESET,
   enableLsp: true,
-  contextmenu: true,
-  links: true,
   folding: true,
   codeLens: true,
-  
-  minimap: {
-    enabled: true,
-    side: 'right',
-    size: 'proportional',
-  },
+  minimap: DEFAULT_MINIMAP,
   lineNumbers: 'on',
 };
 
-/** Full preset: main file editor with all features */
 export const PRESET_FULL: EditorPresetConfig = {
-  readOnly: false,
-  enableLsp: true,
-  contextmenu: true,
-  links: true,
-  folding: true,
-  codeLens: true,
-  
-  minimap: {
-    enabled: true,
-    side: 'right',
-    size: 'proportional',
-  },
-  lineNumbers: 'on',
+  ...PRESET_STANDARD,
   semanticHighlighting: true,
   bracketPairColorization: true,
-  
   hover: {
     enabled: true,
     delay: 100,
@@ -105,10 +76,8 @@ export const PRESET_FULL: EditorPresetConfig = {
     above: false,
   },
   inlayHints: {
+    ...DISABLED_INLAY_HINTS,
     enabled: 'on',
-    fontSize: 12,
-    fontFamily: "'Fira Code', Consolas, 'Courier New', monospace",
-    padding: false,
   },
   guides: {
     indentation: true,
@@ -119,20 +88,13 @@ export const PRESET_FULL: EditorPresetConfig = {
   },
 };
 
-/** Diff preset: code diff comparison */
 export const PRESET_DIFF: EditorPresetConfig = {
-  readOnly: false,
+  ...BASE_INTERACTIVE_PRESET,
   enableLsp: true,
   contextmenu: false,
-  links: true,
   folding: false,
   codeLens: false,
-  
-  minimap: {
-    enabled: false,
-    side: 'right',
-    size: 'proportional',
-  },
+  minimap: DISABLED_MINIMAP,
   lineNumbers: 'on',
   renderWhitespace: 'selection',
   scrollBeyondLastLine: false,
