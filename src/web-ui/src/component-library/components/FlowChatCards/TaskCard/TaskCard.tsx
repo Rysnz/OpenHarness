@@ -1,8 +1,3 @@
-/**
- * TaskCard - AI task tool card component
- * Used to display AI task execution process and results
- */
-
 import React, { useState } from 'react';
 import { Bot, ChevronDown, ChevronUp } from 'lucide-react';
 import { useI18n } from '@/infrastructure/i18n';
@@ -13,6 +8,12 @@ export interface TaskCardProps extends Omit<BaseToolCardProps, 'toolName' | 'dis
   taskType?: string;
   taskDescription?: string;
   taskResult?: string;
+}
+
+interface ResolvedTaskContent {
+  type: string;
+  description: string;
+  result: string;
 }
 
 export const TaskCard: React.FC<TaskCardProps> = ({
@@ -28,17 +29,22 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   const { t } = useI18n('components');
   const [isExpanded, setIsExpanded] = useState(false);
 
-  const resolvedTaskType = taskType || input?.task_type || input?.type || t('flowChatCards.taskCard.defaultType');
-  const resolvedDescription = taskDescription || input?.description || input?.task || input?.prompt || t('flowChatCards.taskCard.unspecifiedTask');
-  const resolvedResult = taskResult || result?.result || result?.output || '';
+  const resolvedTask = resolveTaskContent({
+    taskType,
+    taskDescription,
+    taskResult,
+    input,
+    result,
+    t,
+  });
 
   if (displayMode === 'compact') {
     return (
       <div className={`task-card task-card--compact task-card--${status}`}>
         <Bot className="task-card__icon" size={14} />
-        <span className="task-card__action">{resolvedTaskType}:</span>
-        <span className="task-card__description" title={resolvedDescription}>
-          {resolvedDescription}
+        <span className="task-card__action">{resolvedTask.type}:</span>
+        <span className="task-card__description" title={resolvedTask.description}>
+          {resolvedTask.description}
         </span>
       </div>
     );
@@ -59,41 +65,96 @@ export const TaskCard: React.FC<TaskCardProps> = ({
       {...baseProps}
     >
       <div className="task-card__info">
-        <div className="task-card__info-row">
-          <span className="task-card__label">{t('flowChatCards.taskCard.taskType')}:</span>
-          <span className="task-card__value">{resolvedTaskType}</span>
-        </div>
-        <div className="task-card__info-row">
-          <span className="task-card__label">{t('flowChatCards.taskCard.taskDesc')}:</span>
-          <span className="task-card__value">{resolvedDescription}</span>
-        </div>
+        <TaskInfoRow label={t('flowChatCards.taskCard.taskType')} value={resolvedTask.type} />
+        <TaskInfoRow
+          label={t('flowChatCards.taskCard.taskDesc')}
+          value={resolvedTask.description}
+        />
       </div>
 
-      {status === 'completed' && resolvedResult && (
-        <div className="task-card__result-section">
-          <button
-            className="task-card__result-header"
-            onClick={() => setIsExpanded(!isExpanded)}
-          >
-            <Bot size={14} />
-            <span>{t('flowChatCards.taskCard.taskResult')}</span>
-            {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-          </button>
-          
-          {isExpanded && (
-            <div className="task-card__result-content">
-              <pre className="task-card__result-text">{resolvedResult}</pre>
-            </div>
-          )}
-        </div>
+      {status === 'completed' && resolvedTask.result && (
+        <TaskResultSection
+          label={t('flowChatCards.taskCard.taskResult')}
+          result={resolvedTask.result}
+          isExpanded={isExpanded}
+          onToggle={() => setIsExpanded((expanded) => !expanded)}
+        />
       )}
 
       {(status === 'running' || status === 'streaming') && (
-        <div className="task-card__executing">
-          <Bot className="task-card__executing-icon" size={14} />
-          <span>{t('flowChatCards.taskCard.processing')}</span>
-        </div>
+        <TaskExecuting label={t('flowChatCards.taskCard.processing')} />
       )}
     </BaseToolCard>
   );
 };
+
+interface ResolveTaskContentArgs {
+  taskType?: string;
+  taskDescription?: string;
+  taskResult?: string;
+  input?: Record<string, any>;
+  result?: Record<string, any>;
+  t: (key: string) => string;
+}
+
+function resolveTaskContent({
+  taskType,
+  taskDescription,
+  taskResult,
+  input,
+  result,
+  t,
+}: ResolveTaskContentArgs): ResolvedTaskContent {
+  return {
+    type: taskType || input?.task_type || input?.type || t('flowChatCards.taskCard.defaultType'),
+    description:
+      taskDescription ||
+      input?.description ||
+      input?.task ||
+      input?.prompt ||
+      t('flowChatCards.taskCard.unspecifiedTask'),
+    result: taskResult || result?.result || result?.output || '',
+  };
+}
+
+const TaskInfoRow: React.FC<{ label: string; value: string }> = ({ label, value }) => (
+  <div className="task-card__info-row">
+    <span className="task-card__label">{label}:</span>
+    <span className="task-card__value">{value}</span>
+  </div>
+);
+
+interface TaskResultSectionProps {
+  label: string;
+  result: string;
+  isExpanded: boolean;
+  onToggle: () => void;
+}
+
+const TaskResultSection: React.FC<TaskResultSectionProps> = ({
+  label,
+  result,
+  isExpanded,
+  onToggle,
+}) => (
+  <div className="task-card__result-section">
+    <button className="task-card__result-header" onClick={onToggle}>
+      <Bot size={14} />
+      <span>{label}</span>
+      {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+    </button>
+
+    {isExpanded && (
+      <div className="task-card__result-content">
+        <pre className="task-card__result-text">{result}</pre>
+      </div>
+    )}
+  </div>
+);
+
+const TaskExecuting: React.FC<{ label: string }> = ({ label }) => (
+  <div className="task-card__executing">
+    <Bot className="task-card__executing-icon" size={14} />
+    <span>{label}</span>
+  </div>
+);

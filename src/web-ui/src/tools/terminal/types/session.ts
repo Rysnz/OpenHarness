@@ -1,18 +1,8 @@
-/**
- * Terminal session types aligned with backend terminal_api.rs.
- */
-
 export type SessionStatus = 'Running' | 'Stopped' | 'Exited' | 'Error';
-
 export type TerminalSessionSource = 'manual' | 'agent';
-
-export type ShellType = 
-  | 'PowerShell' 
-  | 'Cmd' 
-  | 'Bash' 
-  | 'Zsh' 
-  | 'Fish' 
-  | 'Sh';
+export type ShellType = 'PowerShell' | 'Cmd' | 'Bash' | 'Zsh' | 'Fish' | 'Sh';
+export type CommandCompletionReason = 'completed' | 'timedOut';
+export type TerminalEventType = 'ready' | 'output' | 'exit' | 'error' | 'resize' | 'title' | 'cwd';
 
 export interface CreateSessionRequest {
   sessionId?: string;
@@ -46,34 +36,32 @@ export interface ShellInfo {
   available: boolean;
 }
 
-export interface WriteRequest {
+export interface SessionIdRequest {
   sessionId: string;
+}
+
+export interface WriteRequest extends SessionIdRequest {
   data: string;
 }
 
-export interface ResizeRequest {
-  sessionId: string;
+export interface ResizeRequest extends SessionIdRequest {
   cols: number;
   rows: number;
 }
 
-export interface CloseSessionRequest {
-  sessionId: string;
+export interface CloseSessionRequest extends SessionIdRequest {
   immediate?: boolean;
 }
 
-export interface SignalRequest {
-  sessionId: string;
+export interface SignalRequest extends SessionIdRequest {
   signal: string;
 }
 
-export interface AcknowledgeRequest {
-  sessionId: string;
+export interface AcknowledgeRequest extends SessionIdRequest {
   charCount: number;
 }
 
-export interface ExecuteCommandRequest {
-  sessionId: string;
+export interface ExecuteCommandRequest extends SessionIdRequest {
   command: string;
   timeoutMs?: number;
   preventHistory?: boolean;
@@ -84,38 +72,22 @@ export interface ExecuteCommandResponse {
   commandId: string;
   output: string;
   exitCode?: number;
-  completionReason: 'completed' | 'timedOut';
+  completionReason: CommandCompletionReason;
 }
 
-export interface SendCommandRequest {
-  sessionId: string;
+export interface SendCommandRequest extends SessionIdRequest {
   command: string;
 }
 
-export interface GetHistoryResponse {
-  sessionId: string;
+export interface GetHistoryResponse extends SessionIdRequest {
   data: string;
-  /** Current history size in bytes. */
   historySize: number;
-  /** PTY column count when history was captured. */
   cols: number;
-  /** PTY row count when history was captured. */
   rows: number;
 }
 
-export type TerminalEventType = 
-  | 'ready'
-  | 'output'
-  | 'exit'
-  | 'error'
-  | 'resize'
-  | 'title'
-  | 'cwd';
-
-export interface TerminalEventBase {
+export interface TerminalEventBase extends SessionIdRequest {
   type: TerminalEventType;
-  sessionId: string;
-  /** Optional timestamp. */
   timestamp?: number;
 }
 
@@ -154,7 +126,7 @@ export interface TerminalCwdEvent extends TerminalEventBase {
   cwd: string;
 }
 
-export type TerminalEvent = 
+export type TerminalEvent =
   | TerminalReadyEvent
   | TerminalOutputEvent
   | TerminalExitEvent
@@ -164,6 +136,4 @@ export type TerminalEvent =
   | TerminalCwdEvent;
 
 export type TerminalEventCallback = (event: TerminalEvent) => void;
-
 export type UnsubscribeFunction = () => void;
-
