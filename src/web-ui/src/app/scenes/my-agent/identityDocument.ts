@@ -1,14 +1,14 @@
 import yaml from 'yaml';
 
+type IdentityFrontmatterField = keyof Omit<IdentityDocument, 'body'>;
+
 export interface IdentityDocument {
   name: string;
   creature: string;
   vibe: string;
   emoji: string;
   body: string;
-  /** Override for primary model slot. Empty string = inherit from template. */
   modelPrimary?: string;
-  /** Override for fast model slot. Empty string = inherit from template. */
   modelFast?: string;
 }
 
@@ -22,7 +22,7 @@ export const EMPTY_IDENTITY_DOCUMENT: IdentityDocument = {
   modelFast: '',
 };
 
-const FRONTMATTER_FIELDS: Array<keyof Omit<IdentityDocument, 'body'>> = [
+const FRONTMATTER_FIELDS: IdentityFrontmatterField[] = [
   'name',
   'creature',
   'vibe',
@@ -30,6 +30,8 @@ const FRONTMATTER_FIELDS: Array<keyof Omit<IdentityDocument, 'body'>> = [
   'modelPrimary',
   'modelFast',
 ];
+
+const OPTIONAL_FRONTMATTER_FIELDS = new Set<IdentityFrontmatterField>(['modelPrimary', 'modelFast']);
 
 function normalizeLineEndings(content: string): string {
   return content.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
@@ -47,6 +49,22 @@ function serializeScalar(value: string): string {
   return yaml.stringify(value).trimEnd();
 }
 
+function trimIdentityBody(body: string): string {
+  return normalizeLineEndings(body).replace(/^\n+/, '').trimEnd();
+}
+
+function normalizeDocument(document: IdentityDocument): Required<IdentityDocument> {
+  return {
+    name: normalizeShortField(document.name),
+    creature: normalizeShortField(document.creature),
+    vibe: normalizeShortField(document.vibe),
+    emoji: normalizeShortField(document.emoji),
+    body: trimIdentityBody(document.body || ''),
+    modelPrimary: normalizeShortField(document.modelPrimary ?? ''),
+    modelFast: normalizeShortField(document.modelFast ?? ''),
+  };
+}
+
 export function parseIdentityDocument(content: string): IdentityDocument {
   const normalizedContent = normalizeLineEndings(content || '');
   const frontmatterMatch = normalizedContent.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
@@ -59,36 +77,22 @@ export function parseIdentityDocument(content: string): IdentityDocument {
   }
 
   const parsed = (yaml.parse(frontmatterMatch[1]) || {}) as Record<string, unknown>;
-  const body = frontmatterMatch[2] ?? '';
-
   return {
     name: normalizeShortField(parsed.name),
     creature: normalizeShortField(parsed.creature),
     vibe: normalizeShortField(parsed.vibe),
     emoji: normalizeShortField(parsed.emoji),
-    body: body.replace(/^\n+/, '').trimEnd(),
+    body: trimIdentityBody(frontmatterMatch[2] ?? ''),
     modelPrimary: normalizeShortField(parsed.modelPrimary),
     modelFast: normalizeShortField(parsed.modelFast),
   };
 }
 
 export function serializeIdentityDocument(document: IdentityDocument): string {
-  const normalized = {
-    name: normalizeShortField(document.name),
-    creature: normalizeShortField(document.creature),
-    vibe: normalizeShortField(document.vibe),
-    emoji: normalizeShortField(document.emoji),
-    body: normalizeLineEndings(document.body || '').replace(/^\n+/, '').trimEnd(),
-    modelPrimary: normalizeShortField(document.modelPrimary ?? ''),
-    modelFast: normalizeShortField(document.modelFast ?? ''),
-  };
+  const normalized = normalizeDocument(document);
 
-  const optionalFields = new Set<keyof Omit<IdentityDocument, 'body'>>(['modelPrimary', 'modelFast']);
   const frontmatter = FRONTMATTER_FIELDS
-    .filter((field) => {
-      if (optionalFields.has(field)) return !!normalized[field];
-      return true;
-    })
+    .filter((field) => !OPTIONAL_FRONTMATTER_FIELDS.has(field) || !!normalized[field])
     .map((field) => {
       const value = normalized[field];
       return value ? `${field}: ${serializeScalar(value)}` : `${field}:`;

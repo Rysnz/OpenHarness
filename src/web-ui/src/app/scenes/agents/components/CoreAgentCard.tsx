@@ -1,11 +1,5 @@
 import React from 'react';
-import {
-  Bot,
-  Wrench,
-  Puzzle,
-  Cpu,
-  Sparkles,
-} from 'lucide-react';
+import { Bot, Wrench, Puzzle, Cpu, Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { AgentWithCapabilities } from '../agentsStore';
 import { AGENT_ICON_MAP } from '../agentsIcons';
@@ -26,6 +20,29 @@ interface CoreAgentCardProps {
   onOpenDetails: (agent: AgentWithCapabilities) => void;
 }
 
+const AgentMetric: React.FC<{ icon: React.ElementType; value: React.ReactNode }> = ({
+  icon: Icon,
+  value
+}) => (
+  <span className="core-agent-card__meta-item">
+    <Icon size={11} />
+    {value}
+  </span>
+);
+
+function coreAgentClassName(enabled: boolean): string {
+  return ['core-agent-card', !enabled && 'core-agent-card--disabled'].filter(Boolean).join(' ');
+}
+
+function coreAgentStyle(index: number, meta: CoreAgentMeta): React.CSSProperties {
+  return {
+    '--card-index': index,
+    '--core-accent': meta.accentColor,
+    '--core-accent-bg': meta.accentBg,
+    '--core-card-gradient': `linear-gradient(135deg, ${meta.accentColor}40 0%, ${meta.accentColor}15 100%)`,
+  } as React.CSSProperties;
+}
+
 const CoreAgentCard: React.FC<CoreAgentCardProps> = ({
   agent,
   index = 0,
@@ -37,24 +54,17 @@ const CoreAgentCard: React.FC<CoreAgentCardProps> = ({
   const { t } = useTranslation('scenes/agents');
   const Icon = AGENT_ICON_MAP[(agent.iconKey ?? 'bot') as keyof typeof AGENT_ICON_MAP] ?? Bot;
   const totalTools = toolCount ?? agent.toolCount ?? agent.defaultTools?.length ?? 0;
+  const showSkills = agent.agentKind === 'mode' && skillCount > 0;
   const openDetails = () => onOpenDetails(agent);
 
   return (
     <div
-      className={[
-        'core-agent-card',
-        !agent.enabled && 'core-agent-card--disabled',
-      ].filter(Boolean).join(' ')}
-      style={{
-        '--card-index': index,
-        '--core-accent': meta.accentColor,
-        '--core-accent-bg': meta.accentBg,
-        '--core-card-gradient': `linear-gradient(135deg, ${meta.accentColor}40 0%, ${meta.accentColor}15 100%)`,
-      } as React.CSSProperties}
+      className={coreAgentClassName(agent.enabled)}
+      style={coreAgentStyle(index, meta)}
       onClick={openDetails}
       role="button"
       tabIndex={0}
-      onKeyDown={(e) => e.key === 'Enter' && openDetails()}
+      onKeyDown={(event) => event.key === 'Enter' && openDetails()}
       aria-label={agent.name}
     >
       <div className="core-agent-card__top">
@@ -71,9 +81,7 @@ const CoreAgentCard: React.FC<CoreAgentCardProps> = ({
       </div>
 
       <div className="core-agent-card__body">
-        <p className="core-agent-card__desc">
-          {agent.description?.trim() || '—'}
-        </p>
+        <p className="core-agent-card__desc">{agent.description?.trim() || '-'}</p>
       </div>
 
       <div className="core-agent-card__footer">
@@ -82,20 +90,9 @@ const CoreAgentCard: React.FC<CoreAgentCardProps> = ({
           <strong>{meta.role}</strong>
         </span>
         <div className="core-agent-card__meta">
-          <span className="core-agent-card__meta-item">
-            <Wrench size={11} />
-            {totalTools}
-          </span>
-          {agent.agentKind === 'mode' && skillCount > 0 ? (
-            <span className="core-agent-card__meta-item">
-              <Puzzle size={11} />
-              {skillCount}
-            </span>
-          ) : null}
-          <span className="core-agent-card__meta-item">
-            <Cpu size={11} />
-            {agent.model ?? 'primary'}
-          </span>
+          <AgentMetric icon={Wrench} value={totalTools} />
+          {showSkills ? <AgentMetric icon={Puzzle} value={skillCount} /> : null}
+          <AgentMetric icon={Cpu} value={agent.model ?? 'primary'} />
         </div>
       </div>
     </div>

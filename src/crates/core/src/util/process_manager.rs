@@ -1,5 +1,3 @@
-//! Unified process management to avoid Windows child process leaks
-
 use std::process::Command;
 use std::sync::LazyLock;
 use tokio::process::Command as TokioCommand;
@@ -45,23 +43,10 @@ impl ProcessManager {
 
     #[cfg(windows)]
     fn initialize_job(&self) -> Result<(), Box<dyn std::error::Error>> {
-        use win32job::{ExtendedLimitInfo, Job};
+        let job = create_process_job()?;
+        assign_current_process(&job);
 
-        let job = Job::create()?;
-
-        // Terminate all child processes when the Job closes
-        let mut info = ExtendedLimitInfo::new();
-        info.limit_kill_on_job_close();
-        job.set_extended_limit_info(&info)?;
-
-        // Assign current process to Job so child processes inherit automatically
-        if let Err(e) = job.assign_current_process() {
-            warn!("Failed to assign current process to job: {}", e);
-        }
-
-        let mut job_guard = self.job.lock().map_err(|e| {
-            std::io::Error::other(format!("Failed to lock process manager job mutex: {}", e))
-        })?;
+        let mut job_guard = lock_process_job(&self.job)?;
         *job_guard = Some(job);
 
         Ok(())
@@ -70,19 +55,51 @@ impl ProcessManager {
     pub fn cleanup_all(&self) {
         #[cfg(windows)]
         {
-            let mut job_guard = match self.job.lock() {
-                Ok(guard) => guard,
-                Err(poisoned) => {
-                    warn!("Process manager job mutex was poisoned during cleanup, recovering lock");
-                    poisoned.into_inner() as std::sync::MutexGuard<'_, Option<Job>>
-                }
-            };
+            let mut job_guard = recover_process_job_lock(&self.job);
             job_guard.take();
         }
     }
 }
 
-/// Create synchronous Command (Windows automatically adds CREATE_NO_WINDOW)
+#[cfg(windows)]
+fn create_process_job() -> Result<Job, Box<dyn std::error::Error>> {
+    use win32job::ExtendedLimitInfo;
+
+    let job = Job::create()?;
+    let mut limits = ExtendedLimitInfo::new();
+    limits.limit_kill_on_job_close();
+    job.set_extended_limit_info(&limits)?;
+
+    Ok(job)
+}
+
+#[cfg(windows)]
+fn assign_current_process(job: &Job) {
+    if let Err(error) = job.assign_current_process() {
+        warn!("Failed to assign current process to job: {}", error);
+    }
+}
+
+#[cfg(windows)]
+fn lock_process_job(
+    job: &Mutex<Option<Job>>,
+) -> Result<std::sync::MutexGuard<'_, Option<Job>>, std::io::Error> {
+    job.lock().map_err(|error| {
+        std::io::Error::other(format!("Failed to lock process manager job mutex: {error}"))
+    })
+}
+
+#[cfg(windows)]
+fn recover_process_job_lock(job: &Mutex<Option<Job>>) -> std::sync::MutexGuard<'_, Option<Job>> {
+    match job.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => {
+            warn!("Process manager job mutex was poisoned during cleanup, recovering lock");
+            poisoned.into_inner()
+        }
+    }
+}
+
 pub fn create_command<S: AsRef<std::ffi::OsStr>>(program: S) -> Command {
     let cmd = Command::new(program.as_ref());
 
@@ -97,7 +114,6 @@ pub fn create_command<S: AsRef<std::ffi::OsStr>>(program: S) -> Command {
     cmd
 }
 
-/// Create Tokio async Command (Windows automatically adds CREATE_NO_WINDOW)
 pub fn create_tokio_command<S: AsRef<std::ffi::OsStr>>(program: S) -> TokioCommand {
     let cmd = TokioCommand::new(program.as_ref());
 

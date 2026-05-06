@@ -1,9 +1,8 @@
 import React, { useEffect, useRef } from 'react';
 import type { MediaConfig } from '../types';
 
-interface Props {
+interface MediaRendererProps {
   media: MediaConfig;
-  /** Whether this page is currently visible (affects autoplay). */
   active: boolean;
 }
 
@@ -12,6 +11,20 @@ interface LottieProps {
   active: boolean;
 }
 
+const MEDIA_CLASS = 'announcement-media';
+const PLACEHOLDER_CLASS = 'announcement-media__placeholder';
+const LOTTIE_PACKAGE = '@lottiefiles/dotlottie-react';
+
+const MediaFrame: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <div className={MEDIA_CLASS}>{children}</div>
+);
+
+const MediaPlaceholder: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <MediaFrame>
+    <div className={PLACEHOLDER_CLASS}>{children}</div>
+  </MediaFrame>
+);
+
 const LottieRenderer: React.FC<LottieProps> = ({ src, active }) => {
   const [LottieComponent, setLottieComponent] =
     React.useState<React.ComponentType<any> | null>(null);
@@ -19,67 +32,55 @@ const LottieRenderer: React.FC<LottieProps> = ({ src, active }) => {
 
   useEffect(() => {
     let cancelled = false;
-    const pkg = '@lottiefiles/dotlottie-react';
-    import(/* @vite-ignore */ pkg)
+
+    import(/* @vite-ignore */ LOTTIE_PACKAGE)
       .then((mod: any) => {
-        if (!cancelled) setLottieComponent(() => mod.DotLottieReact ?? mod.default);
+        if (!cancelled) {
+          setLottieComponent(() => mod.DotLottieReact ?? mod.default);
+        }
       })
       .catch(() => {
-        if (!cancelled) setLoadError(true);
+        if (!cancelled) {
+          setLoadError(true);
+        }
       });
-    return () => { cancelled = true; };
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   if (loadError) {
-    return (
-      <div className="announcement-media">
-        <div className="announcement-media__placeholder">
-          Lottie library not available
-        </div>
-      </div>
-    );
+    return <MediaPlaceholder>Lottie library not available</MediaPlaceholder>;
   }
 
   if (!LottieComponent) {
-    return (
-      <div className="announcement-media">
-        <div className="announcement-media__placeholder">Loading…</div>
-      </div>
-    );
+    return <MediaPlaceholder>Loading...</MediaPlaceholder>;
   }
 
   return (
-    <div className="announcement-media">
+    <MediaFrame>
       <LottieComponent
         src={src}
         autoplay={active}
         loop
         style={{ width: '100%', height: '100%' }}
       />
-    </div>
+    </MediaFrame>
   );
 };
 
-/**
- * Renders a media asset inside a modal page.
- *
- * Supported types:
- * - `image` / `gif` → <img>
- * - `video`         → <video autoplay loop muted>
- * - `lottie`        → lazily loaded via @lottiefiles/dotlottie-react
- *
- * For Lottie, the package is dynamically imported to avoid bundle bloat when
- * no Lottie assets are in use.
- */
-const MediaRenderer: React.FC<Props> = ({ media, active }) => {
+const MediaRenderer: React.FC<MediaRendererProps> = ({ media, active }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
 
-  // Pause/play video when the page becomes active or inactive.
   useEffect(() => {
     const video = videoRef.current;
-    if (!video) return;
+    if (!video) {
+      return;
+    }
+
     if (active) {
-      video.play().catch(() => {/* autoplay blocked – silent */});
+      video.play().catch(() => undefined);
     } else {
       video.pause();
     }
@@ -87,15 +88,15 @@ const MediaRenderer: React.FC<Props> = ({ media, active }) => {
 
   if (media.media_type === 'image' || media.media_type === 'gif') {
     return (
-      <div className="announcement-media">
+      <MediaFrame>
         <img src={media.src} alt="" draggable={false} />
-      </div>
+      </MediaFrame>
     );
   }
 
   if (media.media_type === 'video') {
     return (
-      <div className="announcement-media">
+      <MediaFrame>
         <video
           ref={videoRef}
           src={media.src}
@@ -104,7 +105,7 @@ const MediaRenderer: React.FC<Props> = ({ media, active }) => {
           playsInline
           autoPlay={active}
         />
-      </div>
+      </MediaFrame>
     );
   }
 
@@ -113,11 +114,9 @@ const MediaRenderer: React.FC<Props> = ({ media, active }) => {
   }
 
   return (
-    <div className="announcement-media">
-      <div className="announcement-media__placeholder">
-        Unsupported media type: {media.media_type}
-      </div>
-    </div>
+    <MediaPlaceholder>
+      Unsupported media type: {media.media_type}
+    </MediaPlaceholder>
   );
 };
 

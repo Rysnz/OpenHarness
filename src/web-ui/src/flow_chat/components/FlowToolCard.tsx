@@ -1,8 +1,3 @@
-/**
- * Streaming tool card component.
- * Renders a dedicated card based on tool type.
- */
-
 import React from 'react';
 import { getToolCardConfig, getToolCardComponent } from '../tool-cards';
 import type { FlowToolItem } from '../types/flow-chat';
@@ -21,6 +16,18 @@ interface FlowToolCardProps {
   sessionId?: string;
   className?: string;
 }
+
+const progressMessage = (toolItem: FlowToolItem): unknown => (toolItem as any)._progressMessage;
+
+const shouldReuseToolCard = (prevProps: FlowToolCardProps, nextProps: FlowToolCardProps): boolean =>
+  prevProps.toolItem.id === nextProps.toolItem.id &&
+  prevProps.toolItem.status === nextProps.toolItem.status &&
+  prevProps.toolItem.terminalSessionId === nextProps.toolItem.terminalSessionId &&
+  prevProps.toolItem.userConfirmed === nextProps.toolItem.userConfirmed &&
+  prevProps.toolItem.isParamsStreaming === nextProps.toolItem.isParamsStreaming &&
+  progressMessage(prevProps.toolItem) === progressMessage(nextProps.toolItem) &&
+  prevProps.toolItem.partialParams === nextProps.toolItem.partialParams &&
+  prevProps.toolItem.toolResult === nextProps.toolItem.toolResult;
 
 export const FlowToolCard: React.FC<FlowToolCardProps> = React.memo(({
   toolItem,
@@ -73,19 +80,4 @@ export const FlowToolCard: React.FC<FlowToolCardProps> = React.memo(({
       </FlowToolCardErrorBoundary>
     </div>
   );
-}, (prevProps, nextProps) => {
-  // Compare streaming parameters and progress messages to avoid stale renders.
-  const prevProgress = (prevProps.toolItem as any)._progressMessage;
-  const nextProgress = (nextProps.toolItem as any)._progressMessage;
-  
-  return (
-    prevProps.toolItem.id === nextProps.toolItem.id &&
-    prevProps.toolItem.status === nextProps.toolItem.status &&
-    prevProps.toolItem.terminalSessionId === nextProps.toolItem.terminalSessionId &&
-    prevProps.toolItem.userConfirmed === nextProps.toolItem.userConfirmed &&
-    prevProps.toolItem.isParamsStreaming === nextProps.toolItem.isParamsStreaming &&
-    prevProgress === nextProgress &&
-    prevProps.toolItem.partialParams === nextProps.toolItem.partialParams &&
-    prevProps.toolItem.toolResult === nextProps.toolItem.toolResult
-  );
-});
+}, shouldReuseToolCard);
