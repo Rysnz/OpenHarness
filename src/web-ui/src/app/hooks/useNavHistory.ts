@@ -1,18 +1,7 @@
-/**
- * useNavHistory — in-app navigation history (back / forward).
- *
- * Records navigation events dispatched via the `nav-push` custom event
- * and exposes goBack / goForward actions.
- *
- * Usage (push a new entry from anywhere):
- *   window.dispatchEvent(new CustomEvent('nav-push', { detail: { key: 'scene:git' } }))
- *
- * Components that want to restore state on back/forward should listen for
- * the `nav-restore` event:
- *   window.dispatchEvent(new CustomEvent('nav-restore', { detail: entry }))
- */
+import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+const NAV_PUSH_EVENT = 'nav-push';
+const NAV_RESTORE_EVENT = 'nav-restore';
 
 export interface NavEntry {
   key: string;
@@ -24,45 +13,11 @@ interface NavHistoryState {
   cursor: number;
 }
 
-// ── Singleton event bus so all hook instances share state ─────────────────
+let historyState: NavHistoryState = { stack: [], cursor: -1 };
+const listeners = new Set<() => void>();
 
-let _state: NavHistoryState = { stack: [], cursor: -1 };
-const _listeners = new Set<() => void>();
-
-function _notify() {
-  _listeners.forEach(fn => fn());
-}
-
-function _push(entry: NavEntry) {
-  // Drop forward entries after the cursor
-  const trimmed = _state.stack.slice(0, _state.cursor + 1);
-  // Avoid pushing a duplicate of the current entry
-  const current = trimmed[trimmed.length - 1];
-  if (current && current.key === entry.key) return;
-  _state = { stack: [...trimmed, entry], cursor: trimmed.length };
-  _notify();
-}
-
-/**
- * pushNavEntry — public imperative API for non-hook callers (e.g. stores).
- * Adds an entry to the history stack directly without going through window events.
- */
 export function pushNavEntry(entry: NavEntry): void {
-  _push(entry);
-}
-
-function _back(): NavEntry | undefined {
-  if (_state.cursor <= 0) return undefined;
-  _state = { ..._state, cursor: _state.cursor - 1 };
-  _notify();
-  return _state.stack[_state.cursor];
-}
-
-function _forward(): NavEntry | undefined {
-  if (_state.cursor >= _state.stack.length - 1) return undefined;
-  _state = { ..._state, cursor: _state.cursor + 1 };
-  _notify();
-  return _state.stack[_state.cursor];
+  pushEntry(entry);
 }
 
 export function useNavHistory() {
@@ -71,41 +26,72 @@ export function useNavHistory() {
 
   useEffect(() => {
     mountedRef.current = true;
-    const refresh = () => { if (mountedRef.current) forceUpdate(n => n + 1); };
-    _listeners.add(refresh);
-
-    // Listen for external push events
-    const handlePush = (e: Event) => {
-      const entry = (e as CustomEvent<NavEntry>).detail;
-      if (entry?.key) _push(entry);
+    const refresh = () => {
+      if (mountedRef.current) {
+        forceUpdate((value) => value + 1);
+      }
     };
-    window.addEventListener('nav-push', handlePush);
+
+    listeners.add(refresh);
+    window.addEventListener(NAV_PUSH_EVENT, handlePushEvent);
 
     return () => {
       mountedRef.current = false;
-      _listeners.delete(refresh);
-      window.removeEventListener('nav-push', handlePush);
+      listeners.delete(refresh);
+      window.removeEventListener(NAV_PUSH_EVENT, handlePushEvent);
     };
   }, []);
 
   const goBack = useCallback(() => {
-    const entry = _back();
-    if (entry) {
-      window.dispatchEvent(new CustomEvent('nav-restore', { detail: entry }));
-    }
+    restoreEntry(moveCursor(-1));
   }, []);
 
   const goForward = useCallback(() => {
-    const entry = _forward();
-    if (entry) {
-      window.dispatchEvent(new CustomEvent('nav-restore', { detail: entry }));
-    }
+    restoreEntry(moveCursor(1));
   }, []);
 
   return {
-    canGoBack: _state.cursor > 0,
-    canGoForward: _state.cursor < _state.stack.length - 1,
+    canGoBack: historyState.cursor > 0,
+    canGoForward: historyState.cursor < historyState.stack.length - 1,
     goBack,
     goForward,
   };
+}
+
+function handlePushEvent(event: Event): void {
+  const entry = (event as CustomEvent<NavEntry>).detail;
+  if (entry?.key) {
+    pushEntry(entry);
+  }
+}
+
+function pushEntry(entry: NavEntry): void {
+  const stack = historyState.stack.slice(0, historyState.cursor + 1);
+  if (stack.at(-1)?.key === entry.key) {
+    return;
+  }
+
+  historyState = { stack: [...stack, entry], cursor: stack.length };
+  notifyListeners();
+}
+
+function moveCursor(offset: -1 | 1): NavEntry | undefined {
+  const nextCursor = historyState.cursor + offset;
+  if (nextCursor < 0 || nextCursor >= historyState.stack.length) {
+    return undefined;
+  }
+
+  historyState = { ...historyState, cursor: nextCursor };
+  notifyListeners();
+  return historyState.stack[nextCursor];
+}
+
+function restoreEntry(entry?: NavEntry): void {
+  if (entry) {
+    window.dispatchEvent(new CustomEvent(NAV_RESTORE_EVENT, { detail: entry }));
+  }
+}
+
+function notifyListeners(): void {
+  listeners.forEach((listener) => listener());
 }

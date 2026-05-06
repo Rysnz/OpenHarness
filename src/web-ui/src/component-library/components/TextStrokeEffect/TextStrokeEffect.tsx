@@ -1,7 +1,12 @@
-"use client";
+'use client';
 
-import React from "react";
-import "./TextStrokeEffect.scss";
+import React, { useId } from 'react';
+import './TextStrokeEffect.scss';
+
+const CHAR_VIEWBOX_WIDTH = 55;
+const VIEWBOX_HEIGHT = 100;
+const STROKE_COLORS = ['#eab308', '#ef4444', '#3b82f6', '#06b6d4', '#8b5cf6'];
+const GRADIENT_STOPS = ['0%', '25%', '50%', '75%', '100%'];
 
 export interface TextStrokeEffectProps {
   text: string;
@@ -10,112 +15,86 @@ export interface TextStrokeEffectProps {
   height?: string;
 }
 
-/**
- * Text stroke loop animation component
- * Pure CSS implementation, no extra animation libraries
- */
 export const TextStrokeEffect: React.FC<TextStrokeEffectProps> = ({
   text,
   duration = 4,
-  className = "",
-  height = "100px",
+  className = '',
+  height = '100px',
 }) => {
-  const charWidth = 55;
-  const viewBoxWidth = text.length * charWidth;
-  const viewBoxHeight = 100;
+  const gradientId = useId().replace(/:/g, '');
+  const viewBoxWidth = text.length * CHAR_VIEWBOX_WIDTH;
+  const animationDuration = `${duration}s`;
 
   return (
     <svg
-      className={`text-stroke-effect ${className}`}
-      viewBox={`0 0 ${viewBoxWidth} ${viewBoxHeight}`}
+      className={['text-stroke-effect', className].filter(Boolean).join(' ')}
+      viewBox={`0 0 ${viewBoxWidth} ${VIEWBOX_HEIGHT}`}
       xmlns="http://www.w3.org/2000/svg"
-      style={{ 
-        height: height,
+      style={{
+        height,
         width: 'auto',
         display: 'block',
       }}
       preserveAspectRatio="xMidYMid meet"
     >
       <defs>
-        <linearGradient id="textStrokeGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#eab308">
-            <animate
-              attributeName="stop-color"
-              values="#eab308; #ef4444; #3b82f6; #06b6d4; #8b5cf6; #eab308"
-              dur={`${duration}s`}
-              repeatCount="indefinite"
-            />
-          </stop>
-          <stop offset="25%" stopColor="#ef4444">
-            <animate
-              attributeName="stop-color"
-              values="#ef4444; #3b82f6; #06b6d4; #8b5cf6; #eab308; #ef4444"
-              dur={`${duration}s`}
-              repeatCount="indefinite"
-            />
-          </stop>
-          <stop offset="50%" stopColor="#3b82f6">
-            <animate
-              attributeName="stop-color"
-              values="#3b82f6; #06b6d4; #8b5cf6; #eab308; #ef4444; #3b82f6"
-              dur={`${duration}s`}
-              repeatCount="indefinite"
-            />
-          </stop>
-          <stop offset="75%" stopColor="#06b6d4">
-            <animate
-              attributeName="stop-color"
-              values="#06b6d4; #8b5cf6; #eab308; #ef4444; #3b82f6; #06b6d4"
-              dur={`${duration}s`}
-              repeatCount="indefinite"
-            />
-          </stop>
-          <stop offset="100%" stopColor="#8b5cf6">
-            <animate
-              attributeName="stop-color"
-              values="#8b5cf6; #eab308; #ef4444; #3b82f6; #06b6d4; #8b5cf6"
-              dur={`${duration}s`}
-              repeatCount="indefinite"
-            />
-          </stop>
+        <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="0%">
+          {STROKE_COLORS.map((color, index) => (
+            <stop key={color} offset={GRADIENT_STOPS[index]} stopColor={color}>
+              <animate
+                attributeName="stop-color"
+                values={rotatingColorValues(index)}
+                dur={animationDuration}
+                repeatCount="indefinite"
+              />
+            </stop>
+          ))}
         </linearGradient>
       </defs>
 
-      <text
-        x="50%"
-        y="55%"
-        textAnchor="middle"
-        dominantBaseline="middle"
-        className="text-stroke-effect__outline"
-      >
-        {text}
-      </text>
-
-      <text
-        x="50%"
-        y="55%"
-        textAnchor="middle"
-        dominantBaseline="middle"
+      <StrokeText className="text-stroke-effect__outline" text={text} />
+      <StrokeText
         className="text-stroke-effect__animated"
-        style={{
-          animationDuration: `${duration}s`,
-        }}
-      >
-        {text}
-      </text>
-
-      <text
-        x="50%"
-        y="55%"
-        textAnchor="middle"
-        dominantBaseline="middle"
+        text={text}
+        style={{ animationDuration }}
+      />
+      <StrokeText
         className="text-stroke-effect__gradient"
-        stroke="url(#textStrokeGradient)"
-      >
-        {text}
-      </text>
+        text={text}
+        stroke={`url(#${gradientId})`}
+      />
     </svg>
   );
 };
 
 export default TextStrokeEffect;
+
+interface StrokeTextProps {
+  className: string;
+  text: string;
+  stroke?: string;
+  style?: React.CSSProperties;
+}
+
+const StrokeText: React.FC<StrokeTextProps> = ({ className, text, stroke, style }) => (
+  <text
+    x="50%"
+    y="55%"
+    textAnchor="middle"
+    dominantBaseline="middle"
+    className={className}
+    stroke={stroke}
+    style={style}
+  >
+    {text}
+  </text>
+);
+
+function rotatingColorValues(startIndex: number): string {
+  const colors = [
+    ...STROKE_COLORS.slice(startIndex),
+    ...STROKE_COLORS.slice(0, startIndex),
+    STROKE_COLORS[startIndex],
+  ];
+  return colors.join('; ');
+}

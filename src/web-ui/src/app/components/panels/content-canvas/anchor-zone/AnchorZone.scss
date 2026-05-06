@@ -1,27 +1,30 @@
-/**
- * AnchorZone component styles.
- */
+$anchor-resizer-size: 4px;
+$anchor-resizer-layer: 5;
+$anchor-maximized-layer: 100;
+
+@mixin anchor-row($gap: 0) {
+  display: flex;
+  align-items: center;
+  gap: $gap;
+}
 
 .canvas-anchor-zone {
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   background: var(--color-bg-primary, #1a1a1a);
   border: 1px solid var(--border-base);
-  overflow: hidden;
 
-  // Bottom position
   &--bottom {
+    border: none;
     border-top-width: 0;
-    border-left: none;
-    border-right: none;
-    border-bottom: none;
 
     .canvas-anchor-zone__resizer {
       position: absolute;
       top: 0;
-      left: 0;
       right: 0;
-      height: 4px;
+      left: 0;
+      height: $anchor-resizer-size;
       cursor: row-resize;
 
       .canvas-anchor-zone__resizer-line {
@@ -31,19 +34,16 @@
     }
   }
 
-  // Right position
   &--right {
+    border: none;
     border-left-width: 0;
-    border-top: none;
-    border-right: none;
-    border-bottom: none;
 
     .canvas-anchor-zone__resizer {
       position: absolute;
       top: 0;
-      left: 0;
       bottom: 0;
-      width: 4px;
+      left: 0;
+      width: $anchor-resizer-size;
       cursor: col-resize;
 
       .canvas-anchor-zone__resizer-line {
@@ -53,14 +53,13 @@
     }
   }
 
-  // Resizing state
-  &.is-resizing {
+  &.is-resizing,
+  &__resizer:hover {
     .canvas-anchor-zone__resizer-line {
       background: var(--color-primary, #60a5fa);
     }
   }
 
-  // Collapsed state
   &.is-collapsed {
     &.canvas-anchor-zone--bottom {
       height: auto !important;
@@ -71,27 +70,18 @@
     }
   }
 
-  // Maximized state
   &.is-maximized {
     position: absolute;
     inset: 0;
-    z-index: 100;
+    z-index: $anchor-maximized-layer;
   }
 
-  // Resize handle
   &__resizer {
+    @include anchor-row;
     position: relative;
+    z-index: $anchor-resizer-layer;
     flex-shrink: 0;
-    display: flex;
-    align-items: center;
     justify-content: center;
-    z-index: 5;
-
-    &:hover {
-      .canvas-anchor-zone__resizer-line {
-        background: var(--color-primary, #60a5fa);
-      }
-    }
   }
 
   &__resizer-line {
@@ -99,24 +89,20 @@
     transition: background-color 0.15s ease;
   }
 
-  // Header
   &__header {
-    display: flex;
-    align-items: center;
+    @include anchor-row;
+    flex-shrink: 0;
     justify-content: space-between;
     padding: 6px 12px;
     background: var(--color-bg-secondary, rgba(255, 255, 255, 0.03));
     border-bottom: 1px solid var(--border-base);
-    flex-shrink: 0;
   }
 
   &__title {
-    display: flex;
-    align-items: center;
-    gap: 8px;
+    @include anchor-row(8px);
+    color: var(--color-text-primary, rgba(255, 255, 255, 0.9));
     font-size: 12px;
     font-weight: 500;
-    color: var(--color-text-primary, rgba(255, 255, 255, 0.9));
 
     svg {
       color: var(--color-text-secondary, rgba(255, 255, 255, 0.6));
@@ -124,28 +110,27 @@
   }
 
   &__actions {
-    display: flex;
-    align-items: center;
-    gap: 4px;
+    @include anchor-row(4px);
   }
 
   &__action-btn {
-    display: flex;
-    align-items: center;
+    @include anchor-row;
     justify-content: center;
     width: 24px;
     height: 24px;
     padding: 0;
+    color: var(--color-text-secondary, rgba(255, 255, 255, 0.6));
     background: none;
     border: none;
-    color: var(--color-text-secondary, rgba(255, 255, 255, 0.6));
-    cursor: pointer;
     border-radius: 4px;
-    transition: background-color 0.15s ease, color 0.15s ease;
+    cursor: pointer;
+    transition:
+      background-color 0.15s ease,
+      color 0.15s ease;
 
     &:hover {
-      background: var(--color-bg-hover, rgba(255, 255, 255, 0.1));
       color: var(--color-text-primary, rgba(255, 255, 255, 0.9));
+      background: var(--color-bg-hover, rgba(255, 255, 255, 0.1));
     }
   }
 
@@ -153,7 +138,6 @@
     color: var(--color-danger, #f87171);
   }
 
-  // Content area
   &__content {
     flex: 1;
     min-height: 0;
