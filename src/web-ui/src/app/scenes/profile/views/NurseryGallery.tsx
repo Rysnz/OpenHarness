@@ -158,19 +158,14 @@ const NurseryGallery: React.FC = () => {
       {/* Template hero: panda + card side by side, bottom-aligned */}
       <div className="nursery-template-hero">
         {/* Panda — hover independently, no card linkage */}
-        <div className="nursery-template-panda">
-          <img
-            className="nursery-template-panda__img nursery-template-panda__img--default"
-            src="/panda_full_1.png"
-            alt=""
-            onError={(e) => { (e.target as HTMLImageElement).src = '/Logo-ICON.png'; }}
-          />
-          <img
-            className="nursery-template-panda__img nursery-template-panda__img--hover"
-            src="/panda_full_2.png"
-            alt=""
-            onError={(e) => { (e.target as HTMLImageElement).src = '/Logo-ICON.png'; }}
-          />
+        <div className="nursery-template-figure" aria-hidden="true">
+          <span className="nursery-template-figure__plate">
+            <span className="nursery-template-figure__orbit nursery-template-figure__orbit--outer" />
+            <span className="nursery-template-figure__orbit nursery-template-figure__orbit--inner" />
+            <span className="nursery-template-figure__node nursery-template-figure__node--a" />
+            <span className="nursery-template-figure__node nursery-template-figure__node--b" />
+            <span className="nursery-template-figure__glyph">O</span>
+          </span>
         </div>
 
         {/* Card */}

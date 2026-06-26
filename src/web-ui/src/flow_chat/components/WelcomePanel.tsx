@@ -48,8 +48,6 @@ export const WelcomePanel: React.FC<WelcomePanelProps> = ({
   const sessionModeLower = (sessionMode || '').toLowerCase();
   const isCoworkSession = sessionModeLower === 'cowork';
   const isPartnerSession = sessionModeLower === 'partner';
-  // code sessions use mode='agentic'; cowork sessions use mode='cowork'
-  const showPanda = sessionModeLower !== 'code' && sessionModeLower !== 'agentic' && sessionModeLower !== 'cowork';
 
   const { document: identityDoc } = useAgentIdentityDocument(isPartnerSession ? workspacePath : '');
   const partnerName = isPartnerSession ? (identityDoc.name || '') : '';
@@ -171,12 +169,6 @@ export const WelcomePanel: React.FC<WelcomePanelProps> = ({
         {/* Greeting */}
         <div className="welcome-panel__greeting">
           <div className="welcome-panel__greeting-inner">
-            {showPanda && (
-              <div className="welcome-panel__panda" aria-hidden="true">
-                <img src="/panda_full_1.png" className="welcome-panel__panda-frame welcome-panel__panda-frame--1" alt="" />
-                <img src="/panda_full_2.png" className="welcome-panel__panda-frame welcome-panel__panda-frame--2" alt="" />
-              </div>
-            )}
             <div className={`welcome-panel__greeting-text${isCoworkSession ? ' welcome-panel__greeting-text--mtc' : ''}`}>
               {isCoworkSession ? (
                 <h1

@@ -29,12 +29,37 @@
   },
 
   "identity": {
+    "formTitle": "身份配置",
+    "formDescription": "在这里修改伙伴身份，OpenHarness 会自动同步到 IDENTITY.md。",
+    "formLoadFailed": "身份加载失败",
+    "formStatusIdle": "已同步",
+    "formStatusLoading": "加载中",
+    "formStatusSaving": "保存中",
+    "formStatusSaved": "已保存",
+    "formStatusExternalUpdate": "外部已更新",
+    "formStatusError": "保存失败",
+    "name": "名称",
+    "namePlaceholder": "例如：OpenHarness Agent、论文助手、代码伙伴",
+    "nameHint": "伙伴在会话里显示的名字。不确定时可以保留默认名称。",
+    "headerCreatureLabel": "类型",
+    "headerVibeLabel": "风格",
+    "headerEmptyHint": "在右侧身份配置中设置角色类型和气质风格",
     "emoji": "表情标识",
-    "emojiPlaceholder": "设置表情标识",
+    "emojiPlaceholder": "例如：✨、🤖、🧭",
+    "emojiHint": "用于快速识别伙伴的小标记，不会影响模型能力。",
+    "avatarUpload": "上传形象",
+    "avatarRemove": "移除形象",
+    "avatarUploadSuccess": "伙伴形象已更新",
+    "avatarUploadFailed": "生成伙伴形象失败",
     "creature": "角色类型",
-    "creaturePlaceholderShort": "设置角色类型",
+    "creaturePlaceholderShort": "例如：编程伙伴、研究助手、写作搭子",
+    "creatureHint": "描述它主要像什么角色，帮助系统和用户理解这个伙伴的定位。",
     "vibe": "气质风格",
-    "vibePlaceholderShort": "设置气质风格",
+    "vibePlaceholderShort": "例如：清爽直接、耐心细致、冷静审查",
+    "vibeHint": "描述它的沟通方式和协作感觉，会影响人设提示词的语气。",
+    "body": "身份说明",
+    "bodyPlaceholder": "描述这个伙伴应该如何介绍自己、擅长什么、工作边界，以及希望使用的语气。",
+    "bodyHint": "不确定时可以先留空，后续在使用中慢慢补充。",
     "resetTooltip": "重置伙伴人设",
     "resetConfirmTitle": "重置伙伴人设",
     "resetConfirmMessage": "这会将 BOOTSTRAP.md、SOUL.md、USER.md 和 IDENTITY.md 恢复为默认模板，并覆盖当前内容。确定继续吗？",
@@ -45,7 +70,7 @@
   },
 
   "home": {
-    "descHint": "点击编辑 IDENTITY.md 正文。"
+    "descHint": "点击编辑身份说明。"
   },
 
   "sections": {

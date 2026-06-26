@@ -180,16 +180,6 @@
     &:hover {
       color: var(--color-text-primary);
       background: color-mix(in srgb, var(--element-bg-soft) 72%, transparent);
-
-      .openharness-nav-panel__workspace-item-icon-default {
-        opacity: 0;
-        transform: scale(0.7);
-      }
-
-      .openharness-nav-panel__workspace-item-icon-toggle {
-        opacity: 1;
-        transform: scale(1);
-      }
     }
   }
 
@@ -213,16 +203,6 @@
 
     &:hover {
       background: color-mix(in srgb, var(--element-bg-medium) 60%, transparent);
-
-      .openharness-nav-panel__workspace-item-icon-default {
-        opacity: 0;
-        transform: scale(0.7);
-      }
-
-      .openharness-nav-panel__workspace-item-icon-toggle {
-        opacity: 1;
-        transform: scale(1);
-      }
     }
   }
 
@@ -266,24 +246,6 @@
       transform: scale(1);
     }
 
-    .openharness-nav-panel__workspace-item-icon-toggle {
-      position: absolute;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      inset: 0;
-      opacity: 0;
-      transform: scale(0.7);
-      color: var(--color-text-primary);
-
-      svg {
-        transition: transform $motion-fast $easing-standard;
-      }
-
-      &.is-collapsed svg {
-        transform: rotate(-90deg);
-      }
-    }
   }
 
   &__workspace-item-icon {
@@ -298,8 +260,7 @@
     opacity: 0.85;
   }
 
-  &__workspace-item-icon-default,
-  &__workspace-item-icon-toggle {
+  &__workspace-item-icon-default {
     position: absolute;
     display: inline-flex;
     align-items: center;
@@ -311,20 +272,6 @@
   &__workspace-item-icon-default {
     opacity: 1;
     transform: scale(1);
-  }
-
-  &__workspace-item-icon-toggle {
-    opacity: 0;
-    transform: scale(0.7);
-    color: inherit;
-
-    svg {
-      transition: transform $motion-fast $easing-standard;
-    }
-
-    &.is-collapsed svg {
-      transform: rotate(-90deg);
-    }
   }
 
   &__workspace-item-label {
@@ -548,30 +495,6 @@
     text-overflow: ellipsis;
   }
 
-  &__workspace-item-sessions {
-    overflow: hidden;
-    max-height: 600px;
-    transition: max-height $motion-base $easing-standard,
-                opacity $motion-fast $easing-standard;
-    opacity: 1;
-
-    &.is-collapsed {
-      max-height: 0;
-      opacity: 0;
-      pointer-events: none;
-    }
-
-    .openharness-nav-panel__inline-list {
-      margin-left: 12px;
-      margin-right: 0;
-      padding-top: 0;
-    }
-
-    .openharness-nav-panel__inline-empty {
-      padding-left: $size-gap-1;
-    }
-  }
-
   &__workspace-drop-target {
     border-radius: $size-radius-base;
     display: flex;
@@ -664,16 +587,6 @@
     &:hover {
       color: var(--color-text-primary);
       background: color-mix(in srgb, var(--element-bg-soft) 72%, transparent);
-
-      .openharness-nav-panel__partner-item-avatar-letter {
-        opacity: 0;
-        transform: scale(0.6);
-      }
-
-      .openharness-nav-panel__partner-item-icon-toggle {
-        opacity: 1;
-        transform: scale(1);
-      }
     }
   }
 
@@ -693,16 +606,6 @@
 
     &:hover {
       background: color-mix(in srgb, var(--element-bg-medium) 60%, transparent);
-
-      .openharness-nav-panel__partner-item-avatar-letter {
-        opacity: 0;
-        transform: scale(0.6);
-      }
-
-      .openharness-nav-panel__partner-item-icon-toggle {
-        opacity: 1;
-        transform: scale(1);
-      }
     }
   }
 
@@ -729,27 +632,6 @@
                 transform $motion-fast $easing-standard;
     opacity: 1;
     transform: scale(1);
-  }
-
-  &__partner-item-icon-toggle {
-    position: absolute;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    inset: 0;
-    opacity: 0;
-    transform: scale(0.7);
-    color: var(--color-text-primary);
-    transition: opacity $motion-fast $easing-standard,
-                transform $motion-fast $easing-standard;
-
-    svg {
-      transition: transform $motion-fast $easing-standard;
-    }
-
-    &.is-collapsed svg {
-      transform: rotate(-90deg);
-    }
   }
 
   &__partner-item-name-btn {
@@ -825,29 +707,6 @@
     }
   }
 
-  &__partner-item-sessions {
-    overflow: hidden;
-    max-height: 600px;
-    transition: max-height $motion-base $easing-standard,
-                opacity $motion-fast $easing-standard;
-    opacity: 1;
-
-    &.is-collapsed {
-      max-height: 0;
-      opacity: 0;
-      pointer-events: none;
-    }
-
-    .openharness-nav-panel__inline-list {
-      margin-left: 12px;
-      margin-right: 0;
-      padding-top: 0;
-    }
-
-    .openharness-nav-panel__inline-empty {
-      padding-left: $size-gap-1;
-    }
-  }
 }
 
 @keyframes openharness-status-dot-pulse {

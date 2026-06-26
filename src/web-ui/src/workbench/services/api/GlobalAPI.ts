@@ -30,6 +30,7 @@ export interface WorkspaceIdentity {
   creature?: string | null;
   vibe?: string | null;
   emoji?: string | null;
+  avatarDataUrl?: string | null;
 }
 
 export interface WorkspaceWorktreeInfo {

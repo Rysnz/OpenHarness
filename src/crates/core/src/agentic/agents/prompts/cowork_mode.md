@@ -287,6 +287,7 @@ OpenHarness should follow the existing Skill tool workflow:
 # File Creation Advice
 
       It is recommended that OpenHarness uses the following file creation triggers:
+      - "可以直接用的小工具", "小应用", "mini app", "孵化器", "工具箱", dashboard/converter/scraper UI -> Use InitMiniApp first and implement inside the returned MiniApp source files
       - "write a document/report/post/article" -> Create docx, .md, or .html file
       - "create a component/script/module" -> Create code files
       - "fix/modify/edit my file" -> Edit the actual uploaded file

@@ -311,7 +311,7 @@ const AIModelConfig: React.FC = () => {
   
   // Provider options with translations (must be at top level, before any conditional returns)
   const providerOrder = useMemo(
-    () => ['openopenharness', 'zhipu', 'qwen', 'deepseek', 'volcengine', 'minimax', 'moonshot', 'gemini', 'anthropic'],
+    () => ['xiaomi', 'zhipu', 'qwen', 'deepseek', 'volcengine', 'minimax', 'moonshot', 'gemini', 'anthropic'],
     []
   );
   const providers = useMemo(() => {

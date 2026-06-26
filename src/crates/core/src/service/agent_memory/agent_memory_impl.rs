@@ -10,6 +10,11 @@ const MEMORY_INDEX_TEMPLATE: &str = "# Memory Index\n";
 const MEMORY_INDEX_MAX_LINES: usize = 200;
 const DAILY_MEMORY_MAX_FILES: usize = 30;
 const TOPIC_MEMORY_MAX_FILES: usize = 30;
+const CLAUDE_DIR_NAME: &str = ".claude";
+const AGENT_MEMORY_DIR_NAME: &str = "agent-memory";
+const AGENT_MEMORY_LOCAL_DIR_NAME: &str = "agent-memory-local";
+const AGENT_MEMORY_FILE: &str = "MEMORY.md";
+const AGENT_MEMORY_TEMPLATE: &str = "# Agent Memory\n";
 
 fn memory_dir_path(workspace_root: &Path) -> PathBuf {
     workspace_root
@@ -19,6 +24,66 @@ fn memory_dir_path(workspace_root: &Path) -> PathBuf {
 
 fn format_path_for_prompt(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
+}
+
+fn sanitize_agent_memory_name(agent_name: &str) -> String {
+    let sanitized = agent_name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.') {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>()
+        .trim_matches('-')
+        .to_string();
+
+    if sanitized.is_empty() {
+        "agent".to_string()
+    } else {
+        sanitized
+    }
+}
+
+fn normalized_agent_memory_scope(scope: &str) -> &str {
+    match scope.trim().to_lowercase().as_str() {
+        "user" => "user",
+        "project" => "project",
+        "local" => "local",
+        _ => "local",
+    }
+}
+
+fn scoped_agent_memory_path(
+    workspace_root: &Path,
+    agent_name: &str,
+    scope: &str,
+) -> Option<PathBuf> {
+    let agent_dir_name = sanitize_agent_memory_name(agent_name);
+    match normalized_agent_memory_scope(scope) {
+        "user" => dirs::home_dir().map(|home| {
+            home.join(CLAUDE_DIR_NAME)
+                .join(AGENT_MEMORY_DIR_NAME)
+                .join(agent_dir_name)
+                .join(AGENT_MEMORY_FILE)
+        }),
+        "project" => Some(
+            workspace_root
+                .join(CLAUDE_DIR_NAME)
+                .join(AGENT_MEMORY_DIR_NAME)
+                .join(agent_dir_name)
+                .join(AGENT_MEMORY_FILE),
+        ),
+        _ => Some(
+            workspace_root
+                .join(CLAUDE_DIR_NAME)
+                .join(AGENT_MEMORY_LOCAL_DIR_NAME)
+                .join(agent_dir_name)
+                .join(AGENT_MEMORY_FILE),
+        ),
+    }
 }
 
 async fn ensure_markdown_placeholder(path: &Path, content: &str) -> OpenHarnessResult<bool> {
@@ -118,6 +183,62 @@ pub(crate) async fn ensure_workspace_memory_files_for_prompt(
     );
 
     Ok(())
+}
+
+pub(crate) async fn build_scoped_agent_memory_prompt(
+    workspace_root: &Path,
+    agent_name: &str,
+    scope: &str,
+) -> OpenHarnessResult<String> {
+    let normalized_scope = normalized_agent_memory_scope(scope);
+    let Some(memory_path) = scoped_agent_memory_path(workspace_root, agent_name, normalized_scope)
+    else {
+        return Ok(String::new());
+    };
+
+    if let Some(parent) = memory_path.parent() {
+        fs::create_dir_all(parent).await.map_err(|e| {
+            OpenHarnessError::service(format!(
+                "Failed to create scoped agent memory directory {}: {}",
+                parent.display(),
+                e
+            ))
+        })?;
+    }
+
+    let created_memory = ensure_markdown_placeholder(&memory_path, AGENT_MEMORY_TEMPLATE).await?;
+    let memory_content = fs::read_to_string(&memory_path).await.map_err(|e| {
+        OpenHarnessError::service(format!(
+            "Failed to read scoped agent memory {}: {}",
+            memory_path.display(),
+            e
+        ))
+    })?;
+    let memory_path_display = format_path_for_prompt(&memory_path);
+
+    debug!(
+        "Ensured scoped agent memory file: agent={}, scope={}, path={}, created={}",
+        agent_name,
+        normalized_scope,
+        memory_path.display(),
+        created_memory
+    );
+
+    Ok(format!(
+        r#"# Persistent Agent Memory
+
+You have a dedicated persistent memory file for this agent:
+`{memory_path_display}`
+
+Scope: `{normalized_scope}`.
+
+Read this memory before making assumptions about long-running preferences, role configuration, recurring tasks, or project-specific knowledge for this agent. Update it when the user teaches this agent durable facts, preferences, responsibilities, or decisions that should survive future conversations.
+
+<agent_memory_file path="{memory_path_display}">
+{memory_content}
+</agent_memory_file>
+"#
+    ))
 }
 
 pub(crate) async fn build_workspace_agent_memory_prompt(
@@ -243,4 +364,55 @@ If you need the most detailed conversation history, first use SessionControl to 
     ));
 
     Ok(section)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn unique_temp_workspace() -> PathBuf {
+        std::env::temp_dir().join(format!("openharness-agent-memory-{}", uuid::Uuid::new_v4()))
+    }
+
+    #[tokio::test]
+    async fn scoped_agent_memory_creates_project_memory_file() {
+        let workspace = unique_temp_workspace();
+        fs::create_dir_all(&workspace).await.unwrap();
+
+        let prompt = build_scoped_agent_memory_prompt(&workspace, "Coding助理", "project")
+            .await
+            .unwrap();
+
+        let expected_path = workspace
+            .join(".claude")
+            .join("agent-memory")
+            .join("Coding")
+            .join("MEMORY.md");
+        assert!(expected_path.exists());
+        assert!(prompt.contains("# Persistent Agent Memory"));
+        assert!(prompt.contains("<agent_memory_file"));
+        assert!(prompt.contains("Scope: `project`"));
+
+        let _ = fs::remove_dir_all(&workspace).await;
+    }
+
+    #[tokio::test]
+    async fn scoped_agent_memory_defaults_unknown_scope_to_local() {
+        let workspace = unique_temp_workspace();
+        fs::create_dir_all(&workspace).await.unwrap();
+
+        let prompt = build_scoped_agent_memory_prompt(&workspace, "reviewer", "banana")
+            .await
+            .unwrap();
+
+        let expected_path = workspace
+            .join(".claude")
+            .join("agent-memory-local")
+            .join("reviewer")
+            .join("MEMORY.md");
+        assert!(expected_path.exists());
+        assert!(prompt.contains("Scope: `local`"));
+
+        let _ = fs::remove_dir_all(&workspace).await;
+    }
 }

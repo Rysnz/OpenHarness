@@ -23,6 +23,7 @@ pub mod insights_api;
 pub mod lsp_api;
 pub mod lsp_workspace_api;
 pub mod mcp_api;
+pub mod memory_api;
 pub mod miniapp_api;
 pub mod project_context_api;
 pub mod remote_connect_api;

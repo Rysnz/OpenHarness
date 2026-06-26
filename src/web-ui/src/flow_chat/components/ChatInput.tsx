@@ -5,7 +5,7 @@
 
 import React, { useRef, useCallback, useEffect, useReducer, useState, useMemo } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
-import { ArrowUp, Image, Maximize2, Minimize2, RotateCcw, Plus, X, Sparkles, Loader2, ChevronRight, Files, MessageSquarePlus } from 'lucide-react';
+import { ArrowUp, Image, Maximize2, Minimize2, RotateCcw, Plus, X, Sparkles, Loader2, ChevronRight, Files, MessageSquarePlus, ShieldCheck } from 'lucide-react';
 import { ContextDropZone, useContextStore } from '../../shared/context-system';
 import { useActiveSessionState } from '../hooks/useActiveSessionState';
 import { RichTextInput, type MentionState } from './RichTextInput';
@@ -20,7 +20,7 @@ import { SessionExecutionEvent } from '../state-machine/types';
 import TokenUsageIndicator from './TokenUsageIndicator';
 import { ModelSelector } from './ModelSelector';
 import { FlowChatStore } from '../store/FlowChatStore';
-import type { FlowChatState } from '../types/flow-chat';
+import type { FlowChatState, FlowToolItem } from '../types/flow-chat';
 import type { FileContext, DirectoryContext } from '../../shared/types/context';
 import { SmartRecommendations } from './smart-recommendations';
 import { useCurrentWorkspace } from '@/infrastructure/contexts/WorkspaceContext';
@@ -44,8 +44,10 @@ import { useSceneStore } from '@/app/stores/sceneStore';
 import type { SceneTabId } from '@/app/components/SceneBar/types';
 import type { SkillInfo } from '@/infrastructure/config/types';
 import { aiExperienceConfigService } from '@/infrastructure/config/services/AIExperienceConfigService';
+import { configManager } from '@/infrastructure/config/services/ConfigManager';
 import MCPAPI, { type MCPPrompt, type MCPPromptMessage, type MCPServerInfo } from '@/infrastructure/api/service-api/MCPAPI';
 import { agentAPI } from '@/infrastructure/api/service-api/AgentAPI';
+import { useFlowChatToolActions } from '@/workbench/agent-chat/components/modern/useFlowChatToolActions';
 import { deriveChatInputPetMood } from '../utils/chatInputPetMood';
 import { ChatInputPixelPet } from './ChatInputPixelPet';
 import './ChatInput.scss';
@@ -88,6 +90,38 @@ type SlashMcpPromptItem = {
 };
 
 type SlashPickerItem = SlashActionItem | SlashModeItem | SlashMcpPromptItem;
+
+type CommandApprovalMode = 'ask_all' | 'auto_safe' | 'full_access';
+
+const COMMAND_APPROVAL_OPTIONS: Array<{
+  id: CommandApprovalMode;
+  labelKey: string;
+  labelDefault: string;
+  descriptionKey: string;
+  descriptionDefault: string;
+}> = [
+  {
+    id: 'ask_all',
+    labelKey: 'input.commandApproval.askAll',
+    labelDefault: 'Ask',
+    descriptionKey: 'input.commandApproval.askAllDescription',
+    descriptionDefault: 'Confirm every command before it runs.',
+  },
+  {
+    id: 'auto_safe',
+    labelKey: 'input.commandApproval.autoSafe',
+    labelDefault: 'Safe',
+    descriptionKey: 'input.commandApproval.autoSafeDescription',
+    descriptionDefault: 'Run routine commands; confirm destructive or high-risk commands.',
+  },
+  {
+    id: 'full_access',
+    labelKey: 'input.commandApproval.fullAccess',
+    labelDefault: 'Full',
+    descriptionKey: 'input.commandApproval.fullAccessDescription',
+    descriptionDefault: 'Allow commands without confirmation.',
+  },
+];
 type ChatInputTarget = 'main' | 'btw';
 type PendingLargePasteMap = Record<string, string>;
 
@@ -205,6 +239,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [savedDraft, setSavedDraft] = useState('');
   const [inputTarget, setInputTarget] = useState<ChatInputTarget>('main');
+  const [commandApprovalMode, setCommandApprovalMode] = useState<CommandApprovalMode>('auto_safe');
+  const [commandApprovalOpen, setCommandApprovalOpen] = useState(false);
   const { addMessage: addToHistory, getSessionHistory } = useInputHistoryStore();
   
   const contexts = useContextStore(state => state.contexts);
@@ -220,6 +256,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   const activeSessionState = useActiveSessionState();
   const activeBtwSessionTab = useAgentCanvasStore(state => selectActiveBtwSessionTab(state as any));
   const [flowChatState, setFlowChatState] = useState<FlowChatState>(() => FlowChatStore.getInstance().getState());
+  const { handleToolConfirm } = useFlowChatToolActions();
   const currentSessionId = activeSessionState.sessionId;
   const currentSession = currentSessionId ? flowChatState.sessions.get(currentSessionId) : undefined;
   const activeBtwSessionData = activeBtwSessionTab?.content.data as
@@ -233,12 +270,79 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   const effectiveTargetSession = effectiveTargetSessionId
     ? flowChatState.sessions.get(effectiveTargetSessionId)
     : undefined;
+  const pendingConfirmationTool = useMemo<FlowToolItem | null>(() => {
+    if (!effectiveTargetSession) {
+      return null;
+    }
+
+    for (let turnIndex = effectiveTargetSession.dialogTurns.length - 1; turnIndex >= 0; turnIndex -= 1) {
+      const turn = effectiveTargetSession.dialogTurns[turnIndex];
+      for (let roundIndex = turn.modelRounds.length - 1; roundIndex >= 0; roundIndex -= 1) {
+        const round = turn.modelRounds[roundIndex];
+        for (let itemIndex = round.items.length - 1; itemIndex >= 0; itemIndex -= 1) {
+          const item = round.items[itemIndex];
+          if (item.type === 'tool' && item.status === 'pending_confirmation') {
+            return item as FlowToolItem;
+          }
+        }
+      }
+    }
+
+    return null;
+  }, [effectiveTargetSession]);
   const isBtwSession = resolveSessionRelationship(effectiveTargetSession).isBtw;
   const showTargetSwitcher = !!activeBtwSessionId;
   const currentSessionTitle = currentSession?.title?.trim() || t('session.untitled');
   const activeBtwSessionTitle = activeBtwSessionId
     ? flowChatState.sessions.get(activeBtwSessionId)?.title?.trim() || t('btw.threadLabel')
     : '';
+  const currentApprovalOption =
+    COMMAND_APPROVAL_OPTIONS.find(option => option.id === commandApprovalMode) ||
+    COMMAND_APPROVAL_OPTIONS[1];
+
+  useEffect(() => {
+    let disposed = false;
+
+    const loadApprovalMode = async () => {
+      try {
+        const mode = await configManager.getConfig<CommandApprovalMode>('ai.command_approval_mode');
+        if (!disposed && ['ask_all', 'auto_safe', 'full_access'].includes(mode)) {
+          setCommandApprovalMode(mode);
+        }
+      } catch (error) {
+        log.warn('Failed to load command approval mode', error);
+      }
+    };
+
+    void loadApprovalMode();
+    const unwatch = configManager.watch('ai.command_approval_mode', () => {
+      void loadApprovalMode();
+    });
+
+    return () => {
+      disposed = true;
+      unwatch();
+    };
+  }, []);
+
+  const handleCommandApprovalModeChange = useCallback(async (mode: CommandApprovalMode) => {
+    setCommandApprovalMode(mode);
+    setCommandApprovalOpen(false);
+
+    try {
+      await configManager.setConfig('ai.command_approval_mode', mode);
+      await configManager.setConfig('ai.skip_tool_confirmation', mode !== 'ask_all');
+      if (mode === 'full_access' && pendingConfirmationTool) {
+        await handleToolConfirm(
+          pendingConfirmationTool.id,
+          pendingConfirmationTool.toolCall?.input,
+        );
+      }
+    } catch (error) {
+      log.error('Failed to save command approval mode', error);
+      notificationService.error(t('input.commandApprovalSaveFailed', { defaultValue: 'Failed to save command approval mode.' }));
+    }
+  }, [handleToolConfirm, pendingConfirmationTool, t]);
   
   // Memoize history so keyboard handlers don't see a fresh [] on every render.
   const inputHistory = useMemo(
@@ -1510,6 +1614,32 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     t,
     resolveTypedMcpPromptCommand,
   ]);
+
+  const focusPendingConfirmationTool = useCallback(() => {
+    const toolId = pendingConfirmationTool?.id;
+    if (!toolId) {
+      notificationService.info(
+        t('input.noPendingToolConfirmation', { defaultValue: 'No pending tool confirmation found.' })
+      );
+      return;
+    }
+
+    const card = document.querySelector<HTMLElement>(`[data-tool-card-id="${CSS.escape(toolId)}"]`);
+    if (!card) {
+      notificationService.info(
+        t('input.pendingToolConfirmationHint', {
+          defaultValue: 'Review the pending tool card above to continue.',
+        })
+      );
+      return;
+    }
+
+    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    card.classList.add('openharness-tool-card-attention');
+    window.setTimeout(() => {
+      card.classList.remove('openharness-tool-card-attention');
+    }, 1400);
+  }, [pendingConfirmationTool?.id, t]);
   
   const getFilteredIncrementalModes = useCallback(() => {
     if (!canSwitchModes) return [];
@@ -2046,11 +2176,14 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         containerRef.current &&
         !containerRef.current.contains(target)
       ) {
+        setCommandApprovalOpen(false);
         // While IME is composing, React value can still be empty (RichTextInput skips onChange),
         // but the editor DOM holds preedit text — collapsing would show space-hint on top of it.
         if (inputState.value.trim() === '' && !isImeComposingRef.current) {
           dispatchInput({ type: 'DEACTIVATE' });
         }
+      } else if (containerRef.current && !containerRef.current.contains(target)) {
+        setCommandApprovalOpen(false);
       }
     };
     
@@ -2104,6 +2237,21 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     }
 
     const { sendButtonMode, hasQueuedInput } = derivedState;
+
+    if (sendButtonMode === 'confirm') {
+      return (
+        <IconButton
+          className="openharness-chat-input__send-button openharness-chat-input__send-button--confirm"
+          onClick={focusPendingConfirmationTool}
+          disabled={!pendingConfirmationTool}
+          data-testid="chat-input-confirm-tool-btn"
+          tooltip={t('input.reviewToolConfirmation', { defaultValue: 'Review tool confirmation' })}
+          size="small"
+        >
+          <ChevronRight size={11} />
+        </IconButton>
+      );
+    }
     
     if (sendButtonMode === 'cancel') {
       return (
@@ -2651,6 +2799,49 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                   currentMode={modeState.current}
                   sessionId={effectiveTargetSessionId || undefined}
                 />
+
+                <div className="openharness-chat-input__approval-mode" data-testid="chat-input-command-approval-mode">
+                  <Tooltip content={t(currentApprovalOption.descriptionKey, { defaultValue: currentApprovalOption.descriptionDefault })}>
+                    <button
+                      type="button"
+                      className={`openharness-chat-input__approval-mode-button openharness-chat-input__approval-mode-button--${commandApprovalMode}`}
+                      aria-haspopup="menu"
+                      aria-expanded={commandApprovalOpen}
+                      onClick={e => {
+                        e.stopPropagation();
+                        setCommandApprovalOpen(open => !open);
+                      }}
+                    >
+                      <ShieldCheck size={13} strokeWidth={2.15} />
+                      <span>{t(currentApprovalOption.labelKey, { defaultValue: currentApprovalOption.labelDefault })}</span>
+                    </button>
+                  </Tooltip>
+
+                  {commandApprovalOpen && (
+                    <div className="openharness-chat-input__approval-mode-menu" role="menu">
+                      {COMMAND_APPROVAL_OPTIONS.map(option => (
+                        <button
+                          key={option.id}
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={commandApprovalMode === option.id}
+                          className={`openharness-chat-input__approval-mode-option ${commandApprovalMode === option.id ? 'openharness-chat-input__approval-mode-option--active' : ''}`}
+                          onClick={e => {
+                            e.stopPropagation();
+                            void handleCommandApprovalModeChange(option.id);
+                          }}
+                        >
+                          <span className="openharness-chat-input__approval-mode-option-label">
+                            {t(option.labelKey, { defaultValue: option.labelDefault })}
+                          </span>
+                          <span className="openharness-chat-input__approval-mode-option-description">
+                            {t(option.descriptionKey, { defaultValue: option.descriptionDefault })}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 
                 {tokenUsage.current > 0 && (
                   <TokenUsageIndicator

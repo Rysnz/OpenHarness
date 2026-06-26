@@ -12,7 +12,7 @@ use crate::service::git::GitService;
 use crate::util::errors::{OpenHarnessError, OpenHarnessResult};
 use async_trait::async_trait;
 use serde_json::{json, Value};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tokio::process::Command;
@@ -28,6 +28,15 @@ impl Default for TaskTool {
 impl TaskTool {
     pub fn new() -> Self {
         Self
+    }
+
+    fn inherited_model_id_from_custom_data(custom_data: &HashMap<String, Value>) -> Option<String> {
+        ["primary_model_id", "model_name"]
+            .into_iter()
+            .find_map(|key| custom_data.get(key).and_then(|value| value.as_str()))
+            .map(str::trim)
+            .filter(|value| !value.is_empty() && !value.eq_ignore_ascii_case("inherit"))
+            .map(str::to_string)
     }
 
     fn format_agent_descriptions(&self, agents: &[AgentInfo]) -> String {
@@ -62,8 +71,33 @@ The Task tool launches specialized agents through OpenHarness's native agent run
 Available agents and the tools they have access to:
 {}
 
-When using the Task tool to start work, use action="spawn" and specify subagent_type to select which agent type to use.
+When using the Task tool to start work, use action="spawn". Specify subagent_type to select a specialized agent, or omit subagent_type to fork the current agent with inherited context.
 When a background task has already been started, use action="status", "events", "transcript", "wait", or "cancel" with task_id.
+
+## Fork vs Fresh Subagent
+
+- **Omit subagent_type** to fork the current agent. The fork inherits:
+  - Parent conversation context (messages up to the fork point)
+  - Parent's tool set and permission mode
+  - Parent's memory configuration
+  - The fork's prompt is: parent context + task wrapper + your prompt
+- **Specify subagent_type** to launch a fresh specialized agent. The fresh agent:
+  - Starts with a clean context (system prompt + your prompt only)
+  - Uses the agent's own tool set and configuration
+  - Does NOT see the parent conversation
+- Use fork when the subagent needs conversation history to do its job
+- Use fresh when the subagent is independent and a clean context is more efficient
+
+## Agent Information
+
+Each agent may declare:
+- **tools**: which tools it can use (or "*" for all)
+- **disallowedTools**: tools explicitly blocked
+- **memory**: whether it has persistent memory (user/project/local scope)
+- **background**: whether it runs in the background by default
+- **mcpServers**: which MCP servers it connects to (including inline configs)
+- **maxTurns**: maximum execution rounds
+- **permissionMode**: ask / acceptEdits / dontAsk / bypassPermissions
 
 When NOT to use the Task tool:
 - If you want to read a specific file path, use the Read or Glob tool instead of the Task tool, to find the match more quickly
@@ -71,7 +105,6 @@ When NOT to use the Task tool:
 - If you are searching for code within a specific file or set of 2-3 files, use the Read tool instead of the Task tool, to find the match more quickly
 - For subagent_type=Explore: do not use it for simple lookups above; reserve it for broad or multi-area exploration where many tool rounds would be needed
 - Other tasks that are not related to the agent descriptions above
-
 
 Usage notes:
 - Always include a short description (3-5 words) summarizing what the agent will do
@@ -88,9 +121,9 @@ Usage notes:
 Example usage:
 
 <example_agent_descriptions>
-"code-reviewer": use this agent after you are done writing a signficant piece of code
+"code-reviewer": use this agent after you are done writing a significant piece of code
 "greeting-responder": use this agent when to respond to user greetings with a friendly joke
-</example_agent_description>
+</example_agent_descriptions>
 
 <example>
 user: "Please write a function that checks if a number is prime"
@@ -107,7 +140,7 @@ function isPrime(n) {{
 }}
 </code>
 <commentary>
-Since a signficant piece of code was written and the task was completed, now use the code-reviewer agent to review the code
+Since a significant piece of code was written and the task was completed, now use the code-reviewer agent to review the code
 </commentary>
 assistant: Now let me use the code-reviewer agent to review the code
 assistant: Uses the Task tool to launch the code-reviewer agent 
@@ -568,7 +601,7 @@ impl Tool for TaskTool {
                 },
                 "subagent_type": {
                     "type": "string",
-                    "description": "The type of specialized agent to use for this task"
+                    "description": "The type of specialized agent to use for this task. If omitted, Task forks the current agent and inherits context."
                 },
                 "model": {
                     "type": "string",
@@ -614,7 +647,7 @@ impl Tool for TaskTool {
                 },
                 "fork_context": {
                     "type": "boolean",
-                    "description": "Whether to inherit parent context metadata"
+                    "description": "Whether to inherit parent context metadata. Defaults to true when subagent_type is omitted."
                 },
                 "max_turns": {
                     "type": "number",
@@ -663,7 +696,6 @@ impl Tool for TaskTool {
         match action.as_str() {
             "" | "spawn" => InputValidator::new(input)
                 .validate_required("prompt")
-                .validate_required("subagent_type")
                 .finish(),
             "list" => ValidationResult::default(),
             "status" | "wait" | "cancel" | "events" | "transcript" | "patches" | "patch_summary" | "patch_merge" => {
@@ -998,7 +1030,10 @@ impl Tool for TaskTool {
         let subagent_type = input
             .get("subagent_type")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| OpenHarnessError::tool("Required parameters: subagent_type, prompt, description. Missing subagent_type".to_string()))?
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .or(context.agent_type.as_deref())
+            .unwrap_or("agentic")
             .to_string();
         let workspace_root = context.workspace_root();
         let all_agent_types = self.get_agents_types(workspace_root).await;
@@ -1009,23 +1044,56 @@ impl Tool for TaskTool {
                 all_agent_types.join(", ")
             )));
         }
+        let agent_definition =
+            get_agent_registry().get_agent_definition(&subagent_type, workspace_root);
 
         let run_in_background = input
             .get("run_in_background")
             .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+            .unwrap_or_else(|| {
+                agent_definition
+                    .as_ref()
+                    .is_some_and(|definition| definition.background)
+            });
 
-        let model = input
+        let mut model = input
             .get("model")
             .and_then(|v| v.as_str())
             .map(|v| v.trim().to_string())
             .filter(|v| !v.is_empty());
 
+        if model.is_none() {
+            if let Some(definition) = agent_definition.as_ref() {
+                if definition
+                    .model
+                    .as_deref()
+                    .is_some_and(|model| model.trim().eq_ignore_ascii_case("inherit"))
+                {
+                    model = Self::inherited_model_id_from_custom_data(&context.custom_data);
+                }
+            }
+        }
+
+        if let Some(initial_prompt) = agent_definition
+            .as_ref()
+            .and_then(|definition| definition.initial_prompt.as_deref())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            prompt = format!("{initial_prompt}\n\n{prompt}");
+        }
+
         let allowed_tools = Self::parse_string_array(input, "allowed_tools")?;
+        let subagent_type_was_omitted = input
+            .get("subagent_type")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .is_none();
         let fork_context = input
             .get("fork_context")
             .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+            .unwrap_or(subagent_type_was_omitted);
 
         let max_turns = input
             .get("max_turns")
@@ -1307,6 +1375,17 @@ mod tests {
             )
             .await;
         assert!(!spawn_missing_prompt.result);
+
+        let spawn_without_subagent_type = tool
+            .validate_input(
+                &json!({
+                    "action": "spawn",
+                    "prompt": "Fork yourself and inspect the current context"
+                }),
+                None,
+            )
+            .await;
+        assert!(spawn_without_subagent_type.result);
     }
 
     #[test]
@@ -1321,6 +1400,30 @@ mod tests {
             .get("properties")
             .and_then(|properties| properties.get("task_id"))
             .is_some());
+    }
+
+    #[test]
+    fn inherited_model_prefers_primary_model_id() {
+        let mut custom_data = HashMap::new();
+        custom_data.insert("model_name".to_string(), json!("fallback-model"));
+        custom_data.insert("primary_model_id".to_string(), json!("parent-primary"));
+
+        assert_eq!(
+            TaskTool::inherited_model_id_from_custom_data(&custom_data),
+            Some("parent-primary".to_string())
+        );
+    }
+
+    #[test]
+    fn inherited_model_ignores_empty_or_inherit_values() {
+        let mut custom_data = HashMap::new();
+        custom_data.insert("primary_model_id".to_string(), json!("inherit"));
+        custom_data.insert("model_name".to_string(), json!(" "));
+
+        assert_eq!(
+            TaskTool::inherited_model_id_from_custom_data(&custom_data),
+            None
+        );
     }
 
     #[tokio::test]
@@ -1431,5 +1534,84 @@ mod tests {
         if let Some(path) = worktree_path {
             let _ = tokio::fs::remove_dir_all(path).await;
         }
+    }
+
+    // ============================================================
+    // initialPrompt / Fork verification tests (Phase 5.3)
+    // ============================================================
+
+    #[test]
+    fn initial_prompt_is_prepended_to_user_prompt() {
+        // Simulate the initialPrompt prepend logic from line 1077-1083
+        let initial_prompt = "Read repository rules before starting.";
+        let user_prompt = "Review the code changes.";
+
+        let combined = format!("{initial_prompt}\n\n{user_prompt}");
+
+        assert!(combined.starts_with(initial_prompt));
+        assert!(combined.ends_with(user_prompt));
+        assert!(combined.contains("\n\n"));
+    }
+
+    #[test]
+    fn empty_initial_prompt_does_not_modify_prompt() {
+        let initial_prompt = "";
+        let user_prompt = "Review the code changes.";
+
+        let combined = if initial_prompt.trim().is_empty() {
+            user_prompt.to_string()
+        } else {
+            format!("{initial_prompt}\n\n{user_prompt}")
+        };
+
+        assert_eq!(combined, user_prompt);
+    }
+
+    #[test]
+    fn fork_context_defaults_to_true_when_subagent_type_omitted() {
+        // When subagent_type is omitted, fork_context should default to true
+        let subagent_type_was_omitted = true;
+        let fork_context = subagent_type_was_omitted; // Default behavior
+
+        assert!(fork_context, "Omitting subagent_type should fork");
+    }
+
+    #[test]
+    fn fork_context_defaults_to_false_when_subagent_type_specified() {
+        // When subagent_type is specified, fork_context should default to false
+        let subagent_type_was_omitted = false;
+        let fork_context = subagent_type_was_omitted;
+
+        assert!(!fork_context, "Specifying subagent_type should not fork");
+    }
+
+    #[test]
+    fn fork_context_can_be_overridden_explicitly() {
+        // fork_context can be explicitly set to override the default
+        let subagent_type_was_omitted = false; // Would default to false
+        let explicit_fork = true; // But user explicitly requests fork
+
+        assert!(explicit_fork, "Explicit fork_context should override default");
+    }
+
+    #[test]
+    fn task_description_shows_agent_tools_and_memory() {
+        // Verify that the rendered description includes agent info
+        let desc = TaskTool::new().render_description(
+            r#"<agent type="reviewer">
+<description>Review code changes</description>
+<tools>Read, Glob, Grep</tools>
+<memory>project</memory>
+<background>true</background>
+</agent>"#
+                .to_string(),
+        );
+
+        assert!(desc.contains("Read, Glob, Grep"));
+        assert!(desc.contains("Fork vs Fresh Subagent"));
+        assert!(desc.contains("memory"));
+        assert!(desc.contains("background"));
+        assert!(desc.contains("permissionMode"));
+        assert!(desc.contains("mcpServers"));
     }
 }

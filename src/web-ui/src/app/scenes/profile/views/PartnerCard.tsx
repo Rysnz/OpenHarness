@@ -1,9 +1,10 @@
 import React from 'react';
-import { Bot, MessageSquarePlus, Trash2 } from 'lucide-react';
+import { MessageSquarePlus, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Badge, Tooltip } from '@/component-library';
 import type { WorkspaceInfo } from '@/shared/types';
 import { getCardGradient } from '@/shared/utils/cardGradients';
+import PartnerAvatar from './PartnerAvatar';
 
 interface PartnerCardProps {
   workspace: WorkspaceInfo;
@@ -19,7 +20,7 @@ const PartnerCard: React.FC<PartnerCardProps> = ({ workspace, onClick, onNewSess
   const identity = workspace.identity;
 
   const name = identity?.name?.trim() || workspace.name || t('nursery.card.unnamed');
-  const emoji = identity?.emoji?.trim() ?? '';
+  const avatarDataUrl = identity?.avatarDataUrl?.trim() ?? '';
   const creature = identity?.creature?.trim() || '';
   const vibe = identity?.vibe?.trim() || '';
   const modelPrimary = identity?.modelPrimary?.trim() || '';
@@ -49,13 +50,12 @@ const PartnerCard: React.FC<PartnerCardProps> = ({ workspace, onClick, onNewSess
     >
       {/* Header: avatar + name + badges */}
       <div className="partner-card__header">
-        <div className="partner-card__avatar">
-          {emoji ? (
-            <span className="partner-card__emoji">{emoji}</span>
-          ) : (
-            <Bot className="partner-card__avatar-icon" size={20} strokeWidth={1.6} aria-hidden />
-          )}
-        </div>
+        <PartnerAvatar
+          className="partner-card__avatar"
+          name={name}
+          imageSrc={avatarDataUrl}
+          size="md"
+        />
         <div className="partner-card__header-info">
           <div className="partner-card__title-row">
             <span className="partner-card__name">{name}</span>

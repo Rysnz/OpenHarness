@@ -1,6 +1,7 @@
 import {
   BarChart3,
   Boxes,
+  Brain,
   CircleUserRound,
   ExternalLink,
   FileCode2,
@@ -148,6 +149,15 @@ const SCENE_CATALOG: SceneCatalogItem[] = [
     label: 'Shell',
     labelKey: 'scenes.shell',
     Icon: Terminal,
+    pinned: false,
+    singleton: true,
+    defaultOpen: false,
+  },
+  {
+    id: 'memory',
+    label: 'Memory',
+    labelKey: 'scenes.memory',
+    Icon: Brain,
     pinned: false,
     singleton: true,
     defaultOpen: false,

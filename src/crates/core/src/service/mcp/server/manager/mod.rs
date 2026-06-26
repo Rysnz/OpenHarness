@@ -13,7 +13,7 @@ mod tests;
 mod tools;
 
 use super::connection::{MCPConnection, MCPConnectionEvent, MCPConnectionPool};
-use super::{MCPServerConfig, MCPServerRegistry, MCPServerStatus};
+use super::{MCPServerConfig, MCPServerRegistry, MCPServerStatus, MCPServerTransport, MCPServerType};
 use crate::infrastructure::events::event_system::{get_global_event_system, BackendEvent};
 use crate::service::mcp::adapter::MCPToolAdapter;
 use crate::service::mcp::auth::MCPRemoteOAuthSessionSnapshot;

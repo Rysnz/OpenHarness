@@ -5,7 +5,7 @@
  * Rules: full CRUD for user/project. Memory: user-level CRUD; project-level placeholder.
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Plus, Edit2, Trash2, X, Eye, EyeOff } from 'lucide-react';
 import { Select, Input, Textarea, Button, IconButton, Switch, Tooltip, Modal } from '@/component-library';
@@ -29,6 +29,7 @@ import {
   type AIMemory,
   type MemoryType
 } from '../../api/aiMemoryApi';
+import { memoryAPI, type MemoryStatsResponse } from '@/workbench/services/api/MemoryAPI';
 import { useNotification } from '@/shared/notification-system';
 import { i18nService } from '@/infrastructure/i18n';
 import { createLogger } from '@/shared/utils/logger';
@@ -331,6 +332,7 @@ function MemoryPanel() {
   const { t } = useTranslation('settings/ai-memory');
   const { t: tScope } = useTranslation('settings/ai-context');
   const { error: notifyError, success: notifySuccess } = useNotification();
+  const { workspacePath } = useCurrentWorkspace();
   const [expandedMemoryIds, setExpandedMemoryIds] = useState<Set<string>>(new Set());
   const [memories, setMemories] = useState<AIMemory[]>([]);
   const [loading, setLoading] = useState(true);
@@ -507,9 +509,7 @@ function MemoryPanel() {
           </TabPane>
           <TabPane tabKey="project" label={tScope('scope.project')}>
             {scopeTab === 'project' && (
-              <div className="openharness-collection-empty">
-                <p>{tScope('memoryProjectPlaceholder')}</p>
-              </div>
+              <ProjectMemoryPanel workspacePath={workspacePath} />
             )}
           </TabPane>
         </Tabs>
@@ -523,6 +523,64 @@ function MemoryPanel() {
           onSave={loadMemories}
         />
       )}
+    </div>
+  );
+}
+
+function ProjectMemoryPanel({ workspacePath }: { workspacePath?: string }) {
+  const { t } = useTranslation('settings/ai-context');
+  const [stats, setStats] = useState<MemoryStatsResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!workspacePath) return;
+    setLoading(true);
+    memoryAPI
+      .stats(workspacePath)
+      .then(setStats)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [workspacePath]);
+
+  if (loading) {
+    return <div className="openharness-collection-empty"><p>Loading...</p></div>;
+  }
+
+  if (!stats) {
+    return <div className="openharness-collection-empty"><p>{t('memoryProjectPlaceholder')}</p></div>;
+  }
+
+  const tiers = [
+    { label: 'Working', count: stats.workingCount, color: '#888' },
+    { label: 'Episodic', count: stats.episodicCount, color: '#4a9eff' },
+    { label: 'Semantic', count: stats.semanticCount, color: '#22c55e' },
+    { label: 'Procedural', count: stats.proceduralCount, color: '#f59e0b' },
+  ];
+  const total = tiers.reduce((s, t) => s + t.count, 0);
+
+  return (
+    <div style={{ padding: '16px 0' }}>
+      <div style={{ display: 'flex', gap: '24px', marginBottom: '16px' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '28px', fontWeight: 700, color: '#4a9eff' }}>{total}</div>
+          <div style={{ fontSize: '13px', color: '#888' }}>Total Memories</div>
+        </div>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '28px', fontWeight: 700, color: '#4a9eff' }}>{stats.sessionCount}</div>
+          <div style={{ fontSize: '13px', color: '#888' }}>Sessions</div>
+        </div>
+      </div>
+      {tiers.map((tier) => (
+        <div key={tier.label} style={{ marginBottom: '8px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '2px' }}>
+            <span style={{ color: tier.color }}>{tier.label}</span>
+            <span>{tier.count}</span>
+          </div>
+          <div style={{ height: '6px', borderRadius: '3px', background: '#222', overflow: 'hidden' }}>
+            <div style={{ width: total > 0 ? `${(tier.count / total) * 100}%` : '0%', height: '100%', borderRadius: '3px', background: tier.color }} />
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

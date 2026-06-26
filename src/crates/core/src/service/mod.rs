@@ -2,7 +2,7 @@
 //!
 //! Contains core business logic: Workspace, Config, FileSystem, Git, Agentic, AIRules, MCP.
 
-pub(crate) mod agent_memory; // Agent memory prompt helpers
+pub mod agent_memory; // Agent memory prompt helpers
 pub mod ai_memory; // AI memory point management
 pub mod ai_rules; // AI rules management
 pub mod announcement; // Announcement / feature-demo / tips system

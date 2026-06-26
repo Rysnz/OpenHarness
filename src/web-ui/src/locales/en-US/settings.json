@@ -1,5 +1,69 @@
 {
   "title": "Settings",
+  "agentPermissions": {
+    "title": "Agent permissions",
+    "subtitle": "Review tool approvals, rule matching, shell risk decisions, and the agent tool audit trail.",
+    "refresh": "Refresh",
+    "allTools": "Applies to all tool calls",
+    "unknownTime": "Unknown time",
+    "pending": {
+      "title": "Pending approvals",
+      "description": "Tool calls waiting for an explicit allow or deny decision.",
+      "empty": "No tool calls are waiting."
+    },
+    "rules": {
+      "title": "Rules",
+      "description": "Rules are matched before a tool runs. Deny rules win over ask and allow.",
+      "save": "Save rule",
+      "reset": "Reset",
+      "remove": "Remove",
+      "empty": "No permission rules are configured."
+    },
+    "audit": {
+      "title": "Audit trail",
+      "description": "Recent permission decisions, including rule hits, approvals, and shell risk checks.",
+      "empty": "No permission decisions recorded yet."
+    },
+    "decision": {
+      "ask": "Ask",
+      "allow": "Allow",
+      "deny": "Deny"
+    },
+    "risk": {
+      "low": "Low risk",
+      "medium": "Medium risk",
+      "high": "High risk"
+    },
+    "fields": {
+      "ruleId": "Rule ID",
+      "ruleIdDescription": "Use a stable ID to update the same rule later.",
+      "decision": "Decision",
+      "decisionDescription": "Choose the outcome when all filled matchers apply.",
+      "matchers": "Matchers",
+      "matchersDescription": "Fill one or more fields. Empty fields are ignored.",
+      "agent": "Agent",
+      "tool": "Tool",
+      "pathPrefix": "Path prefix",
+      "commandContains": "Command contains",
+      "mcpServer": "MCP server",
+      "reason": "Reason"
+    },
+    "approval": {
+      "approvedReason": "Approved from permission settings",
+      "deniedReason": "Denied from permission settings"
+    },
+    "notifications": {
+      "loadFailed": "Permission data unavailable",
+      "needMatcher": "Add a rule ID and at least one matcher before saving.",
+      "saved": "Permission rule saved.",
+      "saveFailed": "Rule save failed",
+      "removed": "Permission rule removed.",
+      "removeFailed": "Rule removal failed",
+      "approved": "Tool call approved.",
+      "denied": "Tool call denied.",
+      "approvalFailed": "Approval response failed"
+    }
+  },
   "configCenter": {
     "title": "Settings",
     "selectConfig": "Select Configuration",

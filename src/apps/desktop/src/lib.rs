@@ -737,6 +737,12 @@ pub async fn run() {
             api::announcement_api::never_show_announcement,
             api::announcement_api::trigger_announcement,
             api::announcement_api::get_announcement_tips,
+            // Memory Engine API
+            api::memory_api::memory_search,
+            api::memory_api::memory_save,
+            api::memory_api::memory_sessions,
+            api::memory_api::memory_stats,
+            api::memory_api::memory_delete,
         ])
         .run(tauri::generate_context!());
     if let Err(e) = run_result {

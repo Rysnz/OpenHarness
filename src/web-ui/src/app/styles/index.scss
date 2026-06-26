@@ -5,6 +5,7 @@
 /* ========== @use rules must come first ========== */
 @use './global.scss';
 @use '../layout/AppLayout.scss';
+@use './visual-refresh.scss';
 
 /* ========== Utility styles ========== */
 @import './utilities/animations.css';
@@ -19,4 +20,5 @@
 
 /* ========== Component styles ========== */
 @import './components/forms.css';
+
 

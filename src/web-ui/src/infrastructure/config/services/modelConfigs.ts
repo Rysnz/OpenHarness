@@ -58,14 +58,20 @@ export function getModelDisplayName(config: ProviderConfigLike): string {
 }
 
 export const PROVIDER_TEMPLATES: Record<string, ProviderTemplate> = {
-  openopenharness: {
-    id: 'openopenharness',
-    name: t('settings/ai-model:providers.openopenharness.name'),
-    baseUrl: 'https://api.openopenharness.com',
-    format: 'anthropic',
-    models: [],
+  xiaomi: {
+    id: 'xiaomi',
+    name: t('settings/ai-model:providers.xiaomi.name'),
+    baseUrl: 'https://api.xiaomimimo.com/v1',
+    format: 'openai',
+    models: ['mimo-v2.5-pro', 'mimo-v2.5', 'mimo-v2.5-flash'],
     requiresApiKey: true,
-    description: t('settings/ai-model:providers.openopenharness.description')
+    description: t('settings/ai-model:providers.xiaomi.description'),
+    helpUrl: 'https://platform.xiaomimimo.com/',
+    baseUrlOptions: [
+      { url: 'https://api.xiaomimimo.com/v1', format: 'openai', note: 'default' },
+      { url: 'https://token-plan-cn.xiaomimimo.com/v1', format: 'openai', note: 'tokenPlanOpenai' },
+      { url: 'https://token-plan-cn.xiaomimimo.com/anthropic', format: 'anthropic', note: 'tokenPlanAnthropic' },
+    ]
   },
 
   gemini: {
@@ -73,7 +79,7 @@ export const PROVIDER_TEMPLATES: Record<string, ProviderTemplate> = {
     name: t('settings/ai-model:providers.gemini.name'),
     baseUrl: 'https://generativelanguage.googleapis.com',
     format: 'gemini',
-    models: ['gemini-3.1-pro-preview', 'gemini-3.1-flash-lite-preview'],
+    models: ['gemini-3.1-pro-preview', 'gemini-3-flash-preview', 'gemini-3.1-flash-lite-preview'],
     requiresApiKey: true,
     description: t('settings/ai-model:providers.gemini.description'),
     helpUrl: 'https://aistudio.google.com/app/apikey'
@@ -84,7 +90,7 @@ export const PROVIDER_TEMPLATES: Record<string, ProviderTemplate> = {
     name: t('settings/ai-model:providers.anthropic.name'),
     baseUrl: 'https://api.anthropic.com',
     format: 'anthropic',
-    models: ['claude-opus-4-6', 'claude-sonnet-4-6'],
+    models: ['claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5'],
     requiresApiKey: true,
     description: t('settings/ai-model:providers.anthropic.description'),
     helpUrl: 'https://console.anthropic.com/'
@@ -95,7 +101,7 @@ export const PROVIDER_TEMPLATES: Record<string, ProviderTemplate> = {
     name: t('settings/ai-model:providers.minimax.name'),
     baseUrl: 'https://api.minimaxi.com/anthropic',
     format: 'anthropic',
-    models: ['MiniMax-M2.7-highspeed', 'MiniMax-M2.5-highspeed'],
+    models: ['MiniMax-M2.7', 'MiniMax-M2.7-highspeed', 'MiniMax-M2.5'],
     requiresApiKey: true,
     description: t('settings/ai-model:providers.minimax.description'),
     helpUrl: 'https://platform.minimax.io/',
@@ -110,7 +116,7 @@ export const PROVIDER_TEMPLATES: Record<string, ProviderTemplate> = {
     name: t('settings/ai-model:providers.moonshot.name'),
     baseUrl: 'https://api.moonshot.cn/v1',
     format: 'openai',
-    models: ['kimi-k2.5', 'kimi-k2', 'kimi-k2-thinking'],
+    models: ['kimi-k2.6', 'kimi-k2.5', 'kimi-k2-thinking'],
     requiresApiKey: true,
     description: t('settings/ai-model:providers.moonshot.description'),
     helpUrl: 'https://platform.moonshot.ai/console'
@@ -119,9 +125,9 @@ export const PROVIDER_TEMPLATES: Record<string, ProviderTemplate> = {
   deepseek: {
     id: 'deepseek',
     name: t('settings/ai-model:providers.deepseek.name'),
-    baseUrl: 'https://api.deepseek.com/v1',
+    baseUrl: 'https://api.deepseek.com',
     format: 'openai',
-    models: ['deepseek-chat', 'deepseek-reasoner'],
+    models: ['deepseek-v4-pro', 'deepseek-v4-flash'],
     requiresApiKey: true,
     description: t('settings/ai-model:providers.deepseek.description'),
     helpUrl: 'https://platform.deepseek.com/api_keys'
@@ -148,7 +154,7 @@ export const PROVIDER_TEMPLATES: Record<string, ProviderTemplate> = {
     name: t('settings/ai-model:providers.qwen.name'),
     baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
     format: 'openai',
-    models: ['Qwen3.5-Plus', 'Qwen3.5-Flash'],
+    models: ['qwen3-max', 'qwen3.6-plus', 'qwen3.6-flash'],
     requiresApiKey: true,
     description: t('settings/ai-model:providers.qwen.description'),
     helpUrl: 'https://dashscope.console.aliyun.com/apiKey',
@@ -164,7 +170,7 @@ export const PROVIDER_TEMPLATES: Record<string, ProviderTemplate> = {
     name: t('settings/ai-model:providers.volcengine.name'),
     baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
     format: 'openai',
-    models: ['doubao-seed-2-0-code-preview-260215', 'doubao-seed-2-0-pro-260215'],
+    models: ['doubao-seed-2-0-pro-260215', 'doubao-seed-2-0-lite-260215', 'doubao-seed-2-0-code-preview-260215'],
     requiresApiKey: true,
     description: t('settings/ai-model:providers.volcengine.description'),
     helpUrl: 'https://console.volcengine.com/ark/'

@@ -43,7 +43,9 @@ impl PermissionMode {
 pub enum AgentPermissionMode {
     Default,
     Ask,
+    AllowSafe,
     Allow,
+    FullAccess,
     Deny,
 }
 
@@ -58,8 +60,13 @@ impl AgentPermissionMode {
     pub fn from_string(s: &str) -> Option<Self> {
         match s.trim().to_lowercase().as_str() {
             "" | "default" => Some(Self::Default),
-            "ask" | "ask_before_run" => Some(Self::Ask),
+            "ask" | "ask_before_run" | "plan" => Some(Self::Ask),
+            "allow_safe" | "autosafe" | "auto_safe" | "safe" | "acceptedits" | "accept_edits" => {
+                Some(Self::AllowSafe)
+            }
             "allow" | "allow_all" | "always_allow" => Some(Self::Allow),
+            "full_access" | "fullaccess" | "unrestricted" | "dontask" | "dont_ask"
+            | "bypasspermissions" | "bypass_permissions" => Some(Self::FullAccess),
             "deny" | "deny_all" | "always_deny" => Some(Self::Deny),
             _ => None,
         }
@@ -69,7 +76,9 @@ impl AgentPermissionMode {
         match self {
             Self::Default => "default",
             Self::Ask => "ask",
+            Self::AllowSafe => "allow_safe",
             Self::Allow => "allow",
+            Self::FullAccess => "full_access",
             Self::Deny => "deny",
         }
     }
@@ -539,9 +548,13 @@ impl PermissionEngine {
         match mode_override.unwrap_or_default() {
             AgentPermissionMode::Default => global_evaluation,
             AgentPermissionMode::Ask => apply_agent_ask(global_evaluation, base_effective_decision),
+            AgentPermissionMode::AllowSafe => {
+                apply_agent_allow_safe(global_evaluation, base_effective_decision, tool_name)
+            }
             AgentPermissionMode::Allow => {
                 apply_agent_allow(global_evaluation, base_effective_decision)
             }
+            AgentPermissionMode::FullAccess => apply_agent_full_access(global_evaluation),
             AgentPermissionMode::Deny => apply_agent_deny(global_evaluation),
         }
     }
@@ -579,6 +592,35 @@ fn apply_agent_allow(
     }
 }
 
+fn apply_agent_allow_safe(
+    evaluation: PermissionEvaluation,
+    base_effective_decision: PermissionDecision,
+    tool_name: &str,
+) -> PermissionEvaluation {
+    if matches!(base_effective_decision, PermissionDecision::Deny)
+        || is_destructive_tool_name(tool_name)
+        || evaluation.reason.contains("Shell command high risk")
+        || matches!(evaluation.risk_level, PermissionRiskLevel::High)
+            && matches!(evaluation.action, PermissionAction::Worktree)
+    {
+        return evaluation;
+    }
+
+    PermissionEvaluation {
+        effective_decision: PermissionDecision::Allow,
+        reason: format!("{} (approval mode=auto_safe)", evaluation.reason),
+        ..evaluation
+    }
+}
+
+fn apply_agent_full_access(evaluation: PermissionEvaluation) -> PermissionEvaluation {
+    PermissionEvaluation {
+        effective_decision: PermissionDecision::Allow,
+        reason: format!("{} (approval mode=full_access)", evaluation.reason),
+        ..evaluation
+    }
+}
+
 fn apply_agent_deny(evaluation: PermissionEvaluation) -> PermissionEvaluation {
     if matches!(evaluation.action, PermissionAction::Read) {
         return evaluation;
@@ -590,6 +632,13 @@ fn apply_agent_deny(evaluation: PermissionEvaluation) -> PermissionEvaluation {
         reason: format!("{} (agent permission mode=deny)", evaluation.reason),
         ..evaluation
     }
+}
+
+fn is_destructive_tool_name(tool_name: &str) -> bool {
+    matches!(
+        tool_name.trim().to_ascii_lowercase().as_str(),
+        "delete" | "delete_file" | "remove" | "remove_file" | "rm"
+    )
 }
 
 fn default_evaluation(
@@ -814,6 +863,30 @@ mod tests {
             Some(AgentPermissionMode::Allow)
         );
         assert_eq!(
+            AgentPermissionMode::from_string("auto_safe"),
+            Some(AgentPermissionMode::AllowSafe)
+        );
+        assert_eq!(
+            AgentPermissionMode::from_string("full_access"),
+            Some(AgentPermissionMode::FullAccess)
+        );
+        assert_eq!(
+            AgentPermissionMode::from_string("acceptEdits"),
+            Some(AgentPermissionMode::AllowSafe)
+        );
+        assert_eq!(
+            AgentPermissionMode::from_string("dontAsk"),
+            Some(AgentPermissionMode::FullAccess)
+        );
+        assert_eq!(
+            AgentPermissionMode::from_string("bypassPermissions"),
+            Some(AgentPermissionMode::FullAccess)
+        );
+        assert_eq!(
+            AgentPermissionMode::from_string("plan"),
+            Some(AgentPermissionMode::Ask)
+        );
+        assert_eq!(
             AgentPermissionMode::from_string("deny"),
             Some(AgentPermissionMode::Deny)
         );
@@ -839,6 +912,43 @@ mod tests {
         assert_eq!(evaluation.decision, PermissionDecision::Ask);
         assert_eq!(evaluation.effective_decision, PermissionDecision::Allow);
         assert_eq!(engine.mode().await, PermissionMode::Enforce);
+    }
+
+    #[tokio::test]
+    async fn agent_auto_safe_keeps_delete_style_tools_approval_gated() {
+        let engine = PermissionEngine::default();
+
+        let evaluation = engine
+            .evaluate(
+                "Delete",
+                &serde_json::json!({"file_path":"a.txt"}),
+                true,
+                Some(AgentPermissionMode::AllowSafe),
+            )
+            .await;
+
+        assert_eq!(evaluation.action, PermissionAction::Write);
+        assert_eq!(evaluation.effective_decision, PermissionDecision::Ask);
+    }
+
+    #[tokio::test]
+    async fn agent_full_access_allows_high_risk_shell_commands() {
+        let engine = PermissionEngine::default();
+        engine
+            .set_shell_analyzer(crate::agentic::security::shell::ShellRiskAnalyzer::new())
+            .await;
+
+        let evaluation = engine
+            .evaluate(
+                "Bash",
+                &serde_json::json!({"command":"rm -rf ./target/tmp"}),
+                true,
+                Some(AgentPermissionMode::FullAccess),
+            )
+            .await;
+
+        assert_eq!(evaluation.action, PermissionAction::Shell);
+        assert_eq!(evaluation.effective_decision, PermissionDecision::Allow);
     }
 
     #[tokio::test]
@@ -1038,5 +1148,256 @@ mod tests {
         let removed = queue.remove_by_tool_call("tool-1").await;
         assert!(removed.is_some());
         assert_eq!(queue.list_pending().await.len(), 0);
+    }
+
+    // ============================================================
+    // End-to-end permission mode tests (Phase 5 hardening)
+    // ============================================================
+
+    #[tokio::test]
+    async fn ask_mode_bash_requires_approval() {
+        let engine = PermissionEngine::default();
+        let eval = engine
+            .evaluate(
+                "Bash",
+                &serde_json::json!({"command": "echo hello"}),
+                true,
+                Some(AgentPermissionMode::Ask),
+            )
+            .await;
+        assert_eq!(eval.effective_decision, PermissionDecision::Ask);
+    }
+
+    #[tokio::test]
+    async fn ask_mode_write_requires_approval() {
+        let engine = PermissionEngine::default();
+        let eval = engine
+            .evaluate(
+                "Write",
+                &serde_json::json!({"file_path": "a.txt", "content": "hello"}),
+                true,
+                Some(AgentPermissionMode::Ask),
+            )
+            .await;
+        assert_eq!(eval.effective_decision, PermissionDecision::Ask);
+    }
+
+    #[tokio::test]
+    async fn ask_mode_edit_requires_approval() {
+        let engine = PermissionEngine::default();
+        let eval = engine
+            .evaluate(
+                "Edit",
+                &serde_json::json!({"file_path": "a.txt", "old_string": "a", "new_string": "b"}),
+                true,
+                Some(AgentPermissionMode::Ask),
+            )
+            .await;
+        assert_eq!(eval.effective_decision, PermissionDecision::Ask);
+    }
+
+    #[tokio::test]
+    async fn ask_mode_read_is_allowed() {
+        let engine = PermissionEngine::default();
+        let eval = engine
+            .evaluate(
+                "Read",
+                &serde_json::json!({"file_path": "a.txt"}),
+                false,
+                Some(AgentPermissionMode::Ask),
+            )
+            .await;
+        assert_eq!(eval.effective_decision, PermissionDecision::Allow);
+    }
+
+    #[tokio::test]
+    async fn accept_edits_mode_allows_write() {
+        let engine = PermissionEngine::default();
+        let eval = engine
+            .evaluate(
+                "Write",
+                &serde_json::json!({"file_path": "a.txt", "content": "hello"}),
+                true,
+                Some(AgentPermissionMode::AllowSafe),
+            )
+            .await;
+        assert_eq!(eval.effective_decision, PermissionDecision::Allow);
+    }
+
+    #[tokio::test]
+    async fn accept_edits_mode_allows_edit() {
+        let engine = PermissionEngine::default();
+        let eval = engine
+            .evaluate(
+                "Edit",
+                &serde_json::json!({"file_path": "a.txt", "old_string": "a", "new_string": "b"}),
+                true,
+                Some(AgentPermissionMode::AllowSafe),
+            )
+            .await;
+        assert_eq!(eval.effective_decision, PermissionDecision::Allow);
+    }
+
+    #[tokio::test]
+    async fn accept_edits_mode_blocks_delete() {
+        let engine = PermissionEngine::default();
+        let eval = engine
+            .evaluate(
+                "Delete",
+                &serde_json::json!({"file_path": "a.txt"}),
+                true,
+                Some(AgentPermissionMode::AllowSafe),
+            )
+            .await;
+        assert_eq!(eval.effective_decision, PermissionDecision::Ask);
+    }
+
+    #[tokio::test]
+    async fn accept_edits_mode_blocks_high_risk_shell() {
+        let engine = PermissionEngine::default();
+        let eval = engine
+            .evaluate(
+                "Bash",
+                &serde_json::json!({"command": "rm -rf ./target"}),
+                true,
+                Some(AgentPermissionMode::AllowSafe),
+            )
+            .await;
+        assert_eq!(eval.effective_decision, PermissionDecision::Ask);
+    }
+
+    #[tokio::test]
+    async fn accept_edits_mode_allows_safe_bash() {
+        let engine = PermissionEngine::default();
+        let eval = engine
+            .evaluate(
+                "Bash",
+                &serde_json::json!({"command": "echo hello"}),
+                true,
+                Some(AgentPermissionMode::AllowSafe),
+            )
+            .await;
+        assert_eq!(eval.effective_decision, PermissionDecision::Allow);
+    }
+
+    #[tokio::test]
+    async fn dont_ask_mode_allows_everything() {
+        let engine = PermissionEngine::default();
+        // Use safe commands — shell risk analyzer blocks truly dangerous commands
+        // even in FullAccess mode (which is correct behavior)
+        for (tool, input) in [
+            ("Bash", serde_json::json!({"command": "echo hello"})),
+            ("Write", serde_json::json!({"file_path": "a.txt", "content": "hello"})),
+            ("Edit", serde_json::json!({"file_path": "a.txt", "old_string": "a", "new_string": "b"})),
+            ("Delete", serde_json::json!({"file_path": "a.txt"})),
+        ] {
+            let eval = engine
+                .evaluate(
+                    tool,
+                    &input,
+                    true,
+                    Some(AgentPermissionMode::FullAccess),
+                )
+                .await;
+            assert_eq!(
+                eval.effective_decision,
+                PermissionDecision::Allow,
+                "FullAccess should allow {}",
+                tool
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn deny_mode_blocks_all_non_read_tools() {
+        let engine = PermissionEngine::default();
+        for tool in &["Bash", "Write", "Edit", "Delete"] {
+            let eval = engine
+                .evaluate(
+                    tool,
+                    &serde_json::json!({"command": "echo hi", "file_path": "a.txt"}),
+                    true,
+                    Some(AgentPermissionMode::Deny),
+                )
+                .await;
+            assert_eq!(
+                eval.effective_decision,
+                PermissionDecision::Deny,
+                "Deny should block {}",
+                tool
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn deny_mode_allows_read() {
+        let engine = PermissionEngine::default();
+        let eval = engine
+            .evaluate(
+                "Read",
+                &serde_json::json!({"file_path": "a.txt"}),
+                false,
+                Some(AgentPermissionMode::Deny),
+            )
+            .await;
+        assert_eq!(eval.effective_decision, PermissionDecision::Allow);
+    }
+
+    #[tokio::test]
+    async fn deny_rule_overrides_allow_safe() {
+        let engine = PermissionEngine::default();
+        let mut rule = PermissionRule::new("block-secret-write", PermissionDecision::Deny);
+        rule.tool_name = Some("Write".to_string());
+        rule.path_prefix = Some("/etc/".to_string());
+        rule.reason = "Block writes to /etc".to_string();
+        engine.upsert_rule(rule).await;
+
+        let eval = engine
+            .evaluate(
+                "Write",
+                &serde_json::json!({
+                    "file_path": "/etc/passwd",
+                    "_permission_context": {"agent_type": "agentic"}
+                }),
+                true,
+                Some(AgentPermissionMode::AllowSafe),
+            )
+            .await;
+        assert_eq!(eval.effective_decision, PermissionDecision::Deny);
+        assert!(eval.reason.contains("block-secret-write"));
+    }
+
+    #[tokio::test]
+    async fn global_off_mode_is_overridden_by_agent_ask() {
+        let engine = PermissionEngine::default();
+        engine.set_mode(PermissionMode::Off).await;
+
+        // Agent Ask mode takes precedence over global Off mode
+        let eval = engine
+            .evaluate(
+                "Write",
+                &serde_json::json!({"file_path": "a.txt"}),
+                true,
+                Some(AgentPermissionMode::Ask),
+            )
+            .await;
+        // Agent mode is applied AFTER global mode, so Ask wins
+        assert_eq!(eval.effective_decision, PermissionDecision::Ask);
+    }
+
+    #[tokio::test]
+    async fn global_off_mode_allows_when_no_agent_override() {
+        let engine = PermissionEngine::default();
+        engine.set_mode(PermissionMode::Off).await;
+
+        let eval = engine
+            .evaluate(
+                "Write",
+                &serde_json::json!({"file_path": "a.txt"}),
+                true,
+                None,
+            )
+            .await;
+        assert_eq!(eval.effective_decision, PermissionDecision::Allow);
     }
 }

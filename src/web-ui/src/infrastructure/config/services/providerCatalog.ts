@@ -6,8 +6,13 @@ export interface ProviderUrlCatalogItem {
 
 export const PROVIDER_URL_CATALOG: ProviderUrlCatalogItem[] = [
   {
-    id: 'openopenharness',
-    baseUrl: 'https://api.openopenharness.com',
+    id: 'xiaomi',
+    baseUrl: 'https://api.xiaomimimo.com/v1',
+    baseUrlOptions: [
+      'https://api.xiaomimimo.com/v1',
+      'https://token-plan-cn.xiaomimimo.com/v1',
+      'https://token-plan-cn.xiaomimimo.com/anthropic',
+    ],
   },
   {
     id: 'gemini',
@@ -31,7 +36,11 @@ export const PROVIDER_URL_CATALOG: ProviderUrlCatalogItem[] = [
   },
   {
     id: 'deepseek',
-    baseUrl: 'https://api.deepseek.com/v1',
+    baseUrl: 'https://api.deepseek.com',
+    baseUrlOptions: [
+      'https://api.deepseek.com',
+      'https://api.deepseek.com/v1',
+    ],
   },
   {
     id: 'zhipu',

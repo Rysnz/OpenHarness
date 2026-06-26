@@ -560,4 +560,236 @@ impl MCPServerManager {
         info!("All MCP servers shut down");
         Ok(())
     }
+
+    /// Connect an inline (transient) MCP server from agent frontmatter.
+    /// Does NOT persist the config to the config store.
+    /// The server is registered in-memory and started immediately.
+    /// Returns Ok(()) if the server was connected, or if it was already connected.
+    pub async fn connect_transient(
+        &self,
+        server_id: &str,
+        raw_config: &serde_json::Value,
+    ) -> OpenHarnessResult<()> {
+        // Check if already connected
+        if let Ok(status) = self.get_server_status(server_id).await {
+            if matches!(
+                status,
+                MCPServerStatus::Connected | MCPServerStatus::Healthy
+            ) {
+                debug!(
+                    "Transient MCP server already connected: id={}",
+                    server_id
+                );
+                return Ok(());
+            }
+        }
+
+        // Parse the inline config into MCPServerConfig
+        let config = Self::parse_inline_config(server_id, raw_config)?;
+
+        // Register in-memory (no config persistence)
+        self.registry.register(&config).await?;
+
+        // Start the server directly (bypass config_service lookup)
+        let process = self.registry.get_process(server_id).await.ok_or_else(|| {
+            OpenHarnessError::NotFound(format!("Transient MCP server not registered: {}", server_id))
+        })?;
+
+        let mut proc = process.write().await;
+
+        match config.server_type {
+            MCPServerType::Local => {
+                let command = config.command.as_ref().ok_or_else(|| {
+                    OpenHarnessError::Configuration(
+                        "Missing command for local MCP server".to_string(),
+                    )
+                })?;
+
+                let runtime_manager = RuntimeManager::new()?;
+                let resolved = runtime_manager.resolve_command(command).ok_or_else(|| {
+                    OpenHarnessError::ProcessError(format!(
+                        "MCP server command '{}' not found",
+                        command
+                    ))
+                })?;
+
+                info!(
+                    "Starting transient local MCP server: command={} id={}",
+                    resolved.command, server_id
+                );
+
+                proc.start(&resolved.command, &config.args, &config.env)
+                    .await
+                    .map_err(|e| {
+                        error!(
+                            "Failed to start transient MCP server: id={} error={}",
+                            server_id, e
+                        );
+                        e
+                    })?;
+            }
+            MCPServerType::Remote => {
+                let url = config.url.as_ref().ok_or_else(|| {
+                    OpenHarnessError::Configuration("Missing URL for remote MCP server".to_string())
+                })?;
+
+                info!(
+                    "Connecting transient remote MCP server: url={} id={}",
+                    url, server_id
+                );
+
+                proc.start_remote(&config).await.map_err(|e| {
+                    error!(
+                        "Failed to connect transient remote MCP server: id={} error={}",
+                        server_id, e
+                    );
+                    e
+                })?;
+            }
+        }
+
+        if let Some(connection) = proc.connection() {
+            self.connection_pool
+                .add_connection(server_id.to_string(), connection.clone())
+                .await;
+
+            match Self::register_mcp_tools(server_id, &config.name, connection.clone()).await {
+                Ok(count) => {
+                    info!(
+                        "Registered {} MCP tools for transient server: id={}",
+                        count, server_id
+                    );
+                }
+                Err(e) => {
+                    warn!(
+                        "Failed to register MCP tools for transient server: id={} error={}",
+                        server_id, e
+                    );
+                }
+            }
+        }
+
+        drop(proc);
+        info!("Transient MCP server connected: id={}", server_id);
+        Ok(())
+    }
+
+    /// Disconnect a transient MCP server.
+    /// Stops the server and unregisters from the registry.
+    /// Does NOT attempt to delete from the config store.
+    pub async fn disconnect_transient(&self, server_id: &str) {
+        self.stop_connection_event_listener(server_id).await;
+
+        match self.registry.unregister(server_id).await {
+            Ok(_) => {
+                info!("Transient MCP server disconnected: id={}", server_id);
+            }
+            Err(e) => {
+                debug!(
+                    "Transient MCP server was not running during disconnect: id={} error={}",
+                    server_id, e
+                );
+            }
+        }
+
+        self.clear_reconnect_state(server_id).await;
+        self.resource_catalog_cache.write().await.remove(server_id);
+        self.prompt_catalog_cache.write().await.remove(server_id);
+    }
+
+    /// Parse a raw JSON/YAML value into an MCPServerConfig.
+    /// Supports both stdio (local) and remote server formats.
+    fn parse_inline_config(
+        server_id: &str,
+        raw: &serde_json::Value,
+    ) -> OpenHarnessResult<MCPServerConfig> {
+        // Try to deserialize as full MCPServerConfig first
+        if let Ok(mut config) = serde_json::from_value::<MCPServerConfig>(raw.clone()) {
+            // Ensure the id is set
+            if config.id.is_empty() {
+                config.id = server_id.to_string();
+            }
+            if config.name.is_empty() {
+                config.name = server_id.to_string();
+            }
+            config.validate()?;
+            return Ok(config);
+        }
+
+        // Fallback: parse as a minimal stdio config
+        // Support Cursor-style format: { "type": "stdio", "command": "...", "args": [...], "env": {...} }
+        let command = raw
+            .get("command")
+            .and_then(|v| v.as_str())
+            .map(str::to_string);
+
+        let url = raw.get("url").and_then(|v| v.as_str()).map(str::to_string);
+
+        let args: Vec<String> = raw
+            .get("args")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let env: std::collections::HashMap<String, String> = raw
+            .get("env")
+            .and_then(|v| v.as_object())
+            .map(|obj| {
+                obj.iter()
+                    .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let headers: std::collections::HashMap<String, String> = raw
+            .get("headers")
+            .and_then(|v| v.as_object())
+            .map(|obj| {
+                obj.iter()
+                    .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let server_type_str = raw
+            .get("type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("stdio");
+
+        let (server_type, transport) = match server_type_str {
+            "stdio" => (MCPServerType::Local, Some(MCPServerTransport::Stdio)),
+            "streamable-http" | "streamable_http" | "http" => (
+                MCPServerType::Remote,
+                Some(MCPServerTransport::StreamableHttp),
+            ),
+            "sse" => (MCPServerType::Remote, Some(MCPServerTransport::Sse)),
+            _ => (MCPServerType::Local, Some(MCPServerTransport::Stdio)),
+        };
+
+        let config = MCPServerConfig {
+            id: server_id.to_string(),
+            name: server_id.to_string(),
+            server_type,
+            transport,
+            command,
+            args,
+            env,
+            headers,
+            url,
+            auto_start: true,
+            enabled: true,
+            location: crate::service::mcp::config::ConfigLocation::Project,
+            capabilities: Vec::new(),
+            settings: std::collections::HashMap::new(),
+            oauth: None,
+            xaa: None,
+        };
+
+        config.validate()?;
+        Ok(config)
+    }
 }

@@ -55,10 +55,8 @@ const SessionConfig: React.FC = () => {
   const [settings, setSettings] = useState<AIExperienceSettings | null>(null);
   const [models, setModels] = useState<AIModelConfig[]>([]);
   const [funcAgentModels, setFuncAgentModels] = useState<Record<string, string>>({});
-  const [skipToolConfirmation, setSkipToolConfirmation] = useState(false);
   const [executionTimeout, setExecutionTimeout] = useState('');
   const [confirmationTimeout, setConfirmationTimeout] = useState('');
-  const [toolExecConfigLoading, setToolExecConfigLoading] = useState(false);
 
   const [computerUseEnabled, setComputerUseEnabled] = useState(false);
   const [computerUseAccess, setComputerUseAccess] = useState(false);
@@ -96,7 +94,6 @@ const SessionConfig: React.FC = () => {
         loadedSettings,
         allModels,
         funcAgentModelsData,
-        skipConfirm,
         execTimeout,
         confirmTimeout,
         debugConfigData,
@@ -105,7 +102,6 @@ const SessionConfig: React.FC = () => {
         aiExperienceConfigService.getSettingsAsync(),
         configManager.getConfig<AIModelConfig[]>('ai.models') || [],
         configManager.getConfig<Record<string, string>>('ai.func_agent_models') || {},
-        configManager.getConfig<boolean>('ai.skip_tool_confirmation'),
         configManager.getConfig<number | null>('ai.tool_execution_timeout_secs'),
         configManager.getConfig<number | null>('ai.tool_confirmation_timeout_secs'),
         configManager.getConfig<DebugModeConfig>('ai.debug_mode_config'),
@@ -115,7 +111,6 @@ const SessionConfig: React.FC = () => {
       setSettings(loadedSettings);
       setModels(allModels as AIModelConfig[]);
       setFuncAgentModels(funcAgentModelsData as Record<string, string>);
-      setSkipToolConfirmation(skipConfirm || false);
       setExecutionTimeout(execTimeout != null ? String(execTimeout) : '');
       setConfirmationTimeout(confirmTimeout != null ? String(confirmTimeout) : '');
       if (debugConfigData) setDebugConfig(debugConfigData);
@@ -185,27 +180,6 @@ const SessionConfig: React.FC = () => {
     } catch (error) {
       log.error('Failed to update agent model', { agentKey, modelId, error });
       notificationService.error(t('messages.updateFailed'), { duration: 3000 });
-    }
-  };
-
-  const handleSkipToolConfirmationChange = async (checked: boolean) => {
-    setSkipToolConfirmation(checked);
-    setToolExecConfigLoading(true);
-    try {
-      await configManager.setConfig('ai.skip_tool_confirmation', checked);
-      notificationService.success(
-        checked ? tTools('messages.autoExecuteEnabled') : tTools('messages.autoExecuteDisabled'),
-        { duration: 2000 }
-      );
-      globalEventBus.emit('mode:config:updated');
-    } catch (error) {
-      log.error('Failed to save skip_tool_confirmation', error);
-      notificationService.error(
-        `${tTools('messages.saveFailed')}: ` + (error instanceof Error ? error.message : String(error))
-      );
-      setSkipToolConfirmation(!checked);
-    } finally {
-      setToolExecConfigLoading(false);
     }
   };
 
@@ -460,16 +434,6 @@ const SessionConfig: React.FC = () => {
           title={t('toolExecution.sectionTitle')}
           description={t('toolExecution.sectionDescription')}
         >
-          <ConfigPageRow label={tTools('config.autoExecute')} description={tTools('config.autoExecuteDesc')} align="center">
-            <div className="openharness-func-agent-config__row-control">
-              <Switch
-                checked={skipToolConfirmation}
-                onChange={(e) => handleSkipToolConfirmationChange(e.target.checked)}
-                disabled={toolExecConfigLoading}
-                size="small"
-              />
-            </div>
-          </ConfigPageRow>
           <ConfigPageRow label={tTools('config.confirmTimeout')} description={tTools('config.confirmTimeoutDesc')} align="center">
             <div className="openharness-func-agent-config__row-control">
               <NumberInput

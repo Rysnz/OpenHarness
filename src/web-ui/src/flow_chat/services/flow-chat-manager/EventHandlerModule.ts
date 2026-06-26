@@ -1028,6 +1028,29 @@ function handleToolEvent(
   if (!subagentParentInfo) {
     touchPendingTurnCompletion(context, sessionId, turnId);
   }
+
+  const stateEventByToolEvent: Partial<Record<FlowToolEvent['event_type'], SessionExecutionEvent>> = {
+    EarlyDetected: SessionExecutionEvent.TOOL_DETECTED,
+    Started: SessionExecutionEvent.TOOL_STARTED,
+    Completed: SessionExecutionEvent.TOOL_COMPLETED,
+    ConfirmationNeeded: SessionExecutionEvent.TOOL_CONFIRMATION_NEEDED,
+  };
+  const stateEvent = stateEventByToolEvent[toolEvent.event_type];
+  if (stateEvent) {
+    void stateMachineManager
+      .transition(targetSessionId, stateEvent, {
+        toolUseId: toolEvent.tool_id,
+        toolName: toolEvent.tool_name,
+      })
+      .catch(error => {
+        log.error('State machine transition failed on tool event', {
+          sessionId: targetSessionId,
+          toolId: toolEvent.tool_id,
+          eventType: toolEvent.event_type,
+          error,
+        });
+      });
+  }
   
   const eventData: ToolEventData = {
     sessionId,

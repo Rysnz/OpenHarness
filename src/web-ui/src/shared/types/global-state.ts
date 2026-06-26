@@ -70,6 +70,7 @@ export interface WorkspaceIdentity {
   creature?: string;
   vibe?: string;
   emoji?: string;
+  avatarDataUrl?: string;
   modelPrimary?: string;
   modelFast?: string;
 }
@@ -258,6 +259,7 @@ function mapWorkspaceIdentity(
     creature: identity.creature ?? undefined,
     vibe: identity.vibe ?? undefined,
     emoji: identity.emoji ?? undefined,
+    avatarDataUrl: identity.avatarDataUrl ?? undefined,
   };
 }
 

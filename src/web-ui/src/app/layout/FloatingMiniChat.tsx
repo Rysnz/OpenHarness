@@ -32,6 +32,8 @@ import { Tooltip, Input } from '@/component-library';
 import { useWorkspaceContext } from '@/infrastructure/contexts/WorkspaceContext';
 import { findLatestWorkspaceSessionId } from '@/app/utils/projectSessionWorkspace';
 import { createLogger } from '@/shared/utils/logger';
+import { useMyAgentStore } from '@/app/scenes/my-agent/myAgentStore';
+import { WorkspaceKind, type WorkspaceInfo } from '@/shared/types';
 import './FloatingMiniChat.scss';
 
 const log = createLogger('FloatingMiniChat');
@@ -39,7 +41,9 @@ const log = createLogger('FloatingMiniChat');
 export const FloatingMiniChat: React.FC = () => {
   const { t } = useTranslation('flow-chat');
   const { toolbarState } = useToolbarModeContext();
-  const { partnerWorkspacesList, setActiveWorkspace } = useWorkspaceContext();
+  const { currentWorkspace, partnerWorkspacesList, setActiveWorkspace } = useWorkspaceContext();
+  const selectedPartnerWorkspaceId = useMyAgentStore((s) => s.selectedPartnerWorkspaceId);
+  const setSelectedPartnerWorkspaceId = useMyAgentStore((s) => s.setSelectedPartnerWorkspaceId);
 
   const [isOpen, setIsOpen] = useState(false);
   const [inputValue, setInputValue] = useState('');
@@ -49,10 +53,32 @@ export const FloatingMiniChat: React.FC = () => {
   );
   const panelRef = useRef<HTMLDivElement>(null);
   const sessionPickerRef = useRef<HTMLDivElement>(null);
-  const partnerWorkspace = useMemo(
-    () => partnerWorkspacesList.find(workspace => !workspace.partnerId) ?? partnerWorkspacesList[0] ?? null,
-    [partnerWorkspacesList]
-  );
+  const partnerWorkspace = useMemo(() => {
+    const activePartner =
+      currentWorkspace?.workspaceKind === WorkspaceKind.Partner
+        ? currentWorkspace
+        : null;
+    const selectedPartner = selectedPartnerWorkspaceId
+      ? partnerWorkspacesList.find(workspace => workspace.id === selectedPartnerWorkspaceId) ?? null
+      : null;
+    const primaryPartner = partnerWorkspacesList.find(workspace => !workspace.partnerId) ?? null;
+    return activePartner ?? selectedPartner ?? primaryPartner ?? partnerWorkspacesList[0] ?? null;
+  }, [currentWorkspace, partnerWorkspacesList, selectedPartnerWorkspaceId]);
+
+  const visiblePartnerTabs = useMemo<WorkspaceInfo[]>(() => {
+    if (partnerWorkspacesList.length > 0) {
+      return partnerWorkspacesList;
+    }
+    return partnerWorkspace ? [partnerWorkspace] : [];
+  }, [partnerWorkspace, partnerWorkspacesList]);
+
+  const partnerName = useMemo(() => {
+    const rawName =
+      partnerWorkspace?.identity?.name?.trim() ||
+      partnerWorkspace?.name?.trim() ||
+      '';
+    return rawName || t('session.partnerFallbackName', { defaultValue: 'Partner' });
+  }, [partnerWorkspace, t]);
 
   useEffect(() => {
     const unsubscribe = flowChatStore.subscribe((state) => {
@@ -67,6 +93,11 @@ export const FloatingMiniChat: React.FC = () => {
       : undefined;
     return activeSession?.title || t('session.new');
   }, [flowChatState, t]);
+
+  const titleText = useMemo(
+    () => partnerWorkspace ? `${partnerName} / ${sessionTitle}` : sessionTitle,
+    [partnerName, partnerWorkspace, sessionTitle]
+  );
 
   const sessions = useMemo(() => {
     const allSessions = Array.from(flowChatState.sessions.values());
@@ -103,24 +134,25 @@ export const FloatingMiniChat: React.FC = () => {
     return { isStreaming };
   }, [flowChatState]);
 
-  const ensurePartnerSession = useCallback(
-    async (createNew = false): Promise<string | null> => {
-      if (!partnerWorkspace) {
+  const ensurePartnerSessionForWorkspace = useCallback(
+    async (targetWorkspace: WorkspaceInfo | null, createNew = false): Promise<string | null> => {
+      if (!targetWorkspace) {
         const state = flowChatStore.getState();
         return state.activeSessionId ?? null;
       }
 
-      await setActiveWorkspace(partnerWorkspace.id);
+      setSelectedPartnerWorkspaceId(targetWorkspace.id);
+      await setActiveWorkspace(targetWorkspace.id);
 
       let sessionId = createNew
         ? null
-        : findLatestWorkspaceSessionId(partnerWorkspace, 'Partner');
+        : findLatestWorkspaceSessionId(targetWorkspace, 'Partner');
 
       if (!sessionId) {
         sessionId = await FlowChatManager.getInstance().createChatSession(
           {
-            workspaceId: partnerWorkspace.id,
-            workspacePath: partnerWorkspace.rootPath,
+            workspaceId: targetWorkspace.id,
+            workspacePath: targetWorkspace.rootPath,
           },
           'Partner'
         );
@@ -131,7 +163,12 @@ export const FloatingMiniChat: React.FC = () => {
       syncSessionToModernStore(sessionId);
       return sessionId;
     },
-    [partnerWorkspace, setActiveWorkspace]
+    [setActiveWorkspace, setSelectedPartnerWorkspaceId]
+  );
+
+  const ensurePartnerSession = useCallback(
+    async (createNew = false): Promise<string | null> => ensurePartnerSessionForWorkspace(partnerWorkspace, createNew),
+    [ensurePartnerSessionForWorkspace, partnerWorkspace]
   );
 
   const handleOpen = useCallback(() => {
@@ -151,13 +188,43 @@ export const FloatingMiniChat: React.FC = () => {
     setShowSessionPicker(false);
   }, []);
 
+  const getPartnerDisplayName = useCallback((workspace: WorkspaceInfo): string => (
+    workspace.identity?.name?.trim() ||
+    workspace.name?.trim() ||
+    t('session.partnerFallbackName', { defaultValue: 'Partner' })
+  ), [t]);
+
+  const getPartnerInitial = useCallback((workspace: WorkspaceInfo): string => {
+    const name = getPartnerDisplayName(workspace).trim();
+    return Array.from(name)[0]?.toUpperCase() || 'P';
+  }, [getPartnerDisplayName]);
+
+  const handleSwitchPartner = useCallback((e: React.MouseEvent, workspace: WorkspaceInfo) => {
+    e.stopPropagation();
+    e.preventDefault();
+    void (async () => {
+      try {
+        await ensurePartnerSessionForWorkspace(workspace, false);
+        setShowSessionPicker(false);
+      } catch (error) {
+        log.error('Failed to switch partner workspace', error);
+      }
+    })();
+  }, [ensurePartnerSessionForWorkspace]);
+
   const handleSwitchSession = useCallback((e: React.MouseEvent, sessionId: string) => {
     e.stopPropagation();
     e.preventDefault();
-    flowChatStore.switchSession(sessionId);
-    syncSessionToModernStore(sessionId);
-    setShowSessionPicker(false);
-  }, []);
+    void (async () => {
+      if (partnerWorkspace) {
+        setSelectedPartnerWorkspaceId(partnerWorkspace.id);
+        await setActiveWorkspace(partnerWorkspace.id);
+      }
+      flowChatStore.switchSession(sessionId);
+      syncSessionToModernStore(sessionId);
+      setShowSessionPicker(false);
+    })();
+  }, [partnerWorkspace, setActiveWorkspace, setSelectedPartnerWorkspaceId]);
 
   const handleCancel = useCallback(() => {
     window.dispatchEvent(new CustomEvent('toolbar-cancel-task'));
@@ -244,6 +311,7 @@ export const FloatingMiniChat: React.FC = () => {
   const panelClassName = [
     'openharness-fmc__panel',
     isOpen && 'openharness-fmc__panel--open',
+    visiblePartnerTabs.length > 0 && 'openharness-fmc__panel--with-partner-tabs',
     currentStreamState.isStreaming && 'openharness-fmc__panel--processing',
     toolbarState.hasError && 'openharness-fmc__panel--error',
     toolbarState.hasPendingConfirmation && 'openharness-fmc__panel--confirm'
@@ -273,6 +341,40 @@ export const FloatingMiniChat: React.FC = () => {
 
       {/* Expanded panel */}
       <div ref={panelRef} className={panelClassName}>
+        {isOpen && visiblePartnerTabs.length > 0 && (
+          <div
+            className="openharness-fmc__partner-tabs"
+            aria-label={t('session.partnerSectionTitle', { defaultValue: 'Partners' })}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            {visiblePartnerTabs.map((workspace) => {
+              const name = getPartnerDisplayName(workspace);
+              const avatarDataUrl = workspace.identity?.avatarDataUrl?.trim();
+              return (
+                <button
+                  key={workspace.id}
+                  type="button"
+                  className={`openharness-fmc__partner-tab ${
+                    workspace.id === partnerWorkspace?.id
+                      ? 'openharness-fmc__partner-tab--active'
+                      : ''
+                  }`}
+                  title={name}
+                  aria-label={name}
+                  onMouseDown={(e) => handleSwitchPartner(e, workspace)}
+                >
+                  {avatarDataUrl ? (
+                    <img src={avatarDataUrl} alt="" />
+                  ) : (
+                    <span>{getPartnerInitial(workspace)}</span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        <div className="openharness-fmc__content">
         {/* Header */}
         <div className="openharness-fmc__header">
           <Tooltip content={t('session.new')}>
@@ -288,7 +390,7 @@ export const FloatingMiniChat: React.FC = () => {
                 className="openharness-fmc__title-btn"
                 onClick={() => setShowSessionPicker(!showSessionPicker)}
               >
-                <span className="openharness-fmc__title-text">{sessionTitle}</span>
+                <span className="openharness-fmc__title-text">{titleText}</span>
                 <ChevronDown
                   size={12}
                   className={`openharness-fmc__title-chevron ${showSessionPicker ? 'openharness-fmc__title-chevron--open' : ''}`}
@@ -302,20 +404,32 @@ export const FloatingMiniChat: React.FC = () => {
                 ref={sessionPickerRef}
                 onMouseDown={(e) => e.stopPropagation()}
               >
-                {sessions.map((session) => (
-                  <button
-                    key={session.sessionId}
-                    type="button"
-                    className={`openharness-fmc__session-item ${
-                      session.sessionId === flowChatState.activeSessionId
-                        ? 'openharness-fmc__session-item--active'
-                        : ''
-                    }`}
-                    onMouseDown={(e) => handleSwitchSession(e, session.sessionId)}
-                  >
-                    {session.title || t('session.new')}
-                  </button>
-                ))}
+                <div className="openharness-fmc__session-section openharness-fmc__session-section--sessions">
+                  <div className="openharness-fmc__session-section-label">
+                    <span>{partnerName}</span>
+                    <small>{t('session.sessionSectionTitle', { defaultValue: 'Sessions' })}</small>
+                  </div>
+                  {sessions.length > 0 ? (
+                    sessions.map((session) => (
+                      <button
+                        key={session.sessionId}
+                        type="button"
+                        className={`openharness-fmc__session-item ${
+                          session.sessionId === flowChatState.activeSessionId
+                            ? 'openharness-fmc__session-item--active'
+                            : ''
+                        }`}
+                        onMouseDown={(e) => handleSwitchSession(e, session.sessionId)}
+                      >
+                        {session.title || t('session.new')}
+                      </button>
+                    ))
+                  ) : (
+                    <div className="openharness-fmc__session-empty">
+                      {t('session.noPartnerSessions', { defaultValue: 'No sessions for this partner yet.' })}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -396,6 +510,7 @@ export const FloatingMiniChat: React.FC = () => {
               </button>
             </Tooltip>
           )}
+        </div>
         </div>
       </div>
     </div>

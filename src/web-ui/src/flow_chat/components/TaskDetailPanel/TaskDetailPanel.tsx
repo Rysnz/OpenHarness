@@ -18,6 +18,7 @@ import { FlowTextBlock } from '../FlowTextBlock';
 import { FlowToolCard } from '../FlowToolCard';
 import { ModelThinkingDisplay } from '../../tool-cards/ModelThinkingDisplay';
 import { Tooltip, DotMatrixLoader } from '@/component-library';
+import { useAgentCanvasStore } from '@/app/components/panels/content-canvas/stores/canvasStore';
 import { createLogger } from '@/shared/utils/logger';
 import {
   agentAPI,
@@ -389,7 +390,6 @@ export const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ data }) => {
     if (!filePath) return;
     
     try {
-      const { useAgentCanvasStore } = await import('@/app/components/panels/content-canvas/stores/canvasStore');
       const store = useAgentCanvasStore.getState();
       
       if (store.layout.splitMode === 'none') {

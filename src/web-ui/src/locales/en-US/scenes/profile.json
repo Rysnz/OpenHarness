@@ -29,12 +29,37 @@
   },
 
   "identity": {
+    "formTitle": "Identity",
+    "formDescription": "Edit the partner identity here. OpenHarness will keep IDENTITY.md in sync for you.",
+    "formLoadFailed": "Failed to load identity",
+    "formStatusIdle": "Synced",
+    "formStatusLoading": "Loading",
+    "formStatusSaving": "Saving",
+    "formStatusSaved": "Saved",
+    "formStatusExternalUpdate": "Updated elsewhere",
+    "formStatusError": "Save failed",
+    "name": "Name",
+    "namePlaceholder": "Example: OpenHarness Agent, Research Partner, Code Buddy",
+    "nameHint": "The display name used in partner conversations. Keep the default if you are unsure.",
+    "headerCreatureLabel": "Type",
+    "headerVibeLabel": "Style",
+    "headerEmptyHint": "Set role type and style vibe in the identity panel on the right",
     "emoji": "Emoji Marker",
-    "emojiPlaceholder": "Set emoji marker",
+    "emojiPlaceholder": "Example: ✨, 🤖, 🧭",
+    "emojiHint": "A small visual marker for quick recognition. It does not change model capability.",
+    "avatarUpload": "Upload image",
+    "avatarRemove": "Remove image",
+    "avatarUploadSuccess": "Partner image updated",
+    "avatarUploadFailed": "Failed to generate partner image",
     "creature": "Role Type",
-    "creaturePlaceholderShort": "Set role type",
+    "creaturePlaceholderShort": "Example: coding partner, research aide, writing companion",
+    "creatureHint": "A short role description that helps users and prompts understand this partner's purpose.",
     "vibe": "Style Vibe",
-    "vibePlaceholderShort": "Set style vibe",
+    "vibePlaceholderShort": "Example: direct, patient, careful reviewer",
+    "vibeHint": "The communication style and collaboration feel. This can shape persona tone.",
+    "body": "Identity Notes",
+    "bodyPlaceholder": "Describe how this partner should introduce itself, what it is good at, its boundaries, and the tone it should use.",
+    "bodyHint": "Leave it blank if you are unsure. You can refine it after using the partner.",
     "resetTooltip": "Reset partner persona",
     "resetConfirmTitle": "Reset partner persona",
     "resetConfirmMessage": "This will restore BOOTSTRAP.md, SOUL.md, USER.md, and IDENTITY.md to their default templates and overwrite the current contents. Continue?",
@@ -45,7 +70,7 @@
   },
 
   "home": {
-    "descHint": "Click to edit the IDENTITY.md body."
+    "descHint": "Click to edit the identity notes."
   },
 
   "sections": {

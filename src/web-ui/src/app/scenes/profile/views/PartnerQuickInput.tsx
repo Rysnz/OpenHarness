@@ -84,11 +84,20 @@ const PartnerQuickInput: React.FC<PartnerQuickInputProps> = ({
   }, [handleSend]);
 
   const placeholder = partnerName
-    ? t('input.partnerPlaceholder', { name: partnerName, defaultValue: `Message ${partnerName}…` })
-    : t('input.placeholder', { defaultValue: 'Send a message…' });
+    ? t('input.partnerPlaceholder', { name: partnerName, defaultValue: `Message ${partnerName}...` })
+    : t('input.placeholder', { defaultValue: 'Send a message...' });
 
   return (
     <div className="aqi">
+      <div className="aqi__intro">
+        <span className="aqi__title">{t('input.partnerQuickTitle', { defaultValue: 'Quick message' })}</span>
+        <span className="aqi__description">
+          {t('input.partnerQuickDescription', {
+            name: partnerName || t('input.partnerFallbackName', { defaultValue: 'this partner' }),
+            defaultValue: 'Start a new session with this partner.',
+          })}
+        </span>
+      </div>
       <div className="aqi__box">
         <Textarea
           className="aqi__embed"

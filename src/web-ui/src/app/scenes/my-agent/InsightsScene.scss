@@ -242,6 +242,13 @@ $ins-label:   12px;
   font-size: $ins-small;
 }
 
+.insights-scene__empty-hint {
+  margin-top: 6px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .insights-scene__report-list {
   display: flex;
   flex-direction: column;

@@ -236,17 +236,7 @@ pub fn create_main_window(app_handle: &tauri::AppHandle) {
     let bg_color = theme.to_tauri_color();
     let init_script = theme.generate_init_script();
 
-    let main_url = if cfg!(debug_assertions) {
-        match "http://localhost:1422".parse() {
-            Ok(url) => WebviewUrl::External(url),
-            Err(e) => {
-                error!("Invalid dev URL, fallback to app URL: {}", e);
-                WebviewUrl::App("index.html".into())
-            }
-        }
-    } else {
-        WebviewUrl::App("index.html".into())
-    };
+    let main_url = WebviewUrl::App("index.html".into());
 
     #[allow(unused_mut)]
     let mut builder = tauri::WebviewWindowBuilder::new(app_handle, "main", main_url)

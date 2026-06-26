@@ -63,16 +63,17 @@ impl Tool for InitMiniAppTool {
     }
 
     async fn description(&self) -> OpenHarnessResult<String> {
-        Ok(r#"Create a new MiniApp skeleton in the Toolbox. After creation, use Read/Write/Edit file tools to modify the source files directly.
+        Ok(r#"Create a new MiniApp skeleton in the Toolbox / Incubator. Use this tool when the user asks for a directly usable mini tool, mini app, small utility, dashboard, converter, scraper UI, or anything they can open and run in the OpenHarness incubator or Toolbox. Do not make a standalone workspace script first unless the user explicitly asks for a script, repo file, or command-line program.
+
+After creation, use Read/Write/Edit file tools to modify the MiniApp source files directly.
 
 Input: name, description, icon, category. The tool creates the app directory and skeleton files:
 - manifest (meta.json), source/index.html, source/style.css, source/ui.js, source/worker.js,
   package.json, storage.json.
 
-Returns app_id and the app root directory. Use the root directory and file names above with Read/Write/Edit to implement the app. The MiniApp uses window.app (app.fs, app.call, app.dialog, etc.) — see miniapp-dev skill for API reference."#
+Returns app_id and the app root directory. Use the root directory and file names above with Read/Write/Edit to implement the app. The MiniApp uses window.app (app.fs, app.call, app.dialog, etc.) - see miniapp-dev skill for API reference. Finish by telling the user the MiniApp is ready to open in the incubator/Toolbox."#
             .to_string())
     }
-
     fn input_schema(&self) -> Value {
         json!({
             "type": "object",

@@ -62,7 +62,10 @@ function getInitialExpandedState(toolId: string | undefined, status: string): bo
   if (cached !== undefined) {
     return cached.expanded;
   }
-  if (isTerminalStatus(status) || status === 'pending_confirmation') {
+  if (status === 'pending_confirmation') {
+    return true;
+  }
+  if (isTerminalStatus(status)) {
     return false;
   }
   return true;
@@ -173,6 +176,10 @@ export const TerminalToolCard: React.FC<TerminalToolCardProps> = ({
     }
     
     if (status === 'running' && prevStatus !== 'running') {
+      applyExpandedState(true, false, 'auto');
+    }
+
+    if (status === 'pending_confirmation' && prevStatus !== 'pending_confirmation') {
       applyExpandedState(true, false, 'auto');
     }
     
@@ -465,6 +472,10 @@ export const TerminalToolCard: React.FC<TerminalToolCardProps> = ({
   };
 
   const renderStatusText = () => {
+    if (status === 'pending_confirmation') {
+      return <span className="terminal-status-text status-pending">{t('toolCards.terminal.waitingConfirmation', { defaultValue: 'Waiting for confirmation' })}</span>;
+    }
+
     if (!isTerminalState) {
       return null;
     }

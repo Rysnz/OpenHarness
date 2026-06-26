@@ -5,5 +5,5 @@
     "user": "用户级",
     "project": "工程级"
   },
-  "memoryProjectPlaceholder": "工程级记忆后端暂未接入，敬请期待。"
+  "memoryProjectPlaceholder": "暂无工程级记忆。记忆会在对话过程中自动捕获。"
 }

@@ -7,34 +7,56 @@ import { notificationService } from '@/shared/notification-system';
 import { createLogger } from '@/shared/utils/logger';
 import { agentService } from '@/shared/services/agent-service';
 import { flowChatStore } from '@/flow_chat/store/FlowChatStore';
+import { stateMachineManager } from '@/flow_chat/state-machine';
+import { SessionExecutionEvent } from '@/flow_chat/state-machine/types';
 import type { DialogTurn, FlowItem, FlowToolItem, ModelRound } from '@/flow_chat/types/flow-chat';
 
 const log = createLogger('useFlowChatToolActions');
 
 interface ResolvedToolContext {
-  activeSessionId: string | null;
+  sessionId: string | null;
   toolItem: FlowToolItem | null;
   turnId: string | null;
 }
 
+function formatToolActionError(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+}
+
+function isToolTaskNotFound(error: unknown): boolean {
+  const message = formatToolActionError(error).toLowerCase();
+  return message.includes('tool task not found') || message.includes('tool item') && message.includes('not found');
+}
+
 function resolveToolContext(toolId: string): ResolvedToolContext {
   const latestState = flowChatStore.getState();
-  const dialogTurns = Array.from(latestState.sessions.values()).flatMap(session =>
-    session.dialogTurns as DialogTurn[],
-  );
 
   let toolItem: FlowToolItem | null = null;
   let turnId: string | null = null;
+  let sessionId: string | null = null;
 
-  for (const turn of dialogTurns) {
-    for (const modelRound of turn.modelRounds as ModelRound[]) {
-      const item = modelRound.items.find((candidate: FlowItem) => (
-        candidate.type === 'tool' && candidate.id === toolId
-      )) as FlowToolItem | undefined;
+  for (const session of latestState.sessions.values()) {
+    for (const turn of session.dialogTurns as DialogTurn[]) {
+      for (const modelRound of turn.modelRounds as ModelRound[]) {
+        const item = modelRound.items.find((candidate: FlowItem) => (
+          candidate.type === 'tool' && candidate.id === toolId
+        )) as FlowToolItem | undefined;
 
-      if (item) {
-        toolItem = item;
-        turnId = turn.id;
+        if (item) {
+          toolItem = item;
+          turnId = turn.id;
+          sessionId = session.sessionId;
+          break;
+        }
+      }
+
+      if (toolItem) {
         break;
       }
     }
@@ -45,7 +67,7 @@ function resolveToolContext(toolId: string): ResolvedToolContext {
   }
 
   return {
-    activeSessionId: latestState.activeSessionId,
+    sessionId,
     toolItem,
     turnId,
   };
@@ -54,70 +76,74 @@ function resolveToolContext(toolId: string): ResolvedToolContext {
 export function useFlowChatToolActions() {
   const handleToolConfirm = useCallback(async (toolId: string, updatedInput?: any) => {
     try {
-      const { activeSessionId, toolItem, turnId } = resolveToolContext(toolId);
+      const { sessionId, toolItem, turnId } = resolveToolContext(toolId);
 
-      if (!toolItem || !turnId) {
-        notificationService.error(`Tool confirmation failed: tool item ${toolId} not found in current session`);
+      if (!sessionId || !toolItem || !turnId) {
+        log.warn('Tool confirmation ignored: tool item not found in current session', { toolId });
         return;
       }
 
       const finalInput = updatedInput || toolItem.toolCall?.input;
 
-      if (activeSessionId) {
-        flowChatStore.updateModelRoundItem(activeSessionId, turnId, toolId, {
-          userConfirmed: true,
-          status: 'confirmed',
-          toolCall: {
-            ...toolItem.toolCall,
-            input: finalInput,
-          },
-        } as any);
-      }
-
-      if (!activeSessionId) {
-        throw new Error('No active session ID');
-      }
+      flowChatStore.updateModelRoundItem(sessionId, turnId, toolId, {
+        userConfirmed: true,
+        status: 'confirmed',
+        toolCall: {
+          ...toolItem.toolCall,
+          input: finalInput,
+        },
+      } as any);
 
       await agentService.confirmToolExecution(
-        activeSessionId,
+        sessionId,
         toolId,
         'confirm',
         finalInput,
       );
+
+      void stateMachineManager
+        .transition(sessionId, SessionExecutionEvent.TOOL_CONFIRMED, { toolUseId: toolId })
+        .catch(error => log.error('Tool confirmation state transition failed', { toolId, error }));
     } catch (error) {
+      if (isToolTaskNotFound(error)) {
+        log.warn('Tool confirmation ignored: backend task already cleared', { toolId, error });
+        return;
+      }
       log.error('Tool confirmation failed', error);
-      notificationService.error(`Tool confirmation failed: ${error}`);
+      notificationService.error(`Tool confirmation failed: ${formatToolActionError(error)}`);
     }
   }, []);
 
   const handleToolReject = useCallback(async (toolId: string) => {
     try {
-      const { activeSessionId, toolItem, turnId } = resolveToolContext(toolId);
+      const { sessionId, toolItem, turnId } = resolveToolContext(toolId);
 
-      if (!toolItem || !turnId) {
+      if (!sessionId || !toolItem || !turnId) {
         log.warn('Tool rejection failed: tool item not found', { toolId });
         return;
       }
 
-      if (activeSessionId) {
-        flowChatStore.updateModelRoundItem(activeSessionId, turnId, toolId, {
-          userConfirmed: false,
-          status: 'rejected',
-        } as any);
-      }
-
-      if (!activeSessionId) {
-        throw new Error('No active session ID');
-      }
+      flowChatStore.updateModelRoundItem(sessionId, turnId, toolId, {
+        userConfirmed: false,
+        status: 'rejected',
+      } as any);
 
       await agentService.confirmToolExecution(
-        activeSessionId,
+        sessionId,
         toolId,
         'reject',
       );
+
+      void stateMachineManager
+        .transition(sessionId, SessionExecutionEvent.TOOL_REJECTED, { toolUseId: toolId })
+        .catch(error => log.error('Tool rejection state transition failed', { toolId, error }));
     } catch (error) {
+      if (isToolTaskNotFound(error)) {
+        log.warn('Tool rejection ignored: backend task already cleared', { toolId, error });
+        return;
+      }
       log.error('Tool rejection failed', error);
-      notificationService.error(`Tool rejection failed: ${error}`);
+      notificationService.error(`Tool rejection failed: ${formatToolActionError(error)}`);
     }
   }, []);
 

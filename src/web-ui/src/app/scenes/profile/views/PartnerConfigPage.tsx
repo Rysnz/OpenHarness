@@ -7,7 +7,9 @@ import { useTranslation } from 'react-i18next';
 import {
   ArrowLeft,
   FileText,
+  ImagePlus,
   RefreshCw,
+  Trash2,
   X,
 } from 'lucide-react';
 import {
@@ -25,6 +27,7 @@ import { useAgentIdentityDocument } from '@/app/scenes/my-agent/useAgentIdentity
 import { useTheme } from '@/platform/theming/hooks/useTheme';
 import { MEditor } from '@/tools/editor/meditor';
 import SessionsSection from '@/app/components/NavPanel/sections/sessions/SessionsSection';
+import PartnerAvatar from './PartnerAvatar';
 import PartnerQuickInput from './PartnerQuickInput';
 import { useNurseryStore } from '../nurseryStore';
 
@@ -32,7 +35,7 @@ const log = createLogger('PartnerConfigPage');
 
 const PartnerScheduleView = lazy(() => import('@/app/scenes/my-agent/PartnerScheduleView'));
 
-const PERSONA_DOC_FILES = ['IDENTITY.md', 'SOUL.md', 'USER.md'] as const;
+const PERSONA_DOC_FILES = ['SOUL.md', 'USER.md'] as const;
 type PersonaDocFile = typeof PERSONA_DOC_FILES[number];
 
 function personaDocFullPath(workspaceRoot: string, fileName: PersonaDocFile): string {
@@ -46,6 +49,7 @@ function isFileMissingError(error: unknown): boolean {
 }
 
 const DEFAULT_AGENT_NAME = 'OpenHarness Agent';
+const AVATAR_MAX_SIZE = 384;
 
 type RightPanelView = 'info' | 'personaDoc';
 
@@ -54,6 +58,39 @@ interface PersonaDocState {
   content: string;
   loading: boolean;
   error: string | null;
+}
+
+async function createAvatarDataUrl(file: File): Promise<string> {
+  if (!file.type.startsWith('image/')) {
+    throw new Error('Unsupported image type');
+  }
+
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('Failed to load image'));
+      img.src = objectUrl;
+    });
+
+    const scale = Math.min(1, AVATAR_MAX_SIZE / Math.max(image.width, image.height));
+    const width = Math.max(1, Math.round(image.width * scale));
+    const height = Math.max(1, Math.round(image.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Canvas is unavailable');
+
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = 'high';
+    context.clearRect(0, 0, width, height);
+    context.drawImage(image, 0, 0, width, height);
+    return canvas.toDataURL('image/webp', 0.86);
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
 }
 
 const PartnerConfigPage: React.FC = () => {
@@ -95,7 +132,9 @@ const PartnerConfigPage: React.FC = () => {
   const {
     document: identityDocument,
     updateField: updateIdentityField,
-    reload: reloadIdentityDocument,
+    loading: identityLoading,
+    error: identityError,
+    saveStatus: identitySaveStatus,
   } = useAgentIdentityDocument(workspacePath);
 
   const displayIdentity = useMemo(() => {
@@ -105,6 +144,7 @@ const PartnerConfigPage: React.FC = () => {
       creature: identityDocument.creature.trim() || api?.creature?.trim() || '',
       vibe: identityDocument.vibe.trim() || api?.vibe?.trim() || '',
       emoji: identityDocument.emoji.trim() || api?.emoji?.trim() || '',
+      avatarDataUrl: identityDocument.avatarDataUrl?.trim() || api?.avatarDataUrl?.trim() || '',
     };
   }, [identityDocument, workspace?.identity]);
 
@@ -112,6 +152,7 @@ const PartnerConfigPage: React.FC = () => {
   const [editValue, setEditValue] = useState('');
   const nameInputRef = useRef<HTMLInputElement>(null);
   const metaInputRef = useRef<HTMLInputElement>(null);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
   const [rightView, setRightView] = useState<RightPanelView>('info');
   const [personaDoc, setPersonaDoc] = useState<PersonaDocState | null>(null);
   const personaSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -122,14 +163,11 @@ const PartnerConfigPage: React.FC = () => {
     const fullPath = personaDocFullPath(workspacePath, file);
     try {
       await workspaceAPI.writeFileContent(workspacePath, fullPath, content);
-      if (file === 'IDENTITY.md') {
-        await reloadIdentityDocument();
-      }
     } catch (e) {
       log.error('persona doc save', e);
       notificationService.error(t('nursery.partner.personaDocSaveFailed'));
     }
-  }, [workspacePath, reloadIdentityDocument, t]);
+  }, [workspacePath, t]);
 
   const flushPersonaWriteRef = useRef(flushPersonaWrite);
   flushPersonaWriteRef.current = flushPersonaWrite;
@@ -234,6 +272,25 @@ const PartnerConfigPage: React.FC = () => {
     setEditingField(null);
   }, [editingField, editValue, updateIdentityField]);
 
+  const handleAvatarUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    try {
+      const dataUrl = await createAvatarDataUrl(file);
+      updateIdentityField('avatarDataUrl', dataUrl);
+      notificationService.success(t('identity.avatarUploadSuccess'));
+    } catch (error) {
+      log.warn('avatar upload failed', error);
+      notificationService.error(t('identity.avatarUploadFailed'));
+    }
+  }, [t, updateIdentityField]);
+
+  const handleAvatarRemove = useCallback(() => {
+    updateIdentityField('avatarDataUrl', '');
+  }, [updateIdentityField]);
+
   const onEditKey = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') commitEdit();
     if (e.key === 'Escape') setEditingField(null);
@@ -241,11 +298,94 @@ const PartnerConfigPage: React.FC = () => {
 
   const identityName = displayIdentity.name || DEFAULT_AGENT_NAME;
 
+  const identityStatusLabel = useMemo(() => {
+    if (identityLoading || identitySaveStatus === 'loading') return t('identity.formStatusLoading');
+    if (identitySaveStatus === 'saving') return t('identity.formStatusSaving');
+    if (identitySaveStatus === 'saved') return t('identity.formStatusSaved');
+    if (identitySaveStatus === 'external-update') return t('identity.formStatusExternalUpdate');
+    if (identitySaveStatus === 'error') return t('identity.formStatusError');
+    return t('identity.formStatusIdle');
+  }, [identityLoading, identitySaveStatus, t]);
+
   // ── Right panel: identity info ──────────────────────────────────────────
 
   const renderInfoPanel = () => (
     <div className="acp-right-info">
       <div className="acp-right-shell">
+        {/* Identity form */}
+        <div className="acp-section acp-section--nested acp-section--identity-form">
+          <div className="acp-section__head">
+            <span className="acp-section__title">{t('identity.formTitle')}</span>
+            <span className={`acp-identity-form__status acp-identity-form__status--${identitySaveStatus}`}>
+              {identityStatusLabel}
+            </span>
+          </div>
+          <div className="acp-identity-form">
+            <p className="acp-identity-form__description">{t('identity.formDescription')}</p>
+            {identityError && (
+              <p className="acp-identity-form__error">
+                {t('identity.formLoadFailed')}: {identityError}
+              </p>
+            )}
+            <label className="acp-identity-form__field">
+              <span>{t('identity.name')}</span>
+              <Input
+                value={identityDocument.name}
+                onChange={(e) => updateIdentityField('name', e.target.value)}
+                placeholder={t('identity.namePlaceholder', { defaultValue: DEFAULT_AGENT_NAME })}
+                disabled={identityLoading}
+              />
+              <small>{t('identity.nameHint')}</small>
+            </label>
+            <div className="acp-identity-form__grid">
+              <label className="acp-identity-form__field">
+                <span>{t('identity.emoji')}</span>
+                <Input
+                  value={identityDocument.emoji}
+                  onChange={(e) => updateIdentityField('emoji', e.target.value)}
+                  placeholder={t('identity.emojiPlaceholder')}
+                  disabled={identityLoading}
+                />
+                <small>{t('identity.emojiHint')}</small>
+              </label>
+              <label className="acp-identity-form__field">
+                <span>{t('identity.creature')}</span>
+                <Input
+                  value={identityDocument.creature}
+                  onChange={(e) => updateIdentityField('creature', e.target.value)}
+                  placeholder={t('identity.creaturePlaceholderShort')}
+                  disabled={identityLoading}
+                />
+                <small>{t('identity.creatureHint')}</small>
+              </label>
+            </div>
+            <label className="acp-identity-form__field">
+              <span>{t('identity.vibe')}</span>
+              <Input
+                value={identityDocument.vibe}
+                onChange={(e) => updateIdentityField('vibe', e.target.value)}
+                placeholder={t('identity.vibePlaceholderShort')}
+                disabled={identityLoading}
+              />
+              <small>{t('identity.vibeHint')}</small>
+            </label>
+            <label className="acp-identity-form__field">
+              <span>{t('identity.body')}</span>
+              <textarea
+                className="acp-identity-form__textarea"
+                value={identityDocument.body}
+                onChange={(e) => updateIdentityField('body', e.target.value)}
+                placeholder={t('identity.bodyPlaceholder')}
+                disabled={identityLoading}
+                rows={7}
+              />
+              <small>{t('identity.bodyHint')}</small>
+            </label>
+          </div>
+        </div>
+
+        <div className="acp-right-shell__divider" role="separator" aria-hidden="true" />
+
         {/* Persona docs */}
         <div className="acp-section acp-section--nested">
           <div className="acp-section__head">
@@ -254,7 +394,7 @@ const PartnerConfigPage: React.FC = () => {
           <div className="acp-persona-doc-list">
             {PERSONA_DOC_FILES.map((fileName) => {
               const selected = personaDoc?.fileName === fileName && rightView === 'personaDoc';
-              const labelKey = fileName.replace(/\.md$/i, '') as 'SOUL' | 'USER' | 'IDENTITY';
+              const labelKey = fileName.replace(/\.md$/i, '') as 'SOUL' | 'USER';
               return (
                 <Button
                   key={fileName}
@@ -305,7 +445,7 @@ const PartnerConfigPage: React.FC = () => {
   const renderPersonaDocPanel = () => {
     if (!personaDoc) return null;
     const { fileName, content, loading, error } = personaDoc;
-    const docLabelKey = fileName.replace(/\.md$/i, '') as 'SOUL' | 'USER' | 'IDENTITY';
+    const docLabelKey = fileName.replace(/\.md$/i, '') as 'SOUL' | 'USER';
     return (
       <div className="acp-right-info">
         <div className="acp-right-shell acp-right-shell--editor">
@@ -379,6 +519,42 @@ const PartnerConfigPage: React.FC = () => {
         <div className="acp-layout__left">
           {/* Identity header above the input */}
           <div className="acp-left-header">
+            <div className="acp-left-header__avatar-block">
+              <PartnerAvatar
+                name={identityName}
+                imageSrc={displayIdentity.avatarDataUrl}
+                size="lg"
+              />
+              <div className="acp-left-header__avatar-actions">
+                <button
+                  type="button"
+                  className="acp-left-header__avatar-action"
+                  onClick={() => avatarInputRef.current?.click()}
+                  title={t('identity.avatarUpload')}
+                  aria-label={t('identity.avatarUpload')}
+                >
+                  <ImagePlus size={13} />
+                </button>
+                {displayIdentity.avatarDataUrl && (
+                  <button
+                    type="button"
+                    className="acp-left-header__avatar-action acp-left-header__avatar-action--danger"
+                    onClick={handleAvatarRemove}
+                    title={t('identity.avatarRemove')}
+                    aria-label={t('identity.avatarRemove')}
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                )}
+              </div>
+              <input
+                ref={avatarInputRef}
+                type="file"
+                accept="image/*"
+                className="acp-left-header__avatar-input"
+                onChange={handleAvatarUpload}
+              />
+            </div>
             <div className="acp-left-header__info">
               {editingField === 'name' ? (
                 <Input
@@ -402,49 +578,27 @@ const PartnerConfigPage: React.FC = () => {
                 </span>
               )}
               <div className="acp-left-header__meta">
-                {editingField === 'creature' ? (
-                  <Input
-                    ref={metaInputRef}
-                    value={editValue}
-                    onChange={(e) => setEditValue(e.target.value)}
-                    onBlur={commitEdit}
-                    onKeyDown={onEditKey}
-                    size="small"
-                    className="acp-left-header__meta-input"
-                  />
+                {displayIdentity.creature || displayIdentity.vibe ? (
+                  <>
+                    {displayIdentity.creature && (
+                      <span className="acp-left-header__meta-tag">
+                        <span>{t('identity.headerCreatureLabel')}</span>
+                        {displayIdentity.creature}
+                      </span>
+                    )}
+                    {displayIdentity.creature && displayIdentity.vibe && (
+                      <span className="acp-left-header__meta-dot" aria-hidden>·</span>
+                    )}
+                    {displayIdentity.vibe && (
+                      <span className="acp-left-header__meta-tag">
+                        <span>{t('identity.headerVibeLabel')}</span>
+                        {displayIdentity.vibe}
+                      </span>
+                    )}
+                  </>
                 ) : (
-                  <span
-                    className={`acp-left-header__meta-tag${!displayIdentity.creature ? ' is-empty' : ''}`}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => startEdit('creature')}
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); startEdit('creature'); } }}
-                  >
-                    {displayIdentity.creature || t('identity.creaturePlaceholderShort')}
-                  </span>
-                )}
-                {(displayIdentity.creature || displayIdentity.vibe) && (
-                  <span className="acp-left-header__meta-dot" aria-hidden>·</span>
-                )}
-                {editingField === 'vibe' ? (
-                  <Input
-                    ref={metaInputRef}
-                    value={editValue}
-                    onChange={(e) => setEditValue(e.target.value)}
-                    onBlur={commitEdit}
-                    onKeyDown={onEditKey}
-                    size="small"
-                    className="acp-left-header__meta-input"
-                  />
-                ) : (
-                  <span
-                    className={`acp-left-header__meta-tag${!displayIdentity.vibe ? ' is-empty' : ''}`}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => startEdit('vibe')}
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); startEdit('vibe'); } }}
-                  >
-                    {displayIdentity.vibe || t('identity.vibePlaceholderShort')}
+                  <span className="acp-left-header__meta-hint">
+                    {t('identity.headerEmptyHint')}
                   </span>
                 )}
               </div>

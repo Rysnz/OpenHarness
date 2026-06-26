@@ -42,9 +42,14 @@
     "formatHint": "已根据提供商自动选择，通常无需修改"
   },
   "providers": {
-    "openopenharness": {
-      "name": "OpenOpenHarness",
-      "description": "OpenOpenHarness 大模型平台"
+    "xiaomi": {
+      "name": "小米 MiMo",
+      "description": "小米 MiMo 系列模型",
+      "urlOptions": {
+        "default": "OpenAI 兼容格式",
+        "tokenPlanOpenai": "Token Plan - OpenAI 兼容格式",
+        "tokenPlanAnthropic": "Token Plan - Anthropic 兼容格式"
+      }
     },
     "gemini": {
       "name": "Google Gemini",

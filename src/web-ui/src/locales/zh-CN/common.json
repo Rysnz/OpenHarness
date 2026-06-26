@@ -30,6 +30,14 @@
   "core": {
     "initializing": "正在初始化核心系统..."
   },
+  "browserPanel": {
+    "back": "后退",
+    "forward": "前进",
+    "refresh": "刷新",
+    "placeholder": "输入网址，例如 https://example.com",
+    "selectElement": "选取元素",
+    "stopSelecting": "退出元素选取"
+  },
   "agentService": {
     "clarificationItemTitle": "澄清项 {{index}}",
     "clarificationItemProcessed": "已处理",
@@ -805,10 +813,29 @@
     "insights": "洞察",
     "partner": "伙伴",
     "shell": "Shell",
+    "memory": "记忆",
     "panelView": "面板视图"
   },
   "loading": {
     "scenes": "正在加载场景"
+  },
+  "memory": {
+    "title": "记忆引擎",
+    "tab": {
+      "search": "搜索",
+      "sessions": "会话",
+      "stats": "统计"
+    },
+    "searchPlaceholder": "搜索记忆...",
+    "search": "搜索",
+    "noResults": "未找到相关记忆",
+    "noSessions": "暂无会话摘要",
+    "saveNew": "保存新记忆",
+    "savePlaceholder": "输入要记住的内容...",
+    "save": "保存",
+    "delete": "删除",
+    "totalMemories": "总记忆数",
+    "totalSessions": "会话数"
   },
   "welcomeScene": {
     "tabLabel": "欢迎使用",
@@ -880,6 +907,7 @@
     "rangeLabel": "统计范围",
     "history": "历史报告",
     "noReports": "暂无报告，点击上方按钮生成第一份洞察报告。",
+    "noReportsHint": "需要先有一些真实会话和消息，洞察才能生成有效报告。",
     "backToList": "返回列表",
     "openHtml": "打开完整报告",
     "atAGlance": "概览",

@@ -450,6 +450,10 @@ pub struct AIConfig {
     #[serde(default = "default_skip_tool_confirmation")]
     pub skip_tool_confirmation: bool,
 
+    /// Command/tool approval behavior used by interactive agent sessions.
+    #[serde(default)]
+    pub command_approval_mode: CommandApprovalMode,
+
     /// Debug-mode configuration (log path, language templates, etc.).
     #[serde(default)]
     pub debug_mode_config: DebugModeConfig,
@@ -457,6 +461,30 @@ pub struct AIConfig {
     /// Allow Computer use (desktop automation) when the desktop host is available (all session modes).
     #[serde(default)]
     pub computer_use_enabled: bool,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CommandApprovalMode {
+    AskAll,
+    AutoSafe,
+    FullAccess,
+}
+
+impl Default for CommandApprovalMode {
+    fn default() -> Self {
+        Self::AutoSafe
+    }
+}
+
+impl CommandApprovalMode {
+    pub fn as_agent_permission_mode(self) -> &'static str {
+        match self {
+            Self::AskAll => "ask",
+            Self::AutoSafe => "allow_safe",
+            Self::FullAccess => "full_access",
+        }
+    }
 }
 
 impl AIConfig {
@@ -1275,6 +1303,7 @@ impl Default for AIConfig {
             tool_execution_timeout_secs: default_tool_execution_timeout(),
             tool_confirmation_timeout_secs: default_tool_confirmation_timeout(),
             skip_tool_confirmation: true,
+            command_approval_mode: CommandApprovalMode::default(),
             debug_mode_config: DebugModeConfig::default(),
             computer_use_enabled: false,
         }

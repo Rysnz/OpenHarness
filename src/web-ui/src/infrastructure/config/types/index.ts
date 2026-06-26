@@ -159,6 +159,7 @@ export interface AIConfig {
   tool_execution_timeout_secs?: number | null;
   tool_confirmation_timeout_secs?: number | null;
   skip_tool_confirmation?: boolean;
+  command_approval_mode?: 'ask_all' | 'auto_safe' | 'full_access';
   computer_use_enabled?: boolean;
 }
 

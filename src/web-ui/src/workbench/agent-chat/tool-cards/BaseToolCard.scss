@@ -316,6 +316,10 @@
   flex-shrink: 0;
 }
 
+.openharness-tool-card-attention .base-tool-card {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-warning) 36%, transparent);
+}
+
 /* ========== Expanded content area ========== */
 .base-tool-card-expanded {
   padding: 10px 10px;

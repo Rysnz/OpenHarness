@@ -147,6 +147,11 @@
     color: var(--color-warning);
   }
 
+  &.status-pending {
+    background: var(--color-warning-bg);
+    color: var(--color-warning);
+  }
+
   &.status-rejected {
     background: var(--color-error-bg);
     color: var(--color-error);

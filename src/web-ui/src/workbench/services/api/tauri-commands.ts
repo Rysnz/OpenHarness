@@ -28,10 +28,11 @@ export interface WorkspaceInfo {
   } | null;
   identity?: {
     name?: string | null;
-    creature?: string | null;
-    vibe?: string | null;
-    emoji?: string | null;
-  } | null;
+      creature?: string | null;
+      vibe?: string | null;
+      emoji?: string | null;
+      avatarDataUrl?: string | null;
+    } | null;
   connectionId?: string;
   connectionName?: string;
 }

@@ -21,6 +21,7 @@ export type SceneTabId =
   | 'partner'
   | 'insights'
   | 'shell'
+  | 'memory'
   | 'panel-view'
   | `miniapp:${string}`;
 

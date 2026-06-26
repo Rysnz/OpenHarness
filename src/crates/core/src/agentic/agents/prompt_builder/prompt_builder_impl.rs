@@ -10,7 +10,10 @@ use crate::service::filesystem::get_formatted_directory_listing;
 use crate::service::project_context::ProjectContextService;
 use crate::util::errors::{OpenHarnessError, OpenHarnessResult};
 use log::{debug, warn};
-use std::path::Path;
+use regex::Regex;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
+use tokio::fs;
 
 /// Placeholder constants
 const PLACEHOLDER_PERSONA: &str = "{PERSONA}";
@@ -24,6 +27,8 @@ const PLACEHOLDER_LANGUAGE_PREFERENCE: &str = "{LANGUAGE_PREFERENCE}";
 const PLACEHOLDER_AGENT_MEMORY: &str = "{AGENT_MEMORY}";
 const PLACEHOLDER_PARTNER_WORKSPACE: &str = "{PARTNER_WORKSPACE}";
 const PLACEHOLDER_VISUAL_MODE: &str = "{VISUAL_MODE}";
+const MAX_CLAUDE_MEMORY_FILE_BYTES: u64 = 128 * 1024;
+const MAX_CLAUDE_MEMORY_IMPORT_DEPTH: usize = 5;
 
 /// SSH remote host facts for system prompt (workspace tools run here, not on the local client).
 #[derive(Debug, Clone)]
@@ -83,11 +88,39 @@ pub struct PromptBuilder {
     pub file_tree_max_entries: usize,
 }
 
+#[derive(Debug, Clone)]
+struct ClaudeMemoryDocument {
+    source: String,
+    path: PathBuf,
+    content: String,
+}
+
 impl PromptBuilder {
     pub fn new(context: PromptBuilderContext) -> Self {
         Self {
             context,
             file_tree_max_entries: 200,
+        }
+    }
+
+    fn command_environment_guidance(host_os: &str, is_remote: bool) -> &'static str {
+        if is_remote {
+            return "Command environment rules: workspace Bash commands run on the remote SSH host. Use POSIX shell syntax and forward-slash paths. Before relying on optional CLIs, check availability with `command -v <name>` or use a known project script. For Python, prefer `python3` on Unix-like hosts; if it is missing, check `python --version` once and adapt. Use non-interactive commands and explicit timeouts for long work.";
+        }
+
+        match host_os {
+            "windows" => {
+                "Command environment rules: workspace Bash commands run on the local Windows shell, usually PowerShell. Use PowerShell-compatible syntax and quote paths with spaces. Do not assume Unix tools (`grep`, `sed`, `awk`, `cat`, `head`, `tail`, `find`) exist unless already verified; prefer PowerShell cmdlets or dedicated file tools. The Bash command field accepts one shell command string: do not paste PowerShell here-strings or multi-line scripts into it. For Python on Windows, prefer `py` because Python Manager or App Execution Aliases may make `python` and `python3` unavailable. Do not put compound Python statements (`for`, `with`, `try`, functions/classes) after semicolons in `py -c`; use a shell-safe expression/comprehension, a dedicated file/PDF tool, or an approved temporary script flow. If a command is not found or a shell syntax error occurs, stop, report the exact failure, and retry with the OS-appropriate command instead of waiting or repeating the same command."
+            }
+            "macos" => {
+                "Command environment rules: workspace Bash commands run on local macOS. Use POSIX shell syntax and forward-slash paths. For Python, prefer `python3`; check `command -v python3` before depending on it. Use non-interactive commands, avoid pager/editor prompts, and use `open -a \"AppName\"` for launching GUI apps when needed."
+            }
+            "linux" => {
+                "Command environment rules: workspace Bash commands run on local Linux. Use POSIX shell syntax and forward-slash paths. For Python, prefer `python3`; check `command -v python3` before depending on it. Use non-interactive commands and avoid pager/editor prompts."
+            }
+            _ => {
+                "Command environment rules: match commands to the reported operating system and shell. Verify optional CLIs before relying on them. Use non-interactive commands, explicit timeouts for long work, and stop/adapt if a command is not found or the shell reports a syntax error."
+            }
         }
     }
 
@@ -101,11 +134,21 @@ impl PromptBuilder {
         let current_date = now.format("%Y-%m-%d").to_string();
 
         let computer_use_keys = match host_os {
-            "macos" => "Computer use / `key_chord`: the **local OpenHarness desktop** is **macOS** — use `command`, `option`, `control`, `shift` (not Win/Linux modifier names). **ACTION PRIORITY:** 1) Terminal/CLI/system commands (use Bash tool for `osascript`, AppleScript, shell scripts) 2) Keyboard shortcuts: command+a/c/x/v (clipboard), command+space (Spotlight), command+tab (switch app) 3) UI control (AX/OCR/mouse) only when above fail.",
-            "windows" => "Computer use / `key_chord`: the **local OpenHarness desktop** is **Windows** — use `meta`/`super` for Windows key, `alt`, `control`, `shift`. **ACTION PRIORITY:** 1) Terminal/CLI/system commands (use Bash tool for PowerShell, cmd, scripts) 2) Keyboard shortcuts: control+a/c/x/v (clipboard), meta (Start menu), Alt+Tab (switch) 3) UI control only when above fail.",
-            "linux" => "Computer use / `key_chord`: the **local OpenHarness desktop** is **Linux** — typically `control`, `alt`, `shift`, and sometimes `meta`/`super`. **ACTION PRIORITY:** 1) Terminal/CLI/system commands (use Bash tool for shell scripts, system commands) 2) Keyboard shortcuts: control+a/c/x/v (clipboard) 3) UI control (AX/OCR/mouse) only when above fail.",
-            _ => "Computer use / `key_chord`: match modifier names to the **local OpenHarness desktop** OS below. **ACTION PRIORITY:** 1) Terminal/CLI/system commands first 2) Keyboard shortcuts second 3) UI control (mouse/OCR) last resort.",
+            "macos" => {
+                "Computer use / `key_chord`: the **local OpenHarness desktop** is **macOS** — use `command`, `option`, `control`, `shift` (not Win/Linux modifier names). **ACTION PRIORITY:** 1) Terminal/CLI/system commands (use Bash tool for `osascript`, AppleScript, shell scripts) 2) Keyboard shortcuts: command+a/c/x/v (clipboard), command+space (Spotlight), command+tab (switch app) 3) UI control (AX/OCR/mouse) only when above fail."
+            }
+            "windows" => {
+                "Computer use / `key_chord`: the **local OpenHarness desktop** is **Windows** — use `meta`/`super` for Windows key, `alt`, `control`, `shift`. **ACTION PRIORITY:** 1) Terminal/CLI/system commands (use Bash tool for PowerShell, cmd, scripts) 2) Keyboard shortcuts: control+a/c/x/v (clipboard), meta (Start menu), Alt+Tab (switch) 3) UI control only when above fail."
+            }
+            "linux" => {
+                "Computer use / `key_chord`: the **local OpenHarness desktop** is **Linux** — typically `control`, `alt`, `shift`, and sometimes `meta`/`super`. **ACTION PRIORITY:** 1) Terminal/CLI/system commands (use Bash tool for shell scripts, system commands) 2) Keyboard shortcuts: control+a/c/x/v (clipboard) 3) UI control (AX/OCR/mouse) only when above fail."
+            }
+            _ => {
+                "Computer use / `key_chord`: match modifier names to the **local OpenHarness desktop** OS below. **ACTION PRIORITY:** 1) Terminal/CLI/system commands first 2) Keyboard shortcuts second 3) UI control (mouse/OCR) last resort."
+            }
         };
+        let command_guidance =
+            Self::command_environment_guidance(host_os, self.context.remote_execution.is_some());
 
         if let Some(remote) = &self.context.remote_execution {
             format!(
@@ -119,6 +162,7 @@ impl PromptBuilder {
 - Local client architecture: {}
 - Current Date: {}
 - {}
+- {}
 </environment_details>
 
 "#,
@@ -130,6 +174,7 @@ impl PromptBuilder {
                 host_family,
                 host_arch,
                 current_date,
+                command_guidance,
                 computer_use_keys
             )
         } else {
@@ -141,6 +186,7 @@ impl PromptBuilder {
 - Architecture: {}
 - Current Date: {}
 - {}
+- {}
 </environment_details>
 
 "#,
@@ -149,6 +195,7 @@ impl PromptBuilder {
                 host_family,
                 host_arch,
                 current_date,
+                command_guidance,
                 computer_use_keys
             )
         }
@@ -198,6 +245,10 @@ impl PromptBuilder {
 
         let service = ProjectContextService::new();
         let workspace = Path::new(&self.context.workspace_path);
+        let claude_memory = self
+            .get_claude_code_memory_context()
+            .await
+            .unwrap_or_default();
 
         match service.build_context_prompt(workspace, filter).await {
             Ok(prompt) if !prompt.is_empty() => {
@@ -206,14 +257,245 @@ impl PromptBuilder {
 The following are project documentation that describe the project's architecture, conventions, and guidelines, etc.
 
 {}
+{}
 
 "#,
-                    prompt
+                    prompt, claude_memory
                 );
                 Some(result)
             }
+            _ if !claude_memory.is_empty() => Some(claude_memory),
             _ => None,
         }
+    }
+
+    async fn get_claude_code_memory_context(&self) -> Option<String> {
+        let workspace = Path::new(&self.context.workspace_path);
+        let mut visited = HashSet::new();
+        let mut documents = Vec::new();
+
+        if let Some(home) = dirs::home_dir() {
+            self.collect_claude_memory_tree(
+                &home.join(".claude").join("CLAUDE.md"),
+                "user",
+                &mut visited,
+                &mut documents,
+            )
+            .await;
+            self.collect_claude_rule_files(
+                &home.join(".claude").join("rules"),
+                "user-rule",
+                &mut visited,
+                &mut documents,
+            )
+            .await;
+        }
+
+        for dir in Self::claude_memory_search_dirs(workspace) {
+            self.collect_claude_memory_tree(
+                &dir.join("CLAUDE.md"),
+                "project",
+                &mut visited,
+                &mut documents,
+            )
+            .await;
+            self.collect_claude_memory_tree(
+                &dir.join(".claude").join("CLAUDE.md"),
+                "project",
+                &mut visited,
+                &mut documents,
+            )
+            .await;
+            self.collect_claude_rule_files(
+                &dir.join(".claude").join("rules"),
+                "project-rule",
+                &mut visited,
+                &mut documents,
+            )
+            .await;
+            self.collect_claude_memory_tree(
+                &dir.join("CLAUDE.local.md"),
+                "local",
+                &mut visited,
+                &mut documents,
+            )
+            .await;
+        }
+
+        if documents.is_empty() {
+            return None;
+        }
+
+        let mut prompt = String::from("# Claude Code Memory\n");
+        prompt.push_str("The following memory files were auto-loaded from Claude Code-compatible locations. Treat them as user/project instructions unless they conflict with higher-priority system or developer instructions.\n\n<claude_code_memory>\n");
+        for document in documents {
+            prompt.push_str(&format!(
+                "<document source=\"{}\" path=\"{}\">\n{}\n</document>\n",
+                document.source,
+                document.path.display(),
+                document.content
+            ));
+        }
+        prompt.push_str("</claude_code_memory>\n\n");
+        Some(prompt)
+    }
+
+    fn claude_memory_search_dirs(workspace: &Path) -> Vec<PathBuf> {
+        let mut dirs = Vec::new();
+        let mut current =
+            dunce::canonicalize(workspace).unwrap_or_else(|_| workspace.to_path_buf());
+
+        loop {
+            dirs.push(current.clone());
+            if !current.pop() {
+                break;
+            }
+        }
+
+        dirs.reverse();
+        dirs
+    }
+
+    async fn collect_claude_memory_tree(
+        &self,
+        start_path: &Path,
+        source: &str,
+        visited: &mut HashSet<PathBuf>,
+        documents: &mut Vec<ClaudeMemoryDocument>,
+    ) {
+        let mut stack = vec![(start_path.to_path_buf(), source.to_string(), 0usize)];
+
+        while let Some((path, source, depth)) = stack.pop() {
+            if depth >= MAX_CLAUDE_MEMORY_IMPORT_DEPTH {
+                continue;
+            }
+
+            let Some(content) = Self::read_claude_memory_file(&path).await else {
+                continue;
+            };
+
+            let canonical_path = dunce::canonicalize(&path).unwrap_or_else(|_| path.clone());
+            if !visited.insert(canonical_path.clone()) {
+                continue;
+            }
+
+            documents.push(ClaudeMemoryDocument {
+                source: source.clone(),
+                path: canonical_path.clone(),
+                content: content.clone(),
+            });
+
+            let mut imports = Self::extract_claude_imports(&content);
+            imports.reverse();
+            for import_path in imports {
+                let Some(resolved) = Self::resolve_claude_import(&canonical_path, &import_path)
+                else {
+                    continue;
+                };
+                stack.push((resolved, "import".to_string(), depth + 1));
+            }
+        }
+    }
+
+    async fn collect_claude_rule_files(
+        &self,
+        rules_dir: &Path,
+        source: &str,
+        visited: &mut HashSet<PathBuf>,
+        documents: &mut Vec<ClaudeMemoryDocument>,
+    ) {
+        if !rules_dir.is_dir() {
+            return;
+        }
+
+        let Ok(pattern) = glob::Pattern::new("**/*.md") else {
+            return;
+        };
+
+        let walker = ignore::WalkBuilder::new(&rules_dir)
+            .hidden(false)
+            .follow_links(false)
+            .build();
+        for entry in walker.flatten() {
+            let path = entry.path();
+            if !path.is_file()
+                || !pattern.matches_path(path.strip_prefix(rules_dir).unwrap_or(path))
+            {
+                continue;
+            }
+
+            self.collect_claude_memory_tree(path, source, visited, documents)
+                .await;
+        }
+    }
+
+    async fn read_claude_memory_file(path: &Path) -> Option<String> {
+        let metadata = fs::metadata(path).await.ok()?;
+        if !metadata.is_file() || metadata.len() > MAX_CLAUDE_MEMORY_FILE_BYTES {
+            return None;
+        }
+
+        match fs::read_to_string(path).await {
+            Ok(content) if !content.trim().is_empty() => Some(content),
+            _ => None,
+        }
+    }
+
+    fn extract_claude_imports(content: &str) -> Vec<String> {
+        let without_comments = Regex::new(r"(?s)<!--.*?-->")
+            .map(|re| re.replace_all(content, "").into_owned())
+            .unwrap_or_else(|_| content.to_string());
+        let re = match Regex::new(r#"(?:^|\s)@((?:[^\s\\\]\)>'"`]|\\ )+)"#) {
+            Ok(re) => re,
+            Err(_) => return Vec::new(),
+        };
+
+        let mut imports = Vec::new();
+        let mut in_code_fence = false;
+        for line in without_comments.lines() {
+            if line.trim_start().starts_with("```") {
+                in_code_fence = !in_code_fence;
+                continue;
+            }
+            if in_code_fence {
+                continue;
+            }
+
+            for capture in re.captures_iter(line) {
+                let mut raw = capture[1].trim().replace("\\ ", " ");
+                if let Some(hash_index) = raw.find('#') {
+                    raw.truncate(hash_index);
+                }
+                let raw = raw.trim();
+                if raw.starts_with("http://")
+                    || raw.starts_with("https://")
+                    || raw.starts_with('@')
+                    || raw.contains('@')
+                    || raw.is_empty()
+                    || raw.starts_with('#')
+                {
+                    continue;
+                }
+                imports.push(raw.to_string());
+            }
+        }
+        imports
+    }
+
+    fn resolve_claude_import(base_file: &Path, raw: &str) -> Option<PathBuf> {
+        let expanded = if let Some(rest) = raw.strip_prefix("~/") {
+            dirs::home_dir()?.join(rest)
+        } else {
+            PathBuf::from(raw)
+        };
+
+        let path = if expanded.is_absolute() {
+            expanded
+        } else {
+            base_file.parent()?.join(expanded)
+        };
+
+        Some(path)
     }
 
     /// Load AI memories from disk and format as prompt
@@ -321,7 +603,10 @@ Prefer MermaidInteractive tool when available, otherwise output Mermaid code blo
                 )));
             }
         };
-        Ok(format!("# Language Preference\nYou MUST respond in {} regardless of the user's input language. This is the system language setting and should be followed unless the user explicitly specifies a different language. This is crucial for smooth communication and user experience\n", language))
+        Ok(format!(
+            "# Language Preference\nYou MUST respond in {} regardless of the user's input language. This is the system language setting and should be followed unless the user explicitly specifies a different language. This is crucial for smooth communication and user experience\n",
+            language
+        ))
     }
 
     /// Get Partner-specific workspace boundary instruction
@@ -486,5 +771,89 @@ The configured **primary model does not accept image inputs**. When using **Comp
         }
 
         Ok(result.trim().to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extract_claude_imports_ignores_comments_code_and_non_paths() {
+        let content = r#"
+@docs/setup.md
+Use @./docs/with\ spaces.md#heading when needed.
+<!-- @hidden/comment.md -->
+`@inline/code.md`
+```text
+@fenced/code.md
+```
+Contact me@example.com and see https://example.com/@not-a-file.
+Also @~/global.md and @/absolute/path.txt
+"#;
+
+        let imports = PromptBuilder::extract_claude_imports(content);
+
+        assert_eq!(
+            imports,
+            vec![
+                "docs/setup.md",
+                "./docs/with spaces.md",
+                "~/global.md",
+                "/absolute/path.txt"
+            ]
+        );
+    }
+
+    #[test]
+    fn claude_memory_search_dirs_are_root_to_workspace() {
+        let workspace = if cfg!(windows) {
+            PathBuf::from(r"C:\repo\packages\app")
+        } else {
+            PathBuf::from("/repo/packages/app")
+        };
+
+        let dirs = PromptBuilder::claude_memory_search_dirs(&workspace);
+
+        assert_eq!(dirs.last(), Some(&workspace));
+        assert!(dirs.len() >= 2);
+    }
+
+    #[tokio::test]
+    async fn collect_claude_memory_tree_loads_includes_once() {
+        let root = std::env::temp_dir().join(format!(
+            "openharness-claude-memory-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let docs = root.join("docs");
+        tokio::fs::create_dir_all(&docs).await.unwrap();
+        tokio::fs::write(root.join("CLAUDE.md"), "Root rules\n@docs/shared.md\n")
+            .await
+            .unwrap();
+        tokio::fs::write(docs.join("shared.md"), "Shared rules\n@../CLAUDE.md\n")
+            .await
+            .unwrap();
+
+        let builder = PromptBuilder::new(PromptBuilderContext::new(
+            root.to_string_lossy().to_string(),
+            None,
+            None,
+        ));
+        let mut visited = HashSet::new();
+        let mut documents = Vec::new();
+        builder
+            .collect_claude_memory_tree(
+                &root.join("CLAUDE.md"),
+                "project",
+                &mut visited,
+                &mut documents,
+            )
+            .await;
+
+        let _ = tokio::fs::remove_dir_all(&root).await;
+
+        assert_eq!(documents.len(), 2);
+        assert!(documents[0].content.contains("Root rules"));
+        assert!(documents[1].content.contains("Shared rules"));
     }
 }

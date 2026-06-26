@@ -20,8 +20,8 @@ use crate::agentic::round_preempt::DialogRoundPreemptSource;
 use crate::agentic::runtime::{
     AgentMailboxMessage, AgentPatchRecord, AgentPatchSummary, AgentTaskConfig,
     AgentTaskExecutionOutput, AgentTaskExecutor, AgentTaskFilter, AgentTaskId, AgentTaskKind,
-    AgentTaskSnapshot, AgentTaskSupervisor, AgentTeamStatus, AgentTranscriptEntry, ForkContextMode,
-    PatchStatus,
+    AgentTaskSnapshot, AgentTaskStatus, AgentTaskSupervisor, AgentTeamStatus,
+    AgentTranscriptEntry, ForkContextMode, PatchStatus,
 };
 use crate::agentic::session::SessionManager;
 use crate::agentic::tools::pipeline::{SubagentParentInfo, ToolPipeline};
@@ -344,6 +344,27 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
     fn estimate_context_tokens(messages: &[Message]) -> usize {
         let mut cloned = messages.to_vec();
         cloned.iter_mut().map(|message| message.get_tokens()).sum()
+    }
+
+    fn should_inherit_parent_context(context: &std::collections::HashMap<String, String>) -> bool {
+        context
+            .get("fork_context")
+            .map(|value| {
+                value.eq_ignore_ascii_case("inherit") || value.eq_ignore_ascii_case("true")
+            })
+            .unwrap_or(false)
+    }
+
+    fn build_forked_subagent_messages(
+        mut parent_messages: Vec<Message>,
+        task_description: String,
+    ) -> Vec<Message> {
+        parent_messages.retain(|message| message.role != MessageRole::System);
+        parent_messages.push(Message::user(format!(
+            "<forked_agent_task>\n{}\n</forked_agent_task>",
+            task_description
+        )));
+        parent_messages
     }
 
     fn manual_compaction_metadata() -> serde_json::Value {
@@ -2233,10 +2254,63 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             .await
     }
 
-    pub async fn resume_agent_task(&self, _task_id: &str) -> OpenHarnessResult<AgentTaskSnapshot> {
-        Err(OpenHarnessError::Validation(
-            "resume_agent_task is not implemented yet".to_string(),
-        ))
+    pub async fn resume_agent_task(&self, task_id: &str) -> OpenHarnessResult<AgentTaskSnapshot> {
+        let task_id = AgentTaskId::from(task_id);
+
+        // Get the existing task snapshot
+        let snapshot = self
+            .agent_task_supervisor
+            .query_task(&task_id)
+            .await
+            .ok_or_else(|| {
+                OpenHarnessError::NotFound(format!("Agent task not found: {}", task_id))
+            })?;
+
+        // Only allow resume from terminal states
+        match snapshot.status {
+            AgentTaskStatus::Interrupted
+            | AgentTaskStatus::Failed
+            | AgentTaskStatus::Cancelled => {
+                // OK to resume
+            }
+            AgentTaskStatus::Running | AgentTaskStatus::WaitingApproval => {
+                return Err(OpenHarnessError::Validation(format!(
+                    "Cannot resume task {} that is already {:?}",
+                    task_id, snapshot.status
+                )));
+            }
+            AgentTaskStatus::Queued => {
+                return Err(OpenHarnessError::Validation(format!(
+                    "Cannot resume task {} that is still queued",
+                    task_id
+                )));
+            }
+            AgentTaskStatus::Succeeded => {
+                return Err(OpenHarnessError::Validation(format!(
+                    "Cannot resume task {} that already succeeded",
+                    task_id
+                )));
+            }
+        }
+
+        info!(
+            "Resuming agent task: original_task_id={}, agent_name={}, prompt_chars={}",
+            task_id,
+            snapshot.config.agent_name,
+            snapshot.config.prompt.len()
+        );
+
+        // Spawn a new task with the same config
+        let new_snapshot = self
+            .spawn_agent_task(snapshot.config.clone(), snapshot.kind.clone())
+            .await?;
+
+        info!(
+            "Agent task resumed: original={}, new_task_id={}",
+            task_id, new_snapshot.task_id
+        );
+
+        Ok(new_snapshot)
     }
 
     pub async fn list_agent_tasks(
@@ -2532,6 +2606,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
         let subagent_workspace = Self::build_workspace_binding(&session.config).await;
         let subagent_services = Self::build_workspace_services(&subagent_workspace).await;
         let mut execution_context_data = context.unwrap_or_default();
+        let inherit_parent_context = Self::should_inherit_parent_context(&execution_context_data);
         if !overrides.allowed_tools.is_empty() {
             execution_context_data.insert(
                 "allowed_tools_override".to_string(),
@@ -2546,13 +2621,33 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             agent_type: agent_type.clone(),
             workspace: subagent_workspace,
             context: execution_context_data,
-            subagent_parent_info: Some(subagent_parent_info),
+            subagent_parent_info: Some(subagent_parent_info.clone()),
             skip_tool_confirmation: false,
             workspace_services: subagent_services,
             round_preempt: self.round_preempt_source.get().cloned(),
         };
 
-        let initial_messages = vec![Message::user(task_description)];
+        let initial_messages = if inherit_parent_context {
+            match self
+                .session_manager
+                .get_context_messages(&subagent_parent_info.session_id)
+                .await
+            {
+                Ok(parent_messages) if !parent_messages.is_empty() => {
+                    Self::build_forked_subagent_messages(parent_messages, task_description)
+                }
+                Ok(_) => vec![Message::user(task_description)],
+                Err(error) => {
+                    warn!(
+                        "Failed to inherit parent context for forked subagent: parent_session={}, error={}",
+                        subagent_parent_info.session_id, error
+                    );
+                    vec![Message::user(task_description)]
+                }
+            }
+        } else {
+            vec![Message::user(task_description)]
+        };
 
         let result = self
             .execution_engine
@@ -2829,4 +2924,53 @@ static GLOBAL_COORDINATOR: OnceLock<Arc<ConversationCoordinator>> = OnceLock::ne
 /// Returns `None` if coordinator hasn't been initialized
 pub fn get_global_coordinator() -> Option<Arc<ConversationCoordinator>> {
     GLOBAL_COORDINATOR.get().cloned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn forked_subagent_messages_inherit_parent_without_system_prompt() {
+        let parent_messages = vec![
+            Message::system("parent system".to_string()),
+            Message::user("parent user".to_string()),
+            Message::assistant("parent assistant".to_string()),
+        ];
+
+        let messages = ConversationCoordinator::build_forked_subagent_messages(
+            parent_messages,
+            "check the repo".to_string(),
+        );
+
+        assert_eq!(messages.len(), 3);
+        assert!(messages
+            .iter()
+            .all(|message| message.role != MessageRole::System));
+        match &messages.last().unwrap().content {
+            MessageContent::Text(text) => {
+                assert!(text.contains("<forked_agent_task>"));
+                assert!(text.contains("check the repo"));
+            }
+            _ => panic!("fork task should be text"),
+        }
+    }
+
+    #[test]
+    fn inherit_parent_context_flag_accepts_inherit_or_true() {
+        let mut context = std::collections::HashMap::new();
+        assert!(!ConversationCoordinator::should_inherit_parent_context(
+            &context
+        ));
+
+        context.insert("fork_context".to_string(), "inherit".to_string());
+        assert!(ConversationCoordinator::should_inherit_parent_context(
+            &context
+        ));
+
+        context.insert("fork_context".to_string(), "true".to_string());
+        assert!(ConversationCoordinator::should_inherit_parent_context(
+            &context
+        ));
+    }
 }

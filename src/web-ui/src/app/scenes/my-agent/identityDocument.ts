@@ -7,6 +7,7 @@ export interface IdentityDocument {
   creature: string;
   vibe: string;
   emoji: string;
+  avatarDataUrl?: string;
   body: string;
   modelPrimary?: string;
   modelFast?: string;
@@ -17,6 +18,7 @@ export const EMPTY_IDENTITY_DOCUMENT: IdentityDocument = {
   creature: '',
   vibe: '',
   emoji: '',
+  avatarDataUrl: '',
   body: '',
   modelPrimary: '',
   modelFast: '',
@@ -27,11 +29,16 @@ const FRONTMATTER_FIELDS: IdentityFrontmatterField[] = [
   'creature',
   'vibe',
   'emoji',
+  'avatarDataUrl',
   'modelPrimary',
   'modelFast',
 ];
 
-const OPTIONAL_FRONTMATTER_FIELDS = new Set<IdentityFrontmatterField>(['modelPrimary', 'modelFast']);
+const OPTIONAL_FRONTMATTER_FIELDS = new Set<IdentityFrontmatterField>([
+  'avatarDataUrl',
+  'modelPrimary',
+  'modelFast',
+]);
 
 function normalizeLineEndings(content: string): string {
   return content.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
@@ -59,6 +66,7 @@ function normalizeDocument(document: IdentityDocument): Required<IdentityDocumen
     creature: normalizeShortField(document.creature),
     vibe: normalizeShortField(document.vibe),
     emoji: normalizeShortField(document.emoji),
+    avatarDataUrl: normalizeShortField(document.avatarDataUrl ?? ''),
     body: trimIdentityBody(document.body || ''),
     modelPrimary: normalizeShortField(document.modelPrimary ?? ''),
     modelFast: normalizeShortField(document.modelFast ?? ''),
@@ -82,6 +90,7 @@ export function parseIdentityDocument(content: string): IdentityDocument {
     creature: normalizeShortField(parsed.creature),
     vibe: normalizeShortField(parsed.vibe),
     emoji: normalizeShortField(parsed.emoji),
+    avatarDataUrl: normalizeShortField(parsed.avatarDataUrl),
     body: trimIdentityBody(frontmatterMatch[2] ?? ''),
     modelPrimary: normalizeShortField(parsed.modelPrimary),
     modelFast: normalizeShortField(parsed.modelFast),

@@ -42,9 +42,14 @@
     "formatHint": "Automatically selected based on provider, usually no need to change"
   },
   "providers": {
-    "openopenharness": {
-      "name": "OpenOpenHarness",
-      "description": "OpenOpenHarness Model Platform"
+    "xiaomi": {
+      "name": "Xiaomi MiMo",
+      "description": "Xiaomi MiMo model family",
+      "urlOptions": {
+        "default": "OpenAI Compatible",
+        "tokenPlanOpenai": "Token Plan - OpenAI Compatible",
+        "tokenPlanAnthropic": "Token Plan - Anthropic Compatible"
+      }
     },
     "gemini": {
       "name": "Google Gemini",

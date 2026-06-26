@@ -12,6 +12,13 @@ This guide covers essential PDF processing operations using Python libraries and
 
 ## Quick Start
 
+When executing Python from the Bash tool on Windows, prefer the Python Launcher (`py`)
+because Python Manager / App Execution Aliases may make `python` or `python3`
+unavailable. The Bash tool accepts one shell command string, so do not paste PowerShell
+here-strings or multi-line Python blocks into it. Avoid semicolon-separated Python
+compound statements such as `for`, `with`, or `try` after `python -c`; use expressions,
+comprehensions, dedicated file tools, or an approved temporary script flow instead.
+
 ```python
 from pypdf import PdfReader, PdfWriter
 
@@ -23,6 +30,12 @@ print(f"Pages: {len(reader.pages)}")
 text = ""
 for page in reader.pages:
     text += page.extract_text()
+```
+
+Shell-safe extraction pattern for the Bash tool:
+
+```powershell
+py -c "from pathlib import Path; from pypdf import PdfReader; p=next(Path('.').glob('*.pdf')); r=PdfReader(str(p)); print('Pages:', len(r.pages)); print('\n'.join((page.extract_text() or '') for page in r.pages)[:4000])"
 ```
 
 ## Python Libraries

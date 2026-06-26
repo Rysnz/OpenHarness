@@ -345,6 +345,36 @@ impl ToolPipeline {
         context
     }
 
+    /// Auto-capture a memory observation after tool execution.
+    /// Initializes the global MemoryCaptureService on first call with the workspace root.
+    async fn capture_memory_observation(
+        &self,
+        task: &ToolTask,
+        tool_name: &str,
+        tool_args: &serde_json::Value,
+        output: &str,
+        is_error: bool,
+    ) {
+        let Some(workspace) = task.context.workspace.as_ref() else {
+            return;
+        };
+
+        let capture = crate::service::agent_memory::capture::get_or_init_global_memory_capture(
+            workspace.root_path().to_path_buf(),
+        );
+
+        capture
+            .on_post_tool_use(
+                tool_name,
+                tool_args,
+                output,
+                is_error,
+                &task.context.session_id,
+                &task.context.agent_type,
+            )
+            .await;
+    }
+
     async fn evaluate_permission_for_task(&self, task: &ToolTask) -> PermissionEvaluation {
         let needs_permissions = {
             let registry = self.tool_registry.read().await;
@@ -988,6 +1018,16 @@ impl ToolPipeline {
                         .await;
                 }
 
+                // Auto-capture memory observation
+                self.capture_memory_observation(
+                    &task,
+                    &tool_name,
+                    &tool_args,
+                    &serde_json::to_string(&tool_result.result).unwrap_or_default(),
+                    false,
+                )
+                .await;
+
                 self.state_manager
                     .update_state(
                         &tool_id,
@@ -1027,6 +1067,16 @@ impl ToolPipeline {
                         )
                         .await;
                 }
+
+                // Auto-capture memory observation (error case)
+                self.capture_memory_observation(
+                    &task,
+                    &tool_name,
+                    &tool_args,
+                    &error_msg,
+                    true,
+                )
+                .await;
 
                 self.state_manager
                     .update_state(
@@ -1176,6 +1226,18 @@ impl ToolPipeline {
                             serde_json::json!(parent_task_id),
                         );
                     }
+                }
+
+                if let Some(permission_mode) = task
+                    .context
+                    .permission_mode
+                    .as_ref()
+                    .or_else(|| task.context.context_vars.get("permission_mode"))
+                {
+                    map.insert(
+                        "permission_mode".to_string(),
+                        serde_json::json!(permission_mode),
+                    );
                 }
 
                 if let Some(agent_skills) = task.context.context_vars.get("agent_skills") {

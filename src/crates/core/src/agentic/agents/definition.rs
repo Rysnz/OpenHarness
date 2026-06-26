@@ -4,6 +4,7 @@ use crate::agentic::permissions::{
 };
 use crate::agentic::runtime::workspace_binding::WorkspaceIsolation;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -67,9 +68,12 @@ impl PermissionMode {
     pub fn from_str(raw: &str) -> Self {
         match raw.trim().to_lowercase().as_str() {
             "" | "default" => Self::Default,
-            "ask" => Self::Ask,
-            "allow" | "allow_all" | "always_allow" => Self::Allow,
+            "ask" | "plan" => Self::Ask,
+            "allow" | "allow_all" | "always_allow" | "acceptedits" | "accept_edits" => Self::Allow,
             "deny" | "deny_all" => Self::Deny,
+            "dontask" | "dont_ask" | "bypasspermissions" | "bypass_permissions" => {
+                Self::Custom("full_access".to_string())
+            }
             other => Self::Custom(other.to_string()),
         }
     }
@@ -103,8 +107,20 @@ pub struct AgentHookConfig {
 }
 
 impl AgentHookConfig {
-    /// Execute hooks for a given hook point
-    /// shell: prefix runs the command via shell; other hooks are logged
+    /// Execute hooks for a given hook point.
+    ///
+    /// Hook failure strategy:
+    /// - Shell hooks (`shell:` prefix): evaluated by PermissionEngine before execution.
+    ///   If denied by policy, the hook is skipped and an error is logged.
+    ///   If the shell command itself fails (non-zero exit), the error is logged but
+    ///   execution continues (non-blocking).
+    /// - Plain hooks (no prefix): logged only, always succeed.
+    /// - Matcher-filtered hooks: if the tool name doesn't match, silently skipped.
+    ///
+    /// This is a deliberate "best-effort" design: hooks are observation points, not
+    /// gates. Shell hooks can be blocked by PermissionEngine rules, but hook failure
+    /// never aborts the main agent flow. This matches Claude Code's behavior where
+    /// hooks are advisory unless explicitly configured as blocking.
     pub async fn execute_hooks(
         &self,
         hook_point: &str,
@@ -122,6 +138,10 @@ impl AgentHookConfig {
         };
 
         for hook in hooks {
+            let Some(hook) = Self::hook_after_matcher_filter(hook, context) else {
+                continue;
+            };
+
             if hook.starts_with("shell:") {
                 let cmd = hook.trim_start_matches("shell:");
                 // Execute shell command (best-effort, don't fail the main flow)
@@ -146,6 +166,31 @@ impl AgentHookConfig {
                 let resolved = Self::resolve_hook_variables(hook, context);
                 log::debug!("Hook '{}' invoked: {}", hook_point, resolved);
             }
+        }
+    }
+
+    fn hook_after_matcher_filter<'a>(
+        hook: &'a str,
+        context: &std::collections::HashMap<String, String>,
+    ) -> Option<&'a str> {
+        let Some(rest) = hook.strip_prefix("matcher:") else {
+            return Some(hook);
+        };
+        let (matcher, hook_body) = rest.split_once('\n')?;
+        let matcher = matcher.trim();
+        if matcher.is_empty() {
+            return Some(hook_body);
+        }
+
+        let tool_name = context.get("tool_name").map(String::as_str).unwrap_or("");
+        if matcher
+            .split('|')
+            .map(str::trim)
+            .any(|item| item.eq_ignore_ascii_case(tool_name))
+        {
+            Some(hook_body)
+        } else {
+            None
         }
     }
 
@@ -396,6 +441,27 @@ mod tests {
 
         assert!(error.contains("Reviewer hook command is blocked"));
     }
+
+    #[test]
+    fn hook_matcher_filters_by_tool_name() {
+        let mut context = HashMap::new();
+        context.insert("tool_name".to_string(), "Write".to_string());
+
+        assert_eq!(
+            AgentHookConfig::hook_after_matcher_filter(
+                "matcher:Edit|Write\nshell:echo matched",
+                &context
+            ),
+            Some("shell:echo matched")
+        );
+        assert_eq!(
+            AgentHookConfig::hook_after_matcher_filter(
+                "matcher:Bash\nshell:echo skipped",
+                &context
+            ),
+            None
+        );
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -411,7 +477,13 @@ pub struct AgentDefinition {
     pub allowed_tools: Vec<String>,
     pub disallowed_tools: Vec<String>,
     pub mcp_servers: Vec<String>,
+    /// Inline MCP server configs from agent frontmatter (server_id → raw JSON config).
+    /// These are transient: connected at agent start, disconnected at agent end.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub inline_mcp_servers: HashMap<String, serde_json::Value>,
     pub skills: Vec<String>,
+    pub initial_prompt: Option<String>,
+    pub background: bool,
     pub memory: AgentMemoryConfig,
     pub hooks: AgentHookConfig,
     pub isolation: WorkspaceIsolation,

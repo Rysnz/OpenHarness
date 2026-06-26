@@ -61,6 +61,8 @@ pub struct WorkspaceIdentity {
     pub vibe: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub emoji: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub avatar_data_url: Option<String>,
 }
 
 /// Git worktree metadata attached to a workspace.
@@ -75,12 +77,13 @@ pub struct WorkspaceWorktreeInfo {
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
-#[serde(default)]
+#[serde(default, rename_all = "camelCase")]
 struct WorkspaceIdentityFrontmatter {
     name: Option<String>,
     creature: Option<String>,
     vibe: Option<String>,
     emoji: Option<String>,
+    avatar_data_url: Option<String>,
 }
 
 impl WorkspaceIdentity {
@@ -118,6 +121,7 @@ impl WorkspaceIdentity {
             creature: normalize_identity_field(frontmatter.creature),
             vibe: normalize_identity_field(frontmatter.vibe),
             emoji: normalize_identity_field(frontmatter.emoji),
+            avatar_data_url: normalize_identity_field(frontmatter.avatar_data_url),
         })
     }
 
@@ -126,6 +130,7 @@ impl WorkspaceIdentity {
             && self.creature.is_none()
             && self.vibe.is_none()
             && self.emoji.is_none()
+            && self.avatar_data_url.is_none()
     }
 
     pub(crate) fn collect_changed_fields(
@@ -140,6 +145,8 @@ impl WorkspaceIdentity {
         let current_vibe = current.and_then(|identity| identity.vibe.as_deref());
         let previous_emoji = previous.and_then(|identity| identity.emoji.as_deref());
         let current_emoji = current.and_then(|identity| identity.emoji.as_deref());
+        let previous_avatar = previous.and_then(|identity| identity.avatar_data_url.as_deref());
+        let current_avatar = current.and_then(|identity| identity.avatar_data_url.as_deref());
 
         let mut changed_fields = Vec::new();
         if previous_name != current_name {
@@ -153,6 +160,9 @@ impl WorkspaceIdentity {
         }
         if previous_emoji != current_emoji {
             changed_fields.push("emoji".to_string());
+        }
+        if previous_avatar != current_avatar {
+            changed_fields.push("avatarDataUrl".to_string());
         }
 
         changed_fields

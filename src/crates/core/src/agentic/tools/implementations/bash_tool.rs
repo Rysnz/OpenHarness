@@ -157,6 +157,7 @@ impl BashTool {
         interrupted: bool,
         timed_out: bool,
         exit_code: i32,
+        diagnostic_hint: Option<&str>,
     ) -> String {
         let mut result_string = String::new();
 
@@ -189,6 +190,10 @@ impl BashTool {
             );
         }
 
+        if let Some(hint) = diagnostic_hint {
+            result_string.push_str(&format!("<diagnostic_hint>{}</diagnostic_hint>", hint));
+        }
+
         // Terminal session ID
         result_string.push_str(&format!(
             "<terminal_session_id>{}</terminal_session_id>",
@@ -196,6 +201,76 @@ impl BashTool {
         ));
 
         result_string
+    }
+
+    fn command_failure_hint(command: &str, output: &str, exit_code: i32) -> Option<String> {
+        let command_lower = command.trim_start().to_lowercase();
+        let cleaned_output = strip_ansi(output);
+        let output_lower = cleaned_output.to_lowercase();
+        let python_invocation = command_lower.starts_with("python ")
+            || command_lower == "python"
+            || command_lower.starts_with("python3 ")
+            || command_lower == "python3"
+            || command_lower.starts_with("python.exe ")
+            || command_lower == "python.exe"
+            || command_lower.starts_with("py ")
+            || command_lower == "py"
+            || command_lower.starts_with("py.exe ")
+            || command_lower == "py.exe";
+
+        if Self::output_indicates_shell_parser_error(&cleaned_output) {
+            return Some(
+                "The shell parsed the script body instead of running it as Python. The Bash tool accepts a single command string; avoid PowerShell here-strings or pasted multi-line blocks here. Use a single shell-safe command, or create a temporary script only after the file-write approval flow is accepted.".to_string(),
+            );
+        }
+
+        if exit_code == 0 {
+            return None;
+        }
+
+        if python_invocation
+            && (output_lower.contains("python was not found")
+                || output_lower.contains("microsoft store")
+                || output_lower.contains("not recognized")
+                || output_lower.contains("not found"))
+        {
+            return Some(
+                "Python command appears unavailable in this shell. On Windows with Python Manager/App Execution Aliases, use the Python Launcher (`py` or `py -`) instead of `python`/`python3`; on macOS/Linux verify `python3` with `command -v python3` and then retry once with the OS-appropriate command.".to_string(),
+            );
+        }
+
+        if python_invocation
+            && command_lower.contains(" -c ")
+            && output_lower.contains("syntaxerror")
+            && command_lower.contains("; for ")
+        {
+            return Some(
+                "The Python one-liner contains a compound statement after a semicolon. The Bash tool accepts one shell command string, so avoid block syntax in `py -c`; use a shell-safe expression/comprehension, a dedicated file/PDF tool, or an approved temporary script flow.".to_string(),
+            );
+        }
+
+        if output_lower.contains("is not recognized as an internal or external command")
+            || output_lower.contains("the term") && output_lower.contains("is not recognized")
+            || output_lower.contains("command not found")
+            || output_lower.contains("no such file or directory")
+        {
+            return Some(
+                "The command appears unavailable in the current shell. Verify availability first (`Get-Command <name>` on PowerShell, `where <name>` on cmd, or `command -v <name>` on POSIX), then adapt to an installed tool or use the dedicated file/search/read tools instead of retrying the same command.".to_string(),
+            );
+        }
+
+        None
+    }
+
+    fn output_indicates_shell_parser_error(output: &str) -> bool {
+        let output_lower = output.to_lowercase();
+        output_lower.contains("parsererror")
+            || output_lower.contains("parentcontainserrorrecordexception")
+            || output_lower.contains("missingopenparenthesisinifstatement")
+            || output.contains("所在位置 行:")
+            || output.contains("if 语句中的“if”后面缺少")
+            || output.contains("关键字“for”后面缺少")
+            || output.contains("并未报告所有分析错误")
     }
 
     fn emit_terminal_ready_event(tool_use_id: &str, terminal_session_id: &str) {
@@ -246,6 +321,14 @@ Before executing the command, please follow these steps:
      - python /path/with spaces/script.py (incorrect - will fail)
    - After ensuring proper quoting, execute the command.
    - Capture the output of the command.
+
+3. Environment-specific command rules:
+   - Match the command to the shell shown above. On Windows this is usually PowerShell, so prefer PowerShell syntax/cmdlets over Unix-only tools unless you have already verified those tools exist.
+   - For Python on Windows, prefer `py`; Python Manager/App Execution Aliases can make `python` and `python3` unavailable or redirect to the Microsoft Store. On macOS/Linux, prefer `python3` after checking `command -v python3`.
+   - The command field accepts one shell command string. Do not paste PowerShell here-strings or multi-line scripts into Bash.
+   - Do not put Python compound statements (`for`, `with`, `try`, function/class definitions) after semicolons in `python -c` / `py -c`. Use shell-safe expressions/comprehensions, dedicated file tools, or an approved temporary script flow when block syntax is needed.
+   - Before using optional CLIs, verify them once (`Get-Command` on PowerShell, `where` on cmd, `command -v` on POSIX) or use a known project script.
+   - If a command returns "not found", "not recognized", a Microsoft Store Python message, or a shell syntax error, stop and adapt to the correct environment instead of repeating the same command.
 
 Usage notes:
   - The command argument is required and MUST be a single-line command.
@@ -356,6 +439,18 @@ Usage notes:
             .unwrap_or(false);
 
         if let Some(cmd) = command {
+            if cmd.contains('\n') || cmd.contains('\r') {
+                return ValidationResult {
+                    result: false,
+                    message: Some(
+                        "Bash command must be a single shell command. Do not paste PowerShell here-strings or multi-line scripts into Bash; use a shell-safe one-liner or an approved file-write/script flow."
+                            .to_string(),
+                    ),
+                    error_code: Some(400),
+                    meta: None,
+                };
+            }
+
             let parts: Vec<&str> = cmd.split_whitespace().collect();
             if let Some(base_cmd) = parts.first() {
                 // Check if command is banned
@@ -480,8 +575,19 @@ Usage notes:
         };
         let risk = risk_analyzer.analyze(command_str);
 
-        // Block high-risk commands
-        if risk.level == RiskLevel::Blocked {
+        let full_access = context
+            .custom_data
+            .get("permission_mode")
+            .and_then(|value| value.as_str())
+            .is_some_and(|mode| {
+                matches!(
+                    mode.trim().to_ascii_lowercase().as_str(),
+                    "full_access" | "fullaccess" | "unrestricted"
+                )
+            });
+
+        // Block high-risk commands unless the user explicitly selected Full access.
+        if risk.level == RiskLevel::Blocked && !full_access {
             return Err(OpenHarnessError::tool(format!(
                 "Command blocked: {} - {}",
                 risk.category, risk.reason
@@ -798,13 +904,30 @@ Usage notes:
         // 6. Build result
         let execution_time_ms = start_time.elapsed().as_millis() as u64;
 
+        let raw_exit_code_value = final_exit_code.unwrap_or(-1);
+        let inferred_shell_failure = raw_exit_code_value == 0
+            && Self::output_indicates_shell_parser_error(&accumulated_output);
+        let exit_code_value = if inferred_shell_failure {
+            1
+        } else {
+            raw_exit_code_value
+        };
+        let result_exit_code = if inferred_shell_failure {
+            Some(exit_code_value)
+        } else {
+            final_exit_code
+        };
+        let diagnostic_hint =
+            Self::command_failure_hint(command_str, &accumulated_output, exit_code_value);
+
         let result_data = json!({
-            "success": final_exit_code.unwrap_or(-1) == 0,
+            "success": exit_code_value == 0,
             "command": command_str,
             "output": accumulated_output,
-            "exit_code": final_exit_code,
+            "exit_code": result_exit_code,
             "interrupted": was_interrupted,
             "timed_out": timed_out,
+            "diagnostic_hint": diagnostic_hint,
             "working_directory": primary_cwd,
             "execution_time_ms": execution_time_ms,
             "terminal_session_id": primary_session_id,
@@ -815,7 +938,8 @@ Usage notes:
             &accumulated_output,
             was_interrupted,
             timed_out,
-            final_exit_code.unwrap_or(-1),
+            exit_code_value,
+            diagnostic_hint.as_deref(),
         );
 
         Ok(vec![ToolResult::Result {
@@ -1013,11 +1137,82 @@ mod tests {
         let long_output =
             "prefix\n".to_string() + &"y".repeat(MAX_OUTPUT_LENGTH + 100) + "\nfinal-error";
 
-        let rendered = tool.render_result("session-1", &long_output, false, false, 1);
+        let rendered = tool.render_result("session-1", &long_output, false, false, 1, None);
 
         assert!(rendered.contains("<output truncated=\"true\">"));
         assert!(rendered.contains("tail preserved"));
         assert!(rendered.contains("final-error"));
         assert!(rendered.contains("<exit_code>1</exit_code>"));
+    }
+
+    #[test]
+    fn command_failure_hint_suggests_py_for_windows_python_alias() {
+        let hint = BashTool::command_failure_hint(
+            "python -c \"print(1)\"",
+            "Python was not found; run without arguments to install from the Microsoft Store",
+            9009,
+        )
+        .expect("expected python launcher hint");
+
+        assert!(hint.contains("`py`"));
+        assert!(hint.contains("Python Manager"));
+    }
+
+    #[test]
+    fn command_failure_hint_detects_invalid_python_compound_one_liner() {
+        let hint = BashTool::command_failure_hint(
+            "py -c \"x=0; for i in range(3): x += i; print(x)\"",
+            "SyntaxError: invalid syntax",
+            1,
+        )
+        .expect("expected multi-line Python hint");
+
+        assert!(hint.contains("one shell command"));
+        assert!(hint.contains("compound statement"));
+    }
+
+    #[test]
+    fn command_failure_hint_detects_powershell_parser_output_even_with_zero_exit() {
+        let hint = BashTool::command_failure_hint(
+            "@'\nfor page in reader.pages:\n    print(page)\n'@ | py -",
+            "所在位置 行:3 字符: 3\n+ if len(text) > 4000:\n+   ~\nif 语句中的“if”后面缺少“(”。\nParserError",
+            0,
+        )
+        .expect("expected shell parser hint");
+
+        assert!(hint.contains("shell parsed"));
+    }
+
+    #[tokio::test]
+    async fn validate_input_rejects_multiline_commands() {
+        use crate::agentic::WorkspaceBinding;
+        use std::collections::HashMap;
+
+        let tool = BashTool::new();
+        let context = ToolUseContext {
+            tool_call_id: Some("tool-1".to_string()),
+            agent_type: None,
+            session_id: Some("session-1".to_string()),
+            dialog_turn_id: Some("turn-1".to_string()),
+            workspace: Some(WorkspaceBinding::new(
+                None,
+                std::path::PathBuf::from("F:\\G\\demo"),
+            )),
+            custom_data: HashMap::new(),
+            stream_sink: None,
+            computer_use_host: None,
+            cancellation_token: None,
+            workspace_services: None,
+        };
+
+        let result = tool
+            .validate_input(&json!({"command":"echo one\necho two"}), Some(&context))
+            .await;
+
+        assert!(!result.result);
+        assert!(result
+            .message
+            .unwrap_or_default()
+            .contains("single shell command"));
     }
 }

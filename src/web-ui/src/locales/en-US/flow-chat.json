@@ -79,6 +79,10 @@
     "dialogTurns": "{{count}} turns",
     "noSession": "No Session",
     "switchSession": "Switch Session",
+    "partnerSectionTitle": "Partners",
+    "sessionSectionTitle": "Sessions",
+    "partnerFallbackName": "Partner",
+    "noPartnerSessions": "No sessions for this partner yet.",
     "create": "Create New Session",
     "more": "More Sessions",
     "restoreMain": "Restore Main Window"
@@ -148,6 +152,19 @@
     "imagePasteFailed": "Image paste failed",
     "largePastePlaceholder": "[Pasted Content {{count}} chars]",
     "messageTooLarge": "Message exceeds the maximum length of {{max}} characters ({{count}} provided).",
+    "partnerQuickTitle": "Quick message",
+    "partnerQuickDescription": "Start a new session with {{name}}.",
+    "partnerFallbackName": "this partner",
+    "partnerPlaceholder": "Message {{name}}...",
+    "sendHint": "Enter to send · Shift+Enter for new line",
+    "commandApproval": {
+      "askAll": "Ask",
+      "askAllDescription": "Confirm every command before it runs.",
+      "autoSafe": "Safe",
+      "autoSafeDescription": "Run routine commands; confirm destructive or high-risk commands.",
+      "fullAccess": "Full",
+      "fullAccessDescription": "Allow commands without confirmation."
+    },
     "openWorkspaceFolder": "Open workspace folder",
     "openWorkspaceFolderFailed": "Failed to open workspace folder: {{error}}",
     "spaceToActivate": "Press <space>Space</space> to type"

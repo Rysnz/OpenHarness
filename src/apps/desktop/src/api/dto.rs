@@ -42,6 +42,7 @@ pub struct WorkspaceIdentityDto {
     pub creature: Option<String>,
     pub vibe: Option<String>,
     pub emoji: Option<String>,
+    pub avatar_data_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -152,6 +153,7 @@ impl WorkspaceIdentityDto {
             creature: identity.creature.clone(),
             vibe: identity.vibe.clone(),
             emoji: identity.emoji.clone(),
+            avatar_data_url: identity.avatar_data_url.clone(),
         }
     }
 }

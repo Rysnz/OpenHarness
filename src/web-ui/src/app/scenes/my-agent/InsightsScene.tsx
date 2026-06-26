@@ -123,7 +123,14 @@ const InsightsScene: React.FC = () => {
             <Loader2 size={16} className="insights-scene__spinner" />
           </div>
         ) : reportMetas.length === 0 ? (
-          <div className="insights-scene__empty">{t('insights.noReports')}</div>
+          <div className="insights-scene__empty">
+            <div>{t('insights.noReports')}</div>
+            <div className="insights-scene__empty-hint">
+              {t('insights.noReportsHint', {
+                defaultValue: '需要至少有一些真实会话和消息后，洞察才能生成有效报告。',
+              })}
+            </div>
+          </div>
         ) : (
           <div className="insights-scene__report-list">
             {reportMetas.map((meta) => (

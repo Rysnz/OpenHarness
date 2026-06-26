@@ -21,6 +21,7 @@ const BrowserScene = lazy(() => import('@/app/scenes/browser/BrowserScene'));
 const MermaidEditorScene = lazy(() => import('@/app/scenes/mermaid/MermaidEditorScene'));
 const InsightsScene = lazy(() => import('@/app/scenes/my-agent/InsightsScene'));
 const ShellScene = lazy(() => import('@/app/scenes/shell/ShellScene'));
+const MemoryScene = lazy(() => import('@/app/scenes/memory/MemoryScene'));
 const WelcomeScene = lazy(() => import('@/app/scenes/welcome/WelcomeScene'));
 const MiniAppScene = lazy(() => import('@/app/scenes/miniapps/MiniAppScene'));
 const PanelViewScene = lazy(() => import('@/app/scenes/panel-view/PanelViewScene'));
@@ -56,6 +57,7 @@ const STATIC_SCENE_RENDERERS: Partial<Record<SceneTabId, SceneRenderer>> = {
   partner: ({ workspacePath }) => <PartnerScene workspacePath={workspacePath} />,
   insights: () => <InsightsScene />,
   shell: ({ isActive }) => <ShellScene isActive={isActive} />,
+  memory: ({ workspacePath }) => <MemoryScene workspacePath={workspacePath} />,
   'panel-view': ({ workspacePath }) => <PanelViewScene workspacePath={workspacePath} />,
 };
 

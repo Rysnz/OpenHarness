@@ -1376,6 +1376,106 @@
     gap: $size-gap-1;
     animation: openharness-stacked-reveal 0.28s cubic-bezier(0.4, 0, 0.2, 1) 0.17s both;
   }
+
+  &__approval-mode {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+  }
+
+  &__approval-mode-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 24px;
+    padding: 0 9px;
+    border-radius: 6px;
+    border: 1px solid var(--border-subtle);
+    background: var(--element-bg-soft);
+    color: var(--color-text-secondary);
+    font-size: var(--flowchat-font-size-2xs);
+    font-weight: 600;
+    cursor: pointer;
+    transition:
+      background 0.15s ease,
+      border-color 0.15s ease,
+      color 0.15s ease,
+      box-shadow 0.15s ease;
+
+    &:hover {
+      background: var(--element-bg-medium);
+      color: var(--color-text-primary);
+    }
+
+    &--ask_all {
+      color: #9a5a00;
+      background: rgba(255, 196, 87, 0.16);
+      border-color: rgba(210, 145, 32, 0.28);
+    }
+
+    &--auto_safe {
+      color: #006b58;
+      background: rgba(70, 190, 160, 0.13);
+      border-color: rgba(34, 150, 126, 0.25);
+    }
+
+    &--full_access {
+      color: #7a2646;
+      background: rgba(220, 90, 132, 0.12);
+      border-color: rgba(190, 72, 112, 0.24);
+    }
+  }
+
+  &__approval-mode-menu {
+    position: absolute;
+    left: 0;
+    bottom: calc(100% + 7px);
+    width: 250px;
+    padding: 5px;
+    border-radius: 8px;
+    border: 1px solid var(--border-subtle);
+    background: var(--color-bg-elevated);
+    box-shadow:
+      0 12px 30px rgba(15, 23, 42, 0.10),
+      0 2px 8px rgba(15, 23, 42, 0.05);
+    z-index: $z-dropdown;
+    animation: mode-dropdown-fade-in 0.15s ease-out;
+  }
+
+  &__approval-mode-option {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 48px 1fr;
+    gap: 8px;
+    align-items: center;
+    padding: 8px 9px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--color-text-secondary);
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+
+    &:hover,
+    &--active {
+      background: var(--element-bg-soft);
+      color: var(--color-text-primary);
+    }
+  }
+
+  &__approval-mode-option-label {
+    font-size: var(--flowchat-font-size-xs);
+    font-weight: 700;
+  }
+
+  &__approval-mode-option-description {
+    min-width: 0;
+    font-size: var(--flowchat-font-size-2xs);
+    line-height: 1.35;
+    color: var(--color-text-muted);
+  }
   
   &__actions-right {
     display: flex;

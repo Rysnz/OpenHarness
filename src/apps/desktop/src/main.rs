@@ -1,8 +1,5 @@
-// Hide console window in Windows release builds
-#![cfg_attr(
-    all(not(debug_assertions), target_os = "windows"),
-    windows_subsystem = "windows"
-)]
+// Hide console window on Windows
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() {

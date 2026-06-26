@@ -10,39 +10,40 @@ export interface ConfigSelectOption {
 }
 
 export interface ConfigSelectProps {
-   
   label?: string;
-   
   required?: boolean;
-   
   hint?: string;
-   
   error?: string;
-   
   success?: boolean;
-   
   labelIcon?: React.ReactNode;
-   
   options?: ConfigSelectOption[];
-   
   placeholder?: string;
-   
   inline?: boolean;
-   
   value?: string | number;
-   
   defaultValue?: string | number;
-   
   disabled?: boolean;
-   
   onChange?: (value: string | number) => void;
-   
   size?: 'small' | 'medium' | 'large';
-   
   className?: string;
-   
   style?: React.CSSProperties;
 }
+
+const ConfigLabel: React.FC<{
+  label?: string;
+  required?: boolean;
+  labelIcon?: React.ReactNode;
+}> = ({ label, required = false, labelIcon }) => {
+  if (!label) {
+    return null;
+  }
+
+  return (
+    <label className={`config-form-label ${required ? 'required' : ''}`}>
+      {labelIcon}
+      {label}
+    </label>
+  );
+};
 
 export const ConfigSelect: React.FC<ConfigSelectProps> = ({
   label,
@@ -63,22 +64,20 @@ export const ConfigSelect: React.FC<ConfigSelectProps> = ({
   style,
 }) => {
   const { t } = useTranslation('common');
-  
-  const selectOptions: SelectOption[] = options.map(opt => ({
+
+  const selectOptions: SelectOption[] = options.map((opt) => ({
     value: opt.value,
     label: opt.label,
     disabled: opt.disabled,
     group: opt.group,
   }));
 
-  
   const handleChange = (newValue: string | number | (string | number)[]) => {
     if (onChange && !Array.isArray(newValue)) {
       onChange(newValue);
     }
   };
 
-  
   const selectElement = (
     <Select
       options={selectOptions}
@@ -97,12 +96,7 @@ export const ConfigSelect: React.FC<ConfigSelectProps> = ({
   if (inline) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', ...style }}>
-        {label && (
-          <label className={`config-form-label ${required ? 'required' : ''}`}>
-            {labelIcon}
-            {label}
-          </label>
-        )}
+        <ConfigLabel label={label} required={required} labelIcon={labelIcon} />
         {selectElement}
         {hint && <span className="config-form-hint">{hint}</span>}
       </div>
@@ -111,12 +105,7 @@ export const ConfigSelect: React.FC<ConfigSelectProps> = ({
 
   return (
     <div className="config-form-group" style={style}>
-      {label && (
-        <label className={`config-form-label ${required ? 'required' : ''}`}>
-          {labelIcon}
-          {label}
-        </label>
-      )}
+      <ConfigLabel label={label} required={required} labelIcon={labelIcon} />
       {selectElement}
       {hint && !error && !success && <span className="config-form-hint">{hint}</span>}
       {error && (

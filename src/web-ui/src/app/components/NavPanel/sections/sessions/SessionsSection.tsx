@@ -7,7 +7,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Pencil, Trash2, Check, X, Bot, Code2, ClipboardList, Panda, MoreHorizontal, Loader2 } from 'lucide-react';
+import { Pencil, Trash2, Check, X, Bot, Code2, ClipboardList, MoreHorizontal, Loader2 } from 'lucide-react';
 import { IconButton, Input, Tooltip } from '@/component-library';
 import { useI18n } from '@/infrastructure/i18n';
 import { flowChatStore } from '../../../../../flow_chat/store/FlowChatStore';
@@ -426,7 +426,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
               ? ClipboardList
               : sessionModeKey === 'partner'
                 ? showPartnerInTooltip
-                  ? Panda
+                  ? Bot
                   : Bot
                 : Code2;
           const isRunning = runningSessionIds.has(session.sessionId);

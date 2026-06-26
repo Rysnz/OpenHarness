@@ -23,6 +23,7 @@ pub mod grep_tool;
 pub mod log_tool;
 pub mod ls_tool;
 pub mod mcp_tools;
+pub mod memory_tools;
 pub mod mermaid_interactive_tool;
 pub mod miniapp_init_tool;
 pub mod session_control_tool;

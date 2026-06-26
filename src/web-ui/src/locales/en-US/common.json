@@ -30,6 +30,14 @@
   "core": {
     "initializing": "Initializing core systems..."
   },
+  "browserPanel": {
+    "back": "Back",
+    "forward": "Forward",
+    "refresh": "Refresh",
+    "placeholder": "Enter a URL, for example https://example.com",
+    "selectElement": "Select element",
+    "stopSelecting": "Stop selecting elements"
+  },
   "agentService": {
     "clarificationItemTitle": "Clarification {{index}}",
     "clarificationItemProcessed": "Processed",
@@ -805,10 +813,29 @@
     "insights": "Insights",
     "partner": "Partner",
     "shell": "Shell",
+    "memory": "Memory",
     "panelView": "Panel View"
   },
   "loading": {
     "scenes": "Loading scene"
+  },
+  "memory": {
+    "title": "Memory Engine",
+    "tab": {
+      "search": "Search",
+      "sessions": "Sessions",
+      "stats": "Stats"
+    },
+    "searchPlaceholder": "Search memories...",
+    "search": "Search",
+    "noResults": "No memories found",
+    "noSessions": "No session summaries yet",
+    "saveNew": "Save New Memory",
+    "savePlaceholder": "Enter a fact to remember...",
+    "save": "Save",
+    "delete": "Delete",
+    "totalMemories": "Total Memories",
+    "totalSessions": "Sessions"
   },
   "welcomeScene": {
     "tabLabel": "Welcome",
@@ -880,6 +907,7 @@
     "rangeLabel": "Range",
     "history": "Report History",
     "noReports": "No reports yet. Generate your first insights report above.",
+    "noReportsHint": "Insights need a few real sessions and messages before they can generate a useful report.",
     "backToList": "Back to list",
     "openHtml": "Open Full Report",
     "atAGlance": "At a Glance",

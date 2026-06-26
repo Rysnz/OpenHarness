@@ -170,6 +170,21 @@ impl ExecutionEngine {
             || skill.source_slot.eq_ignore_ascii_case(skill_ref)
     }
 
+    fn effective_max_rounds(
+        engine_max_rounds: usize,
+        session_max_turns: usize,
+        agent_max_turns: Option<u32>,
+    ) -> usize {
+        let session_limit = session_max_turns.max(1);
+        let agent_limit = agent_max_turns
+            .filter(|value| *value > 0)
+            .map(|value| value as usize)
+            .unwrap_or(session_limit)
+            .max(1);
+
+        engine_max_rounds.min(session_limit).min(agent_limit)
+    }
+
     async fn render_agent_configured_skills_context(
         workspace: Option<&WorkspaceBinding>,
         workspace_services: Option<&crate::agentic::workspace::WorkspaceServices>,
@@ -1148,7 +1163,13 @@ impl ExecutionEngine {
             .ok_or_else(|| {
                 OpenHarnessError::Session(format!("Session not found: {}", context.session_id))
             })?;
-        let effective_max_rounds = self.config.max_rounds.min(session.config.max_turns.max(1));
+        let effective_max_rounds = Self::effective_max_rounds(
+            self.config.max_rounds,
+            session.config.max_turns,
+            agent_definition
+                .as_ref()
+                .and_then(|definition| definition.max_turns),
+        );
 
         // 2. Get AI client
         let original_user_input = context
@@ -1343,6 +1364,44 @@ impl ExecutionEngine {
         {
             system_prompt.push_str(&skills_context);
         }
+
+        // Inject smart memory context (BM25-searched relevant memories)
+        if let Some(workspace) = context.workspace.as_ref() {
+            let user_query = initial_messages
+                .iter()
+                .find(|m| matches!(m.role, crate::agentic::core::MessageRole::User))
+                .and_then(|m| match &m.content {
+                    crate::agentic::core::MessageContent::Text(t) => Some(t.as_str()),
+                    _ => None,
+                })
+                .unwrap_or("");
+
+            if !user_query.is_empty() {
+                match crate::service::agent_memory::search::MemorySearchService::load(
+                    workspace.root_path(),
+                )
+                .await
+                {
+                    Ok(search_service) => {
+                        let memory_context =
+                            search_service.format_for_prompt(user_query, 2000);
+                        if !memory_context.is_empty() {
+                            system_prompt.push_str("\n\n");
+                            system_prompt.push_str(&memory_context);
+                            debug!(
+                                "Injected smart memory context: query_chars={}, prompt_addition_chars={}",
+                                user_query.len(),
+                                memory_context.len()
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        debug!("Smart memory not available: {}", e);
+                    }
+                }
+            }
+        }
+
         debug!("System prompt built, length: {} bytes", system_prompt.len());
         let system_prompt_message = Message::system(system_prompt.clone());
 
@@ -1476,6 +1535,37 @@ impl ExecutionEngine {
                 if let Ok(serialized_mcp_servers) = serde_json::to_string(&definition.mcp_servers) {
                     execution_context_vars
                         .insert("agent_mcp_servers".to_string(), serialized_mcp_servers);
+                }
+            }
+
+            // Connect inline (transient) MCP servers declared in agent frontmatter
+            if !definition.inline_mcp_servers.is_empty() {
+                if let Some(mcp_manager) =
+                    crate::service::mcp::get_global_mcp_service()
+                        .as_ref()
+                        .map(|svc| svc.server_manager())
+                {
+                    for (server_id, raw_config) in &definition.inline_mcp_servers {
+                        match mcp_manager.connect_transient(server_id, raw_config).await {
+                            Ok(_) => {
+                                info!(
+                                    "Connected inline MCP server for agent: agent={}, server={}",
+                                    agent_type, server_id
+                                );
+                            }
+                            Err(e) => {
+                                warn!(
+                                    "Failed to connect inline MCP server: agent={}, server={}, error={}",
+                                    agent_type, server_id, e
+                                );
+                            }
+                        }
+                    }
+                } else {
+                    warn!(
+                        "Agent declares inline MCP servers but MCP service is not available: agent={}",
+                        agent_type
+                    );
                 }
             }
         }
@@ -1900,6 +1990,95 @@ impl ExecutionEngine {
                 .await;
         }
 
+        // Disconnect transient inline MCP servers
+        if let Some(definition) = &agent_definition {
+            if !definition.inline_mcp_servers.is_empty() {
+                if let Some(mcp_manager) =
+                    crate::service::mcp::get_global_mcp_service()
+                        .as_ref()
+                        .map(|svc| svc.server_manager())
+                {
+                    for server_id in definition.inline_mcp_servers.keys() {
+                        mcp_manager.disconnect_transient(server_id).await;
+                    }
+                    info!(
+                        "Disconnected inline MCP servers: agent={}, count={}",
+                        agent_type,
+                        definition.inline_mcp_servers.len()
+                    );
+                }
+            }
+        }
+
+        // Trigger memory consolidation (Working → Episodic + Semantic)
+        // Uses captured observations from MemoryCaptureService
+        if let Some(workspace) = context.workspace.as_ref() {
+            let workspace_path = workspace.root_path().to_path_buf();
+            let session_id_clone = context.session_id.clone();
+            let _agent_type_clone = agent_type.clone();
+
+            tokio::spawn(async move {
+                use crate::service::agent_memory::consolidation::ConsolidationPipeline;
+                use crate::service::agent_memory::storage::MemoryStorage;
+
+                // Load observations from the capture service's persisted files
+                let storage = MemoryStorage::new(&workspace_path);
+                let pipeline = ConsolidationPipeline::new(
+                    crate::service::agent_memory::consolidation::NoOpLlmProvider,
+                );
+
+                // Read today's observations file
+                let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+                let obs_file = workspace_path
+                    .join(".openharness")
+                    .join("memory")
+                    .join("observations")
+                    .join(format!("{}.jsonl", today));
+
+                if obs_file.exists() {
+                    match tokio::fs::read_to_string(&obs_file).await {
+                        Ok(content) => {
+                            let observations: Vec<
+                                crate::service::agent_memory::capture::CapturedObservation,
+                            > = content
+                                .lines()
+                                .filter_map(|line| serde_json::from_str(line).ok())
+                                .filter(|obs: &crate::service::agent_memory::capture::CapturedObservation| {
+                                    obs.session_id == session_id_clone
+                                })
+                                .collect();
+
+                            if !observations.is_empty() {
+                                match pipeline.consolidate_session(&observations).await {
+                                    Ok(result) => {
+                                        if let Some(summary) = &result.summary {
+                                            let _ = storage.save_session_summary(summary).await;
+                                        }
+                                        let entries: Vec<_> = result.all_entries().into_iter().cloned().collect();
+                                        if !entries.is_empty() {
+                                            let _ = storage.save_entries(&entries).await;
+                                        }
+                                        info!(
+                                            "Memory consolidation complete: session={}, episodic={}, semantic={}",
+                                            session_id_clone,
+                                            result.episodic_entries.len(),
+                                            result.semantic_entries.len()
+                                        );
+                                    }
+                                    Err(e) => {
+                                        debug!("Memory consolidation skipped: {}", e);
+                                    }
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            debug!("Failed to read observations for consolidation: {}", e);
+                        }
+                    }
+                }
+            });
+        }
+
         Ok(ExecutionResult {
             final_message: last_assistant_message,
             total_rounds: round_index + 1,
@@ -2017,10 +2196,11 @@ impl ExecutionEngine {
             ("WebFetch", 10),
             ("WebSearch", 11),
             ("TodoWrite", 12),
-            ("Skill", 13),
-            ("Log", 14),
-            ("MermaidInteractive", 15),
-            ("ComputerUse", 16),
+            ("InitMiniApp", 13),
+            ("Skill", 14),
+            ("Log", 15),
+            ("MermaidInteractive", 16),
+            ("ComputerUse", 17),
         ]
         .into_iter()
         .map(|(k, v)| (k.to_string(), v))
@@ -2083,6 +2263,15 @@ mod tests {
             "openharness:pdf"
         ));
         assert!(!ExecutionEngine::skill_ref_matches_info(&skill, "xlsx"));
+    }
+
+    #[test]
+    fn effective_max_rounds_respects_agent_limit() {
+        assert_eq!(ExecutionEngine::effective_max_rounds(200, 200, Some(7)), 7);
+        assert_eq!(ExecutionEngine::effective_max_rounds(200, 5, Some(7)), 5);
+        assert_eq!(ExecutionEngine::effective_max_rounds(3, 200, Some(7)), 3);
+        assert_eq!(ExecutionEngine::effective_max_rounds(200, 200, None), 200);
+        assert_eq!(ExecutionEngine::effective_max_rounds(200, 0, Some(0)), 1);
     }
 
     #[test]

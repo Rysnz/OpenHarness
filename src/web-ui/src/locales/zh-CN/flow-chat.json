@@ -79,6 +79,10 @@
     "dialogTurns": "{{count}} 轮对话",
     "noSession": "暂无会话",
     "switchSession": "切换会话",
+    "partnerSectionTitle": "伙伴",
+    "sessionSectionTitle": "会话",
+    "partnerFallbackName": "伙伴",
+    "noPartnerSessions": "这个伙伴还没有会话。",
     "create": "创建新会话",
     "more": "更多会话",
     "restoreMain": "恢复主窗口"
@@ -148,6 +152,19 @@
     "imagePasteFailed": "图片粘贴失败",
     "largePastePlaceholder": "[已粘贴内容 {{count}} 字符]",
     "messageTooLarge": "消息超过最大长度 {{max}} 个字符（当前 {{count}} 个字符）。",
+    "partnerQuickTitle": "快速对话",
+    "partnerQuickDescription": "给 {{name}} 新开一段伙伴会话。",
+    "partnerFallbackName": "这个伙伴",
+    "partnerPlaceholder": "给 {{name}} 发一条消息...",
+    "sendHint": "Enter 发送 · Shift+Enter 换行",
+    "commandApproval": {
+      "askAll": "询问",
+      "askAllDescription": "每次执行命令前都需要确认。",
+      "autoSafe": "安全",
+      "autoSafeDescription": "自动执行常规命令；删除或高风险命令仍需确认。",
+      "fullAccess": "完全",
+      "fullAccessDescription": "允许模型执行命令，不再逐次确认。"
+    },
     "openWorkspaceFolder": "打开工作区文件夹",
     "openWorkspaceFolderFailed": "打开工作区文件夹失败：{{error}}",
     "spaceToActivate": "按<space>空格键</space>快速键入"

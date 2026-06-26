@@ -1,6 +1,6 @@
 import React, { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Folder, FolderOpen, MoreHorizontal, GitBranch, FolderSearch, Plus, ChevronDown, Trash2, RotateCcw, Copy, FileText } from 'lucide-react';
+import { Folder, FolderOpen, MoreHorizontal, GitBranch, FolderSearch, Plus, Trash2, RotateCcw, Copy, FileText } from 'lucide-react';
 import { ConfirmDialog, Tooltip } from '@/component-library';
 import { useI18n } from '@/infrastructure/i18n';
 import { i18nService } from '@/infrastructure/i18n';
@@ -18,7 +18,6 @@ import { flowChatManager } from '@/flow_chat/services/FlowChatManager';
 import { openMainSession } from '@/flow_chat/services/openBtwSession';
 import { findReusableEmptySessionId } from '@/app/utils/projectSessionWorkspace';
 import { BranchSelectModal, type BranchSelectResult } from '../../../panels/BranchSelectModal';
-import SessionsSection from '../sessions/SessionsSection';
 import {
   WorkspaceKind,
   isLinkedWorktreeWorkspace,
@@ -65,7 +64,6 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
   const [isDeletingPartner, setIsDeletingPartner] = useState(false);
   const [isDeletingWorktree, setIsDeletingWorktree] = useState(false);
   const [isResettingWorkspace, setIsResettingWorkspace] = useState(false);
-  const [sessionsCollapsed, setSessionsCollapsed] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const menuAnchorRef = useRef<HTMLDivElement>(null);
   const menuPopoverRef = useRef<HTMLDivElement>(null);
@@ -138,17 +136,9 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
     }
   }, [isActive, setActiveWorkspace, workspace.id]);
 
-  const handleCollapseToggle = useCallback(() => {
-    setSessionsCollapsed(prev => !prev);
-  }, []);
-
   const handleCardNameClick = useCallback(async () => {
-    if (!isActive) {
-      await setActiveWorkspace(workspace.id);
-    } else {
-      setSessionsCollapsed(prev => !prev);
-    }
-  }, [isActive, setActiveWorkspace, workspace.id]);
+    await handleActivate();
+  }, [handleActivate]);
 
   const handleCloseWorkspace = useCallback(async () => {
     setMenuOpen(false);
@@ -398,7 +388,6 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
         isActive && 'is-active',
         isDragging && 'is-dragging',
         menuOpen && 'is-menu-open',
-        sessionsCollapsed && 'is-sessions-collapsed',
         isSingle && 'is-single',
       ].filter(Boolean).join(' ')}
       aria-grabbed={draggable ? isDragging : undefined}>
@@ -411,16 +400,12 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
           <button
             type="button"
             className="openharness-nav-panel__partner-item-collapse-btn"
-            onClick={handleCollapseToggle}
-            aria-label={sessionsCollapsed ? t('nav.workspaces.expandSessions') : t('nav.workspaces.collapseSessions')}
-            aria-expanded={!sessionsCollapsed}
+            onClick={() => { void handleActivate(); }}
+            aria-label={workspaceDisplayName}
           >
             <span className="openharness-nav-panel__partner-item-avatar" aria-hidden="true">
               <span className="openharness-nav-panel__partner-item-avatar-letter">
                 {workspaceDisplayName.charAt(0)}
-              </span>
-              <span className={`openharness-nav-panel__partner-item-icon-toggle${sessionsCollapsed ? ' is-collapsed' : ''}`}>
-                <ChevronDown size={12} />
               </span>
             </span>
           </button>
@@ -523,17 +508,6 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
           </div>
         </div>
 
-        <div className={`openharness-nav-panel__partner-item-sessions${sessionsCollapsed ? ' is-collapsed' : ''}`}>
-          <SessionsSection
-            workspaceId={workspace.id}
-            workspacePath={workspace.rootPath}
-            remoteConnectionId={isRemoteWorkspace(workspace) ? workspace.connectionId : null}
-            remoteSshHost={isRemoteWorkspace(workspace) ? workspace.sshHost : null}
-            isActiveWorkspace={isActive}
-            partnerLabel={workspaceDisplayName}
-          />
-        </div>
-
         <ConfirmDialog
           isOpen={deleteDialogOpen}
           onClose={() => setDeleteDialogOpen(false)}
@@ -565,7 +539,6 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
       isActive && 'is-active',
       isDragging && 'is-dragging',
       menuOpen && 'is-menu-open',
-      sessionsCollapsed && 'is-sessions-collapsed',
       isSingle && 'is-single',
     ].filter(Boolean).join(' ')}
     aria-grabbed={draggable ? isDragging : undefined}>
@@ -578,16 +551,12 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
         <button
           type="button"
           className="openharness-nav-panel__workspace-item-collapse-btn"
-          onClick={handleCollapseToggle}
-          aria-label={sessionsCollapsed ? t('nav.workspaces.expandSessions') : t('nav.workspaces.collapseSessions')}
-          aria-expanded={!sessionsCollapsed}
+          onClick={() => { void handleActivate(); }}
+          aria-label={workspaceDisplayName}
         >
           <span className="openharness-nav-panel__workspace-item-icon" aria-hidden="true">
             <span className="openharness-nav-panel__workspace-item-icon-default">
               <FolderOpen size={14} />
-            </span>
-            <span className={`openharness-nav-panel__workspace-item-icon-toggle${sessionsCollapsed ? ' is-collapsed' : ''}`}>
-              <ChevronDown size={14} />
             </span>
           </span>
         </button>
@@ -707,16 +676,6 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
             document.body
           )}
         </div>
-      </div>
-
-      <div className={`openharness-nav-panel__workspace-item-sessions${sessionsCollapsed ? ' is-collapsed' : ''}`}>
-        <SessionsSection
-          workspaceId={workspace.id}
-          workspacePath={workspace.rootPath}
-          remoteConnectionId={isRemoteWorkspace(workspace) ? workspace.connectionId : null}
-          remoteSshHost={isRemoteWorkspace(workspace) ? workspace.sshHost : null}
-          isActiveWorkspace={isActive}
-        />
       </div>
 
       <BranchSelectModal

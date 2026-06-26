@@ -441,7 +441,7 @@ impl RoundExecutor {
 
         let tool_results = if let Some(tool_pipeline) = &self.tool_pipeline {
             // Create tool execution context
-            let tool_context = ToolExecutionContext {
+            let mut tool_context = ToolExecutionContext {
                 session_id: context.session_id.clone(),
                 dialog_turn_id: context.dialog_turn_id.clone(),
                 agent_type: context.agent_type.clone(),
@@ -461,7 +461,7 @@ impl RoundExecutor {
                 let config_service = GlobalConfigManager::get_service().await.ok();
 
                 // Timeout and skip confirmation settings
-                let (exec_timeout, confirm_timeout, skip_confirmation) =
+                let (exec_timeout, confirm_timeout, skip_confirmation, command_approval_mode) =
                     if let Some(ref service) = config_service {
                         let ai_config: crate::service::config::types::AIConfig =
                             service.get_config(Some("ai")).await.unwrap_or_default();
@@ -474,10 +474,16 @@ impl RoundExecutor {
                             ai_config.tool_execution_timeout_secs,
                             ai_config.tool_confirmation_timeout_secs,
                             ai_config.skip_tool_confirmation,
+                            Some(ai_config.command_approval_mode),
                         )
                     } else {
-                        (None, None, false) // Default: no timeout, requires confirmation
+                        (None, None, false, None) // Default: no timeout, requires confirmation
                     };
+
+                if let Some(mode) = command_approval_mode {
+                    tool_context.permission_mode =
+                        Some(mode.as_agent_permission_mode().to_string());
+                }
 
                 let skip_from_context = context
                     .context_vars
@@ -485,24 +491,57 @@ impl RoundExecutor {
                     .map(|v| v == "true")
                     .unwrap_or(false);
 
-                let needs_confirm = if skip_confirmation || skip_from_context {
-                    false
-                } else {
-                    // Otherwise judge based on tool's needs_permissions()
-                    let registry = get_global_tool_registry();
-                    let tool_registry = registry.read().await;
-                    let mut requires_permission = false;
+                let needs_confirm = match command_approval_mode {
+                    Some(crate::service::config::types::CommandApprovalMode::AskAll) => {
+                        if skip_from_context {
+                            false
+                        } else {
+                            // Ask-all mode preserves the legacy "confirm before running tools that
+                            // declare permissions" behavior.
+                            let registry = get_global_tool_registry();
+                            let tool_registry = registry.read().await;
+                            let mut requires_permission = false;
 
-                    for tool_call in &stream_result.tool_calls {
-                        if let Some(tool) = tool_registry.get_tool(&tool_call.tool_name) {
-                            if tool.needs_permissions(Some(&tool_call.arguments)) {
-                                requires_permission = true;
-                                break;
+                            for tool_call in &stream_result.tool_calls {
+                                if let Some(tool) = tool_registry.get_tool(&tool_call.tool_name) {
+                                    if tool.needs_permissions(Some(&tool_call.arguments)) {
+                                        requires_permission = true;
+                                        break;
+                                    }
+                                }
                             }
+
+                            requires_permission
                         }
                     }
+                    Some(crate::service::config::types::CommandApprovalMode::AutoSafe)
+                    | Some(crate::service::config::types::CommandApprovalMode::FullAccess) => {
+                        // In the three-level command approval model, auto_safe and full_access
+                        // are decided by the permission engine. Keeping legacy
+                        // confirm_before_run enabled here would force an extra approval even
+                        // after the permission engine has allowed the tool call.
+                        false
+                    }
+                    None => {
+                        if skip_confirmation || skip_from_context {
+                            false
+                        } else {
+                            let registry = get_global_tool_registry();
+                            let tool_registry = registry.read().await;
+                            let mut requires_permission = false;
 
-                    requires_permission
+                            for tool_call in &stream_result.tool_calls {
+                                if let Some(tool) = tool_registry.get_tool(&tool_call.tool_name) {
+                                    if tool.needs_permissions(Some(&tool_call.arguments)) {
+                                        requires_permission = true;
+                                        break;
+                                    }
+                                }
+                            }
+
+                            requires_permission
+                        }
+                    }
                 };
 
                 (needs_confirm, exec_timeout, confirm_timeout)

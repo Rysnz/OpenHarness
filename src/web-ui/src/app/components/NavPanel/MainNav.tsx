@@ -566,6 +566,39 @@ const MainNav: React.FC<MainNavProps> = ({
       {/* ── Sections ────────────────────────────────── */}
       <div className="openharness-nav-panel__sections">
 
+        {/* Workspace */}
+        <div className="openharness-nav-panel__section">
+          <SectionHeader
+            label={t('nav.sections.workspace')}
+            collapsible
+            isOpen={expandedSections.has('workspace')}
+            onToggle={() => toggleSection('workspace')}
+            actions={
+              <div className="openharness-nav-panel__workspace-action-wrap">
+                <Tooltip content={addWorkspaceTooltip} placement="right" followCursor disabled={workspaceMenuOpen}>
+                  <button
+                    ref={workspaceMenuButtonRef}
+                    type="button"
+                    className={`openharness-nav-panel__section-action${workspaceMenuOpen ? ' is-active' : ''}`}
+                    aria-label={addWorkspaceTooltip}
+                    aria-expanded={workspaceMenuOpen}
+                    onClick={toggleWorkspaceMenu}
+                  >
+                    <Plus size={13} />
+                  </button>
+                </Tooltip>
+              </div>
+            }
+          />
+          <div className={`openharness-nav-panel__collapsible${expandedSections.has('workspace') ? '' : ' is-collapsed'}`}>
+            <div className="openharness-nav-panel__collapsible-inner">
+              <div className="openharness-nav-panel__items">
+                <WorkspaceListSection variant="projects" />
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Mode task list */}
         <div className="openharness-nav-panel__section">
           <SectionHeader
@@ -608,39 +641,6 @@ const MainNav: React.FC<MainNavProps> = ({
                     <div className="openharness-nav-panel__inline-empty-description">{t('nav.sessions.emptyTaskHint')}</div>
                   </div>
                 )}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Workspace */}
-        <div className="openharness-nav-panel__section">
-          <SectionHeader
-            label={t('nav.sections.workspace')}
-            collapsible
-            isOpen={expandedSections.has('workspace')}
-            onToggle={() => toggleSection('workspace')}
-            actions={
-              <div className="openharness-nav-panel__workspace-action-wrap">
-                <Tooltip content={addWorkspaceTooltip} placement="right" followCursor disabled={workspaceMenuOpen}>
-                  <button
-                    ref={workspaceMenuButtonRef}
-                    type="button"
-                    className={`openharness-nav-panel__section-action${workspaceMenuOpen ? ' is-active' : ''}`}
-                    aria-label={addWorkspaceTooltip}
-                    aria-expanded={workspaceMenuOpen}
-                    onClick={toggleWorkspaceMenu}
-                  >
-                    <Plus size={13} />
-                  </button>
-                </Tooltip>
-              </div>
-            }
-          />
-          <div className={`openharness-nav-panel__collapsible${expandedSections.has('workspace') ? '' : ' is-collapsed'}`}>
-            <div className="openharness-nav-panel__collapsible-inner">
-              <div className="openharness-nav-panel__items">
-                <WorkspaceListSection variant="projects" />
               </div>
             </div>
           </div>

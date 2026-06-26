@@ -1,0 +1,480 @@
+/*
+ * OpenHarness visual refresh.
+ * A quiet desktop shell inspired by Apple system surfaces: neutral, airy,
+ * high-contrast, and deliberately light on decorative color.
+ */
+
+:root {
+  --oh-system-canvas: #f5f5f7;
+  --oh-system-surface: #ffffff;
+  --oh-system-surface-muted: #fbfbfd;
+  --oh-system-rail: rgba(246, 246, 248, 0.86);
+  --oh-system-border: rgba(60, 60, 67, 0.13);
+  --oh-system-border-strong: rgba(60, 60, 67, 0.22);
+  --oh-system-hairline: rgba(60, 60, 67, 0.08);
+  --oh-system-hover: rgba(60, 60, 67, 0.07);
+  --oh-system-active: rgba(0, 122, 255, 0.12);
+  --oh-system-active-strong: rgba(0, 122, 255, 0.2);
+  --oh-system-text: #1d1d1f;
+  --oh-system-text-secondary: rgba(29, 29, 31, 0.78);
+  --oh-system-text-muted: rgba(60, 60, 67, 0.62);
+  --oh-system-accent: #007aff;
+  --oh-system-accent-hover: #0067d8;
+  --oh-system-shadow: 0 12px 28px rgba(0, 0, 0, 0.06), 0 1px 0 rgba(255, 255, 255, 0.76) inset;
+
+  --color-bg-primary: var(--oh-system-canvas);
+  --color-bg-secondary: var(--oh-system-surface-muted);
+  --color-bg-tertiary: var(--oh-system-surface);
+  --color-bg-quaternary: #ececf0;
+  --color-bg-elevated: var(--oh-system-surface);
+  --color-bg-workbench: var(--oh-system-canvas);
+  --color-bg-scene: var(--oh-system-surface);
+  --color-bg-flowchat: var(--oh-system-surface);
+
+  --color-text-primary: var(--oh-system-text);
+  --color-text-secondary: var(--oh-system-text-secondary);
+  --color-text-muted: var(--oh-system-text-muted);
+  --color-text-disabled: rgba(60, 60, 67, 0.38);
+
+  --element-bg-subtle: rgba(60, 60, 67, 0.04);
+  --element-bg-soft: var(--oh-system-hover);
+  --element-bg-base: rgba(60, 60, 67, 0.09);
+  --element-bg-medium: rgba(60, 60, 67, 0.12);
+  --element-bg-strong: rgba(60, 60, 67, 0.17);
+  --element-bg-elevated: rgba(255, 255, 255, 0.92);
+
+  --border-subtle: rgba(60, 60, 67, 0.1);
+  --border-base: var(--oh-system-border);
+  --border-medium: var(--oh-system-border-strong);
+  --border-strong: rgba(60, 60, 67, 0.32);
+
+  --color-accent-300: rgba(0, 122, 255, 0.22);
+  --color-accent-400: rgba(0, 122, 255, 0.42);
+  --color-accent-500: var(--oh-system-accent);
+  --color-accent-600: var(--oh-system-accent-hover);
+  --focus-ring-color: rgba(0, 122, 255, 0.38);
+
+  --font-family-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'PingFang SC', 'Segoe UI', sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme-type='light']) {
+    --oh-system-canvas: #0b0b0c;
+    --oh-system-surface: #151516;
+    --oh-system-surface-muted: #101012;
+    --oh-system-rail: rgba(22, 22, 24, 0.86);
+    --oh-system-border: rgba(235, 235, 245, 0.12);
+    --oh-system-border-strong: rgba(235, 235, 245, 0.2);
+    --oh-system-hairline: rgba(235, 235, 245, 0.08);
+    --oh-system-hover: rgba(235, 235, 245, 0.07);
+    --oh-system-active: rgba(10, 132, 255, 0.18);
+    --oh-system-active-strong: rgba(10, 132, 255, 0.28);
+    --oh-system-text: #f5f5f7;
+    --oh-system-text-secondary: rgba(245, 245, 247, 0.78);
+    --oh-system-text-muted: rgba(235, 235, 245, 0.58);
+    --oh-system-accent: #0a84ff;
+    --oh-system-accent-hover: #409cff;
+    --oh-system-shadow: 0 18px 34px rgba(0, 0, 0, 0.32), 0 1px 0 rgba(255, 255, 255, 0.06) inset;
+  }
+}
+
+:root[data-theme-type='dark'] {
+  --oh-system-canvas: #0b0b0c;
+  --oh-system-surface: #151516;
+  --oh-system-surface-muted: #101012;
+  --oh-system-rail: rgba(22, 22, 24, 0.86);
+  --oh-system-border: rgba(235, 235, 245, 0.12);
+  --oh-system-border-strong: rgba(235, 235, 245, 0.2);
+  --oh-system-hairline: rgba(235, 235, 245, 0.08);
+  --oh-system-hover: rgba(235, 235, 245, 0.07);
+  --oh-system-active: rgba(10, 132, 255, 0.18);
+  --oh-system-active-strong: rgba(10, 132, 255, 0.28);
+  --oh-system-text: #f5f5f7;
+  --oh-system-text-secondary: rgba(245, 245, 247, 0.78);
+  --oh-system-text-muted: rgba(235, 235, 245, 0.58);
+  --oh-system-accent: #0a84ff;
+  --oh-system-accent-hover: #409cff;
+  --oh-system-shadow: 0 18px 34px rgba(0, 0, 0, 0.32), 0 1px 0 rgba(255, 255, 255, 0.06) inset;
+}
+
+html,
+body,
+#root {
+  background: var(--oh-system-canvas);
+}
+
+body {
+  color: var(--oh-system-text);
+}
+
+.openharness-app-layout {
+  background: var(--oh-system-canvas);
+  color: var(--oh-system-text);
+}
+
+.openharness-app-layout .openharness-app-main-workspace {
+  background: var(--oh-system-canvas);
+}
+
+.openharness-app-layout .openharness-workspace-body {
+  gap: 10px;
+  padding: 10px;
+  background: var(--oh-system-canvas);
+}
+
+.openharness-app-layout .openharness-workspace-body__nav-area {
+  border-radius: 8px;
+  background: var(--oh-system-rail);
+  box-shadow: none;
+  overflow: hidden;
+}
+
+.openharness-app-layout .openharness-nav-bar,
+.openharness-app-layout .openharness-nav-panel,
+.openharness-app-layout .openharness-nav-panel__layer--scene {
+  background: transparent;
+}
+
+.openharness-app-layout .openharness-nav-bar {
+  height: 42px;
+  padding: 0 9px;
+  border-bottom: none;
+}
+
+.openharness-app-layout .openharness-nav-bar__btn,
+.openharness-app-layout .openharness-nav-bar__panel-toggle,
+.openharness-app-layout .openharness-nav-panel__footer-btn--icon,
+.openharness-app-layout .openharness-nav-panel__top-action-btn,
+.openharness-app-layout .openharness-nav-panel__item {
+  border-radius: 7px;
+  color: var(--oh-system-text-secondary);
+}
+
+.openharness-app-layout .openharness-nav-bar__btn:hover:not(.is-inactive),
+.openharness-app-layout .openharness-nav-bar__panel-toggle:hover,
+.openharness-app-layout .openharness-nav-panel__footer-btn--icon:hover,
+.openharness-app-layout .openharness-nav-panel__top-action-btn:hover,
+.openharness-app-layout .openharness-nav-panel__item:hover {
+  background: var(--oh-system-hover);
+  color: var(--oh-system-text);
+}
+
+.openharness-app-layout .openharness-nav-panel__top-actions {
+  gap: 4px;
+  padding: 10px 10px 12px;
+}
+
+.openharness-app-layout .openharness-nav-panel__top-action-expand {
+  border-bottom: none;
+  padding-bottom: 10px;
+  margin-bottom: 2px;
+}
+
+.openharness-app-layout .openharness-nav-panel__sections {
+  padding: 0 6px 12px;
+}
+
+.openharness-app-layout .openharness-nav-panel__section-header {
+  margin: 12px 4px 4px;
+  padding: 0 7px;
+}
+
+.openharness-app-layout .openharness-nav-panel__section-label {
+  letter-spacing: 0;
+  text-transform: none;
+  font-size: 12px;
+  color: var(--oh-system-text-muted);
+}
+
+.openharness-app-layout .openharness-nav-panel__item {
+  min-height: 34px;
+  border: 1px solid transparent;
+  transition:
+    background 0.16s ease,
+    border-color 0.16s ease,
+    color 0.16s ease;
+}
+
+.openharness-app-layout .openharness-nav-panel__item.is-active,
+.openharness-app-layout .openharness-nav-panel__top-action-btn.is-active {
+  background: var(--oh-system-active);
+  border-color: var(--oh-system-active-strong);
+  color: var(--oh-system-text);
+}
+
+.openharness-app-layout .openharness-nav-panel__item.is-active .openharness-nav-panel__item-icon,
+.openharness-app-layout .openharness-nav-panel__top-action-btn.is-active svg {
+  color: var(--oh-system-accent);
+}
+
+.openharness-app-layout .openharness-nav-panel__session-mode-switch {
+  width: auto;
+  min-width: 86px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 7px;
+  background: #e9f7f2;
+  color: #0b5f4f;
+  box-shadow: 0 0 0 1px rgba(35, 134, 105, 0.16) inset;
+}
+
+.openharness-app-layout .openharness-nav-panel__session-mode-switch:hover {
+  box-shadow: 0 0 0 1px rgba(35, 134, 105, 0.26) inset;
+}
+
+.openharness-app-layout .openharness-nav-panel__session-mode-switch.is-cowork {
+  background: rgba(0, 122, 255, 0.12);
+  color: var(--oh-system-accent-hover);
+  box-shadow: 0 0 0 1px rgba(0, 122, 255, 0.18) inset;
+}
+
+.openharness-app-layout .openharness-nav-panel__session-mode-switch.is-cowork:hover {
+  box-shadow: 0 0 0 1px rgba(0, 122, 255, 0.28) inset;
+}
+
+.openharness-app-layout .openharness-nav-panel__session-mode-logo {
+  background: transparent;
+  color: inherit;
+  box-shadow: none;
+}
+
+.openharness-app-layout .openharness-nav-panel__session-mode-switch:hover .openharness-nav-panel__session-mode-logo {
+  box-shadow: none;
+}
+
+.openharness-app-layout .openharness-nav-panel__session-mode-logo .openharness-logo {
+  color: currentColor;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme-type='light']) .openharness-app-layout .openharness-nav-panel__session-mode-switch {
+    background: rgba(48, 209, 88, 0.16);
+    color: #63e6a1;
+    box-shadow: 0 0 0 1px rgba(48, 209, 88, 0.2) inset;
+  }
+
+  :root:not([data-theme-type='light']) .openharness-app-layout .openharness-nav-panel__session-mode-switch.is-cowork {
+    background: rgba(10, 132, 255, 0.18);
+    color: #8ec5ff;
+    box-shadow: 0 0 0 1px rgba(10, 132, 255, 0.28) inset;
+  }
+}
+
+:root[data-theme-type='dark'] .openharness-app-layout .openharness-nav-panel__session-mode-switch {
+  background: rgba(48, 209, 88, 0.16);
+  color: #63e6a1;
+  box-shadow: 0 0 0 1px rgba(48, 209, 88, 0.2) inset;
+}
+
+:root[data-theme-type='dark'] .openharness-app-layout .openharness-nav-panel__session-mode-switch.is-cowork {
+  background: rgba(10, 132, 255, 0.18);
+  color: #8ec5ff;
+  box-shadow: 0 0 0 1px rgba(10, 132, 255, 0.28) inset;
+}
+
+.openharness-app-layout .openharness-workspace-body__scene-area {
+  border-radius: 8px;
+  background: var(--oh-system-surface);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.045);
+  overflow: hidden;
+}
+
+.openharness-app-layout .openharness-scene-bar {
+  height: 42px;
+  background: var(--oh-system-surface);
+  border-bottom: none;
+}
+
+.openharness-app-layout .openharness-scene-bar__tabs {
+  gap: 4px;
+  padding: 6px;
+}
+
+.openharness-app-layout .openharness-scene-tab {
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--oh-system-text-muted);
+  font-weight: 500;
+}
+
+.openharness-app-layout .openharness-scene-tab:hover {
+  background: var(--oh-system-hover);
+  color: var(--oh-system-text-secondary);
+}
+
+.openharness-app-layout .openharness-scene-tab--active {
+  background: var(--element-bg-soft);
+  border-color: transparent;
+  color: var(--oh-system-text);
+  box-shadow: none;
+}
+
+.openharness-app-layout .openharness-scene-tab:only-child,
+.openharness-app-layout .openharness-scene-tab:only-child.openharness-scene-tab--active {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.openharness-app-layout .welcome-scene {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.72), transparent 42%),
+    var(--oh-system-surface);
+}
+
+.openharness-app-layout .welcome-scene__content {
+  max-width: 660px;
+  gap: 28px;
+}
+
+.openharness-app-layout .welcome-scene__greeting {
+  gap: 14px;
+}
+
+.openharness-app-layout .welcome-scene__brand-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 68px;
+  height: 68px;
+  color: var(--oh-system-text);
+  background: var(--oh-system-surface-muted);
+  border: 1px solid var(--oh-system-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.06);
+}
+
+.openharness-app-layout .welcome-scene__title {
+  font-size: clamp(24px, 3vw, 38px);
+  letter-spacing: 0;
+  line-height: 1.12;
+}
+
+.openharness-app-layout .welcome-scene__greeting-label {
+  color: var(--oh-system-text-secondary);
+  font-size: 15px;
+}
+
+.openharness-app-layout .welcome-scene__divider {
+  height: 0;
+  background: transparent;
+}
+
+.openharness-app-layout .welcome-scene__switch {
+  gap: 12px;
+}
+
+.openharness-app-layout .welcome-scene__section-label {
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--oh-system-text-muted);
+}
+
+.openharness-app-layout .welcome-scene__link-btn,
+.openharness-app-layout .welcome-scene__recent-row,
+.openharness-app-layout .welcome-scene__recent-item,
+.openharness-app-layout .welcome-scene__recent-time-btn {
+  border-radius: 7px;
+}
+
+.openharness-app-layout .welcome-scene__link-btn {
+  min-height: 30px;
+  padding: 0 10px;
+  border: none;
+  background: var(--oh-system-surface-muted);
+  color: var(--oh-system-text-secondary);
+}
+
+.openharness-app-layout .welcome-scene__link-btn:hover:not(:disabled) {
+  background: var(--oh-system-hover);
+  color: var(--oh-system-text);
+}
+
+.openharness-app-layout .welcome-scene__recent-list {
+  gap: 6px;
+}
+
+.openharness-app-layout .welcome-scene__recent-row {
+  background: var(--oh-system-surface-muted);
+  border: none;
+}
+
+.openharness-app-layout .welcome-scene__recent-row:hover {
+  background: var(--oh-system-hover);
+}
+
+.openharness-app-layout .welcome-scene__recent-item {
+  min-height: 38px;
+  padding: 0 12px;
+}
+
+.openharness-app-layout .welcome-scene__no-recent {
+  padding: 14px 12px;
+  border: none;
+  border-radius: 8px;
+  background: var(--oh-system-surface-muted);
+  text-align: center;
+}
+
+.openharness-app-layout .openharness-chat-input-drop-zone {
+  max-width: 760px;
+}
+
+.openharness-app-layout .openharness-chat-input__box {
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--oh-system-surface) 94%, transparent);
+  border: 1px solid var(--oh-system-hairline);
+  box-shadow:
+    0 14px 34px rgba(0, 0, 0, 0.08),
+    0 1px 0 rgba(255, 255, 255, 0.76) inset;
+}
+
+.openharness-app-layout .openharness-chat-input__box:focus-within {
+  border-color: transparent;
+  box-shadow:
+    0 16px 38px rgba(0, 0, 0, 0.1),
+    0 0 0 3px color-mix(in srgb, var(--oh-system-accent) 13%, transparent);
+}
+
+.openharness-app-layout .openharness-nav-panel__footer,
+.openharness-app-layout .openharness-nav-panel__bottom-bar,
+.openharness-app-layout .openharness-chat-input__target-switcher {
+  border-color: transparent;
+}
+
+.openharness-app-layout .openharness-chat-input--collapsed .openharness-chat-input__box {
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--oh-system-surface) 88%, transparent);
+}
+
+.openharness-app-layout .openharness-chat-input__send-button:not(:disabled) {
+  background: var(--oh-system-accent);
+  border-color: var(--oh-system-accent);
+  color: #fff;
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--oh-system-accent) 24%, transparent);
+}
+
+.openharness-app-layout .openharness-chat-input__send-button:hover:not(:disabled),
+.openharness-app-layout .openharness-chat-input__box:focus-within .openharness-chat-input__send-button:not(:disabled) {
+  background: var(--oh-system-accent-hover);
+  border-color: var(--oh-system-accent-hover);
+  transform: none;
+  box-shadow: 0 5px 14px color-mix(in srgb, var(--oh-system-accent) 28%, transparent);
+}
+
+.openharness-app-layout .flow-chat-container,
+.openharness-app-layout .modern-flow-chat-container {
+  background: var(--oh-system-surface);
+}
+
+@media (max-width: 768px) {
+  .openharness-app-layout .openharness-workspace-body {
+    gap: 6px;
+    padding: 6px;
+  }
+
+  .openharness-app-layout .welcome-scene {
+    padding: 28px 18px;
+  }
+}

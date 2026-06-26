@@ -5,5 +5,5 @@
     "user": "User",
     "project": "Project"
   },
-  "memoryProjectPlaceholder": "Project-level memory is not yet available."
+  "memoryProjectPlaceholder": "No project memories yet. Memories are automatically captured during conversations."
 }

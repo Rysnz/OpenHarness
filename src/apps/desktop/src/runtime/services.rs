@@ -34,7 +34,33 @@ pub fn setup_panic_hook() {
             })
             .unwrap_or("unknown panic message");
 
-        log::error!("Application panic at {}: {}", location, message);
+        let thread = std::thread::current();
+        let thread_name = thread.name().unwrap_or("unnamed");
+
+        log::error!(
+            "Application panic at {} (thread: {}): {}",
+            location,
+            thread_name,
+            message
+        );
+
+        // Also write to a persistent crash log file
+        if let Some(home) = dirs::home_dir() {
+            let crash_log = home.join(".openharness-crash.log");
+            let _ = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&crash_log)
+                .and_then(|mut f| {
+                    use std::io::Write;
+                    let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
+                    writeln!(
+                        f,
+                        "[{}] PANIC at {} (thread: {}): {}",
+                        timestamp, location, thread_name, message
+                    )
+                });
+        }
 
         if location.contains("wry") && location.contains("wkwebview") {
             log::warn!("Suppressed non-fatal wry/wkwebview panic, application continues");

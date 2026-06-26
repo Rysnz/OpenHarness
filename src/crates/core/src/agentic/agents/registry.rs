@@ -134,6 +134,10 @@ fn default_model_id_for_builtin_agent(agent_type: &str) -> &'static str {
     }
 }
 
+fn is_inherit_model_id(model: &str) -> bool {
+    model.trim().eq_ignore_ascii_case("inherit")
+}
+
 async fn get_mode_configs() -> HashMap<String, ModeConfig> {
     if let Ok(config_service) = GlobalConfigManager::get_service().await {
         config_service
@@ -473,7 +477,13 @@ impl AgentRegistry {
                 };
                 let registered_tool_names = get_all_registered_tool_names().await;
                 let valid_tools: HashSet<String> = registered_tool_names.iter().cloned().collect();
-                let base_tools = if definition.allowed_tools.is_empty() {
+                let base_tools = if definition
+                    .allowed_tools
+                    .iter()
+                    .any(|tool| tool.trim() == "*")
+                {
+                    registered_tool_names.clone()
+                } else if definition.allowed_tools.is_empty() {
                     entry.agent.default_tools()
                 } else {
                     definition.allowed_tools.clone()
@@ -687,7 +697,7 @@ impl AgentRegistry {
             let (valid, invalid): (Vec<_>, Vec<_>) = items
                 .into_iter()
                 .filter(|item| dedupe.insert(item.clone()))
-                .partition(|tool| valid_tools_set.contains(tool.as_str()));
+                .partition(|tool| tool.trim() == "*" || valid_tools_set.contains(tool.as_str()));
             (valid, invalid)
         };
 
@@ -1165,6 +1175,13 @@ impl AgentRegistry {
             if let Some(config) = entry.custom_config {
                 let model = config.model;
                 if !model.is_empty() {
+                    if is_inherit_model_id(&model) {
+                        debug!(
+                            "[AgentRegistry] Custom subagent '{}' requested inherited model without parent context; using primary",
+                            agent_type
+                        );
+                        return Ok("primary".to_string());
+                    }
                     debug!(
                         "[AgentRegistry] Custom subagent '{}' using model from cache: {}",
                         agent_type, model
@@ -1232,7 +1249,10 @@ impl AgentRegistry {
             allowed_tools: entry.agent.default_tools(),
             disallowed_tools: Vec::new(),
             mcp_servers: Vec::new(),
+            inline_mcp_servers: HashMap::new(),
             skills: Vec::new(),
+            initial_prompt: None,
+            background: false,
             memory: AgentMemoryConfig::default(),
             hooks: AgentHookConfig::default(),
             isolation: crate::agentic::runtime::workspace_binding::WorkspaceIsolation::None,
@@ -1262,9 +1282,10 @@ pub fn get_agent_registry() -> Arc<AgentRegistry> {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_disallowed_tools, default_model_id_for_builtin_agent,
+        apply_disallowed_tools, default_model_id_for_builtin_agent, is_inherit_model_id,
         merge_dynamic_mcp_tools_for_servers,
     };
+    use crate::agentic::agents::{Agent, AgenticMode, CoworkMode, PartnerMode};
 
     #[test]
     fn top_level_modes_default_to_auto() {
@@ -1277,6 +1298,24 @@ mod tests {
     fn non_mode_agents_default_to_primary() {
         assert_eq!(default_model_id_for_builtin_agent("Explore"), "primary");
         assert_eq!(default_model_id_for_builtin_agent("CodeReview"), "primary");
+    }
+
+    #[test]
+    fn inherit_model_id_is_recognized_case_insensitively() {
+        assert!(is_inherit_model_id("inherit"));
+        assert!(is_inherit_model_id(" InHerit "));
+        assert!(!is_inherit_model_id("primary"));
+    }
+
+    #[test]
+    fn interactive_modes_expose_miniapp_tool_by_default() {
+        for tools in [
+            AgenticMode::new().default_tools(),
+            CoworkMode::new().default_tools(),
+            PartnerMode::new().default_tools(),
+        ] {
+            assert!(tools.iter().any(|tool| tool == "InitMiniApp"));
+        }
     }
 
     #[test]

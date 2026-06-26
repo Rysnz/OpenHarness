@@ -3,7 +3,7 @@ import { FolderOpen, Clock, FolderPlus, Trash2 } from 'lucide-react';
 import { useWorkspaceContext } from '@/infrastructure/contexts/WorkspaceContext';
 import { useSceneStore } from '@/app/stores/sceneStore';
 import { useI18n } from '@/infrastructure/i18n';
-import { Tooltip } from '@/component-library';
+import { OpenHarnessLogo, Tooltip } from '@/component-library';
 import { createLogger } from '@/shared/utils/logger';
 import type { SceneTabId } from '@/app/components/SceneBar/types';
 import type { WorkspaceInfo } from '@/shared/types';
@@ -177,6 +177,9 @@ const WelcomeScene: React.FC = () => {
     <div className="welcome-scene">
       <div className="welcome-scene__content">
         <div className="welcome-scene__greeting">
+          <div className="welcome-scene__brand-mark" aria-hidden="true">
+            <OpenHarnessLogo size={42} animated={false} variant="compact" status="resolved" />
+          </div>
           <h1 className="welcome-scene__title">{t('welcomeScene.firstTime.title')}</h1>
           <p className="welcome-scene__greeting-label">{welcomeMessage}</p>
         </div>
