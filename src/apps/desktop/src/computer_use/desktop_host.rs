@@ -34,7 +34,7 @@ use std::time::{Duration, Instant};
 const POINTER_OVERLAY_SVG: &str = include_str!("../../assets/computer_use_pointer.svg");
 
 /// Screenshot cache validity duration (ms) - reuse full capture for subsequent crops within this window
-const SCREENSHOT_CACHE_TTL_MS: u64 = 300;
+const SCREENSHOT_CACHE_TTL_MS: u64 = 1000;
 
 /// Error text when `click_needs_fresh_screenshot` blocks `click` or Enter `key_chord` (single source of truth).
 const STALE_CAPTURE_TOOL_MESSAGE: &str = "Computer use refused: call **`screenshot`** first. Use a **bare** `screenshot` (do not set `screenshot_reset_navigation`) — the host applies a **~500×500** crop around the **mouse**. Before Return/Enter in a focused text field, set **`screenshot_implicit_center`**: **`text_caret`**. This is required after the pointer moved since the last capture, before **`click`** or before **`key_chord`** that includes Return/Enter.";
@@ -160,7 +160,7 @@ static COORD_AXIS_FONT: OnceLock<Font> = OnceLock::new();
 fn coord_axis_font() -> &'static Font {
     COORD_AXIS_FONT.get_or_init(|| {
         Font::from_bytes(COORD_AXIS_FONT_TTF, FontSettings::default())
-            .expect("Inter TTF embedded for computer-use SoM/overlay labels")
+            .expect("Inter TTF embedded font is corrupt or missing — cannot render ComputerUse overlays")
     })
 }
 
@@ -1163,7 +1163,7 @@ end tell"#])
             "f11" => Key::F11,
             "f12" => Key::F12,
             s if s.len() == 1 => {
-                let c = s.chars().next().unwrap();
+                let c = s.chars().next().unwrap_or('?');
                 Key::Unicode(c)
             }
             _ => {
@@ -2032,7 +2032,10 @@ impl ComputerUseHost for DesktopComputerUseHost {
     }
 
     fn computer_use_interaction_state(&self) -> ComputerUseInteractionState {
-        let s = self.state.lock().unwrap();
+        let s = self.state.lock().unwrap_or_else(|poisoned| {
+            log::error!("ComputerUse state mutex poisoned — recovering (state may be stale)");
+            poisoned.into_inner()
+        });
         let last_ref = s.last_shot_refinement;
         let click_needs_fresh = s.click_needs_fresh_screenshot;
         let pending_verify = s.pending_verify_screenshot;
@@ -2602,6 +2605,7 @@ impl ComputerUseHost for DesktopComputerUseHost {
                     e.key(mapped[0], Direction::Click)
                         .map_err(|err| OpenHarnessError::tool(format!("key: {}", err)))?;
                 } else {
+                    // Safety: mapped.len() >= 2 (we checked len == 1 above)
                     let mods = &mapped[..mapped.len() - 1];
                     let last = *mapped.last().unwrap();
                     for k in mods {

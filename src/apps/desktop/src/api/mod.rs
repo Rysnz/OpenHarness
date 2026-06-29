@@ -1,5 +1,7 @@
 //! API layer module
 
+pub mod macros;
+
 pub mod agentic_api;
 pub mod ai_memory_api;
 pub mod ai_rules_api;

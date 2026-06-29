@@ -344,29 +344,23 @@ pub async fn remote_connect_get_methods() -> Result<Vec<ConnectionMethodInfo>, S
                 available: true,
                 description: "Internet via ngrok tunnel".into(),
             },
-            ConnectionMethod::OpenHarnessServer => ConnectionMethodInfo {
-                id: "openharness_server".into(),
-                name: "OpenHarness Server".into(),
-                available: true,
-                description: "Official OpenHarness relay".into(),
-            },
             ConnectionMethod::CustomServer { url } => ConnectionMethodInfo {
                 id: "custom_server".into(),
                 name: "Custom Server".into(),
                 available: true,
                 description: format!("Self-hosted: {url}"),
             },
+            ConnectionMethod::BotQq => ConnectionMethodInfo {
+                id: "bot_qq".into(),
+                name: "QQ Bot".into(),
+                available: true,
+                description: "Via QQ messenger".into(),
+            },
             ConnectionMethod::BotFeishu => ConnectionMethodInfo {
                 id: "bot_feishu".into(),
                 name: "Feishu Bot".into(),
                 available: true,
                 description: "Via Feishu messenger".into(),
-            },
-            ConnectionMethod::BotTelegram => ConnectionMethodInfo {
-                id: "bot_telegram".into(),
-                name: "Telegram Bot".into(),
-                available: true,
-                description: "Via Telegram".into(),
             },
             ConnectionMethod::BotWeixin => ConnectionMethodInfo {
                 id: "bot_weixin".into(),
@@ -387,12 +381,11 @@ fn parse_connection_method(
     match method {
         "lan" => Ok(ConnectionMethod::Lan),
         "ngrok" => Ok(ConnectionMethod::Ngrok),
-        "openharness_server" => Ok(ConnectionMethod::OpenHarnessServer),
         "custom_server" => Ok(ConnectionMethod::CustomServer {
             url: custom_url.unwrap_or_default(),
         }),
+        "bot_qq" => Ok(ConnectionMethod::BotQq),
         "bot_feishu" => Ok(ConnectionMethod::BotFeishu),
-        "bot_telegram" => Ok(ConnectionMethod::BotTelegram),
         "bot_weixin" => Ok(ConnectionMethod::BotWeixin),
         _ => Err(format!("unknown connection method: {method}")),
     }
@@ -499,20 +492,10 @@ pub struct ConfigureBotRequest {
     pub app_id: Option<String>,
     pub app_secret: Option<String>,
     pub bot_token: Option<String>,
+    pub sandbox: Option<bool>,
     pub weixin_ilink_token: Option<String>,
     pub weixin_base_url: Option<String>,
     pub weixin_bot_account_id: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct WeixinQrStartRequest {
-    pub base_url: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct WeixinQrPollRequest {
-    pub session_key: String,
-    pub base_url: Option<String>,
 }
 
 #[tauri::command]
@@ -521,12 +504,14 @@ pub async fn remote_connect_configure_bot(request: ConfigureBotRequest) -> Resul
     let mut guard = holder.write().await;
 
     let bot_config = match request.bot_type.as_str() {
+        "qq" => BotConfig::Qq {
+            app_id: request.app_id.unwrap_or_default(),
+            app_secret: request.app_secret.unwrap_or_default(),
+            sandbox: request.sandbox.unwrap_or(false),
+        },
         "feishu" => BotConfig::Feishu {
             app_id: request.app_id.unwrap_or_default(),
             app_secret: request.app_secret.unwrap_or_default(),
-        },
-        "telegram" => BotConfig::Telegram {
-            bot_token: request.bot_token.unwrap_or_default(),
         },
         "weixin" => BotConfig::Weixin {
             ilink_token: request.weixin_ilink_token.unwrap_or_default(),
@@ -537,48 +522,35 @@ pub async fn remote_connect_configure_bot(request: ConfigureBotRequest) -> Resul
     };
 
     if guard.is_none() {
-        let config = match bot_config {
-            BotConfig::Feishu { .. } => RemoteConnectConfig {
-                mobile_web_dir: detect_mobile_web_dir(),
-                bot_feishu: Some(bot_config),
-                ..RemoteConnectConfig::default()
-            },
-            BotConfig::Telegram { .. } => RemoteConnectConfig {
-                mobile_web_dir: detect_mobile_web_dir(),
-                bot_telegram: Some(bot_config),
-                ..RemoteConnectConfig::default()
-            },
-            BotConfig::Weixin { .. } => RemoteConnectConfig {
-                mobile_web_dir: detect_mobile_web_dir(),
-                bot_weixin: Some(bot_config),
-                ..RemoteConnectConfig::default()
-            },
+        let mut config = RemoteConnectConfig {
+            mobile_web_dir: detect_mobile_web_dir(),
+            ..RemoteConnectConfig::default()
         };
+        match &bot_config {
+            BotConfig::Qq { .. } => config.bot_qq = Some(bot_config),
+            BotConfig::Feishu { .. } => config.bot_feishu = Some(bot_config),
+            BotConfig::Weixin { .. } => config.bot_weixin = Some(bot_config),
+        }
         let service = RemoteConnectService::new(config).map_err(|e| format!("init: {e}"))?;
         *guard = Some(service);
     } else if let Some(service) = guard.as_mut() {
         service.update_bot_config(bot_config);
     }
-
     Ok(())
 }
 
-#[tauri::command]
-pub async fn remote_connect_weixin_qr_start(
-    request: WeixinQrStartRequest,
-) -> Result<weixin::WeixinQrStartResponse, String> {
-    weixin::weixin_qr_start(request.base_url)
-        .await
-        .map_err(|e| format!("weixin qr start: {e}"))
-}
+#[derive(Debug, Deserialize)]
+pub struct WeixinQrStartRequest { pub base_url: Option<String> }
+#[derive(Debug, Deserialize)]
+pub struct WeixinQrPollRequest { pub session_key: String, pub base_url: Option<String> }
 
 #[tauri::command]
-pub async fn remote_connect_weixin_qr_poll(
-    request: WeixinQrPollRequest,
-) -> Result<weixin::WeixinQrPollResponse, String> {
-    weixin::weixin_qr_poll(&request.session_key, request.base_url)
-        .await
-        .map_err(|e| format!("weixin qr poll: {e}"))
+pub async fn remote_connect_weixin_qr_start(request: WeixinQrStartRequest) -> Result<weixin::WeixinQrStartResponse, String> {
+    weixin::weixin_qr_start(request.base_url).await.map_err(|e| format!("weixin qr: {e}"))
+}
+#[tauri::command]
+pub async fn remote_connect_weixin_qr_poll(request: WeixinQrPollRequest) -> Result<weixin::WeixinQrPollResponse, String> {
+    weixin::weixin_qr_poll(&request.session_key, request.base_url).await.map_err(|e| format!("weixin poll: {e}"))
 }
 
 #[tauri::command]

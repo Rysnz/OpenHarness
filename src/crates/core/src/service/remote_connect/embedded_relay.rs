@@ -5,7 +5,9 @@
 //! mobile-web file storage (no disk I/O for uploaded assets).
 
 use log::info;
-use openharness_relay_server::{build_relay_router, MemoryAssetStore, RoomManager};
+use openharness_relay_server::build_relay_router;
+use openharness_relay_shared::room::RoomManager;
+use openharness_relay_shared::MemoryAssetStore;
 use std::sync::Arc;
 
 /// Start the embedded relay and return a shutdown handle.

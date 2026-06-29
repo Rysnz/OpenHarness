@@ -16,6 +16,7 @@ use axum::Json;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+use std::path::Component;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -179,6 +180,44 @@ fn generate_correlation_id() -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
+// ── Path traversal guard ──────────────────────────────────────────────────
+
+/// Returns `true` when `rel` is safe for use inside a room asset root.
+///
+/// Rejects:
+/// - absolute paths
+/// - `..` / `../` segments in any form
+/// - hidden files/dirs (`//.`, trailing `.`)
+/// - empty or `/`-only inputs
+fn is_safe_room_path(rel: &str) -> bool {
+    if rel.is_empty() {
+        return false;
+    }
+
+    let path = std::path::Path::new(rel);
+
+    if path.is_absolute() {
+        return false;
+    }
+
+    for component in path.components() {
+        match component {
+            Component::ParentDir => return false,
+            Component::Normal(os_str) => {
+                let s = os_str.to_string_lossy();
+                // reject hidden / traversal-via-dots
+                if s == "." || s == ".." || s.starts_with('.') || s.ends_with('.') {
+                    return false;
+                }
+            }
+            Component::RootDir | Component::Prefix(_) => return false,
+            Component::CurDir => {} // ok
+        }
+    }
+
+    true
+}
+
 // ── Per-room mobile-web upload & serving ───────────────────────────────────
 
 fn hex_sha256(data: &[u8]) -> String {
@@ -207,7 +246,7 @@ pub async fn upload_web(
     let mut written = 0usize;
     let mut reused = 0usize;
     for (rel_path, b64_content) in &body.files {
-        if rel_path.contains("..") {
+        if !is_safe_room_path(rel_path) {
             continue;
         }
         let decoded = B64
@@ -276,7 +315,7 @@ pub async fn check_web_files(
     let total_count = body.files.len();
 
     for entry in &body.files {
-        if entry.path.contains("..") {
+        if !is_safe_room_path(&entry.path) {
             continue;
         }
         if state.asset_store.has_content(&entry.hash) {
@@ -326,7 +365,7 @@ pub async fn upload_web_files(
 
     let mut stored = 0usize;
     for (rel_path, entry) in &body.files {
-        if rel_path.contains("..") {
+        if !is_safe_room_path(rel_path) {
             continue;
         }
         let decoded = B64
@@ -385,6 +424,11 @@ pub async fn serve_room_web_catchall(
     } else {
         file_path
     };
+
+    // Prevent path traversal in catch-all serving
+    if !is_safe_room_path(lookup_path) {
+        return Err(StatusCode::FORBIDDEN);
+    }
 
     let content = state
         .asset_store

@@ -2,6 +2,7 @@
 
 use crate::api::app_state::AppState;
 use openharness_core::service::system;
+use openharness_core::service::system::security::{assess_command_risk, CommandRisk};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -94,10 +95,56 @@ pub async fn check_commands_exist(
         .collect())
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommandRiskResponse {
+    pub risk: String,
+    pub reason: Option<String>,
+}
+
+/// Pre-flight security check — call before `run_system_command`.
+#[tauri::command]
+pub async fn check_command_risk(
+    request: RunCommandRequest,
+) -> Result<CommandRiskResponse, String> {
+    let risk = assess_command_risk(&request.command, &request.args);
+
+    match risk {
+        CommandRisk::Safe => Ok(CommandRiskResponse {
+            risk: "safe".into(),
+            reason: None,
+        }),
+        CommandRisk::NeedsConfirmation => Ok(CommandRiskResponse {
+            risk: "needs_confirmation".into(),
+            reason: Some(format!(
+                "Command '{}' is not in the trusted list — user confirmation required",
+                request.command,
+            )),
+        }),
+        CommandRisk::Blocked => Err(format!(
+            "Command '{}' is blocked for security reasons",
+            request.command,
+        )),
+    }
+}
+
 #[tauri::command]
 pub async fn run_system_command(
     request: RunCommandRequest,
 ) -> Result<CommandOutputResponse, String> {
+    // Hard enforcement — blocked commands never execute
+    let risk = assess_command_risk(&request.command, &request.args);
+    if risk == CommandRisk::Blocked {
+        return Err(format!("Blocked command: {}", request.command));
+    }
+    if risk == CommandRisk::NeedsConfirmation {
+        log::warn!(
+            "Executing unconfirmed command: {} {}",
+            request.command,
+            request.args.join(" ")
+        );
+    }
+
     let env_vars: Option<Vec<(String, String)>> = request
         .env
         .map(|vars| vars.into_iter().map(|v| (v.key, v.value)).collect());

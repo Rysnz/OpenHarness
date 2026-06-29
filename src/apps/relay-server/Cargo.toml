@@ -9,9 +9,9 @@ description = "OpenHarness Relay Server - WebSocket relay for Remote Connect"
 name = "openharness_relay_server"
 path = "src/lib.rs"
 
-[[bin]]
-name = "openharness-relay-server"
-path = "src/main.rs"
+# [[bin]]
+# name = "openharness-relay-server"
+# path = "src/main.rs"
 
 [dependencies]
 # Web framework
@@ -40,3 +40,6 @@ dashmap = "5.5"
 rand = "0.8"
 base64 = "0.21"
 sha2 = "0.10"
+
+# Shared relay types (RoomManager, WebAssetStore, MemoryAssetStore)
+openharness-relay-shared = { path = "../../crates/relay-shared" }

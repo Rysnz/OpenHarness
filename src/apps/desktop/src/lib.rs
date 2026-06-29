@@ -646,6 +646,7 @@ pub async fn run() {
             send_system_notification,
             check_command_exists,
             check_commands_exist,
+            check_command_risk,
             run_system_command,
             set_macos_edit_menu_mode,
             i18n_get_current_language,

@@ -29,6 +29,7 @@ pub use relay_transport::RelayClient;
 pub use remote_server::RemoteServer;
 
 use anyhow::Result;
+use bot::command_router::BotChatState;
 use log::{debug, error, info};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -40,10 +41,9 @@ use tokio::sync::RwLock;
 pub enum ConnectionMethod {
     Lan,
     Ngrok,
-    OpenHarnessServer,
     CustomServer { url: String },
+    BotQq,
     BotFeishu,
-    BotTelegram,
     BotWeixin,
 }
 
@@ -51,11 +51,10 @@ pub enum ConnectionMethod {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RemoteConnectConfig {
     pub lan_port: u16,
-    pub openharness_server_url: String,
     pub web_app_url: String,
     pub custom_server_url: Option<String>,
+    pub bot_qq: Option<bot::BotConfig>,
     pub bot_feishu: Option<bot::BotConfig>,
-    pub bot_telegram: Option<bot::BotConfig>,
     pub bot_weixin: Option<bot::BotConfig>,
     pub mobile_web_dir: Option<String>,
 }
@@ -64,11 +63,10 @@ impl Default for RemoteConnectConfig {
     fn default() -> Self {
         Self {
             lan_port: 9700,
-            openharness_server_url: "https://remote.openopenharness.com/relay".to_string(),
-            web_app_url: "https://remote.openopenharness.com/relay".to_string(),
+            web_app_url: String::new(),
             custom_server_url: None,
+            bot_qq: None,
             bot_feishu: None,
-            bot_telegram: None,
             bot_weixin: None,
             mobile_web_dir: None,
         }
@@ -115,15 +113,15 @@ pub struct RemoteConnectService {
     ngrok_tunnel: Arc<RwLock<Option<ngrok::NgrokTunnel>>>,
     embedded_relay: Arc<RwLock<Option<embedded_relay::EmbeddedRelayHandle>>>,
     // Bot handles live independently of relay connections
-    bot_telegram_handle: Arc<RwLock<Option<BotHandle>>>,
+    bot_qq_handle: Arc<RwLock<Option<BotHandle>>>,
     bot_feishu_handle: Arc<RwLock<Option<BotHandle>>>,
     bot_weixin_handle: Arc<RwLock<Option<BotHandle>>>,
     // Keep Arc references to bots for send_message etc.
-    telegram_bot: Arc<RwLock<Option<Arc<bot::telegram::TelegramBot>>>>,
+    qq_bot: Arc<RwLock<Option<Arc<bot::qq::QqBot>>>>,
     feishu_bot: Arc<RwLock<Option<Arc<bot::feishu::FeishuBot>>>>,
     weixin_bot: Arc<RwLock<Option<Arc<bot::weixin::WeixinBot>>>>,
     /// Independent bot connection state — not tied to PairingProtocol.
-    /// Stores the peer description (e.g. "Telegram(7096812005)") when a bot is active.
+    /// Stores the peer description (e.g. "QQ(group:xxx)") when a bot is active.
     bot_connected_info: Arc<RwLock<Option<String>>>,
     /// Trusted mobile identity for the current relay lifecycle only.
     trusted_mobile_identity: Arc<RwLock<Option<TrustedMobileIdentity>>>,
@@ -143,10 +141,10 @@ impl RemoteConnectService {
             active_method: Arc::new(RwLock::new(None)),
             ngrok_tunnel: Arc::new(RwLock::new(None)),
             embedded_relay: Arc::new(RwLock::new(None)),
-            bot_telegram_handle: Arc::new(RwLock::new(None)),
+            bot_qq_handle: Arc::new(RwLock::new(None)),
             bot_feishu_handle: Arc::new(RwLock::new(None)),
             bot_weixin_handle: Arc::new(RwLock::new(None)),
-            telegram_bot: Arc::new(RwLock::new(None)),
+            qq_bot: Arc::new(RwLock::new(None)),
             feishu_bot: Arc::new(RwLock::new(None)),
             weixin_bot: Arc::new(RwLock::new(None)),
             bot_connected_info: Arc::new(RwLock::new(None)),
@@ -223,23 +221,9 @@ impl RemoteConnectService {
 
     pub fn update_bot_config(&mut self, bot_config: bot::BotConfig) {
         match bot_config {
-            bot::BotConfig::Feishu { app_id, app_secret } => {
-                self.config.bot_feishu = Some(bot::BotConfig::Feishu { app_id, app_secret });
-            }
-            bot::BotConfig::Telegram { bot_token } => {
-                self.config.bot_telegram = Some(bot::BotConfig::Telegram { bot_token });
-            }
-            bot::BotConfig::Weixin {
-                ilink_token,
-                base_url,
-                bot_account_id,
-            } => {
-                self.config.bot_weixin = Some(bot::BotConfig::Weixin {
-                    ilink_token,
-                    base_url,
-                    bot_account_id,
-                });
-            }
+            bot::BotConfig::Qq { .. } => self.config.bot_qq = Some(bot_config),
+            bot::BotConfig::Feishu { .. } => self.config.bot_feishu = Some(bot_config),
+            bot::BotConfig::Weixin { .. } => self.config.bot_weixin = Some(bot_config),
         }
     }
 
@@ -247,13 +231,10 @@ impl RemoteConnectService {
         vec![
             ConnectionMethod::Lan,
             ConnectionMethod::Ngrok,
-            ConnectionMethod::OpenHarnessServer,
             ConnectionMethod::CustomServer {
                 url: self.config.custom_server_url.clone().unwrap_or_default(),
             },
-            ConnectionMethod::BotFeishu,
-            ConnectionMethod::BotTelegram,
-            ConnectionMethod::BotWeixin,
+            ConnectionMethod::BotQq,
         ]
     }
 
@@ -267,8 +248,8 @@ impl RemoteConnectService {
         info!("Starting remote connect: {method:?}");
 
         match &method {
-            ConnectionMethod::BotFeishu
-            | ConnectionMethod::BotTelegram
+            ConnectionMethod::BotQq
+            | ConnectionMethod::BotFeishu
             | ConnectionMethod::BotWeixin => {
                 return self.start_bot_connection(&method).await;
             }
@@ -315,7 +296,6 @@ impl RemoteConnectService {
                 *self.ngrok_tunnel.write().await = Some(tunnel);
                 url
             }
-            ConnectionMethod::OpenHarnessServer => self.config.openharness_server_url.clone(),
             ConnectionMethod::CustomServer { url } => url.clone(),
             _ => unreachable!(),
         };
@@ -350,28 +330,6 @@ impl RemoteConnectService {
 
         let web_app_url: String = match &method {
             ConnectionMethod::Lan | ConnectionMethod::Ngrok => relay_url.clone(),
-            ConnectionMethod::OpenHarnessServer => {
-                if let Some(web_dir) = static_dir {
-                    match upload_mobile_web(&relay_url, &qr_payload.room_id, web_dir).await {
-                        Ok(()) => {
-                            let url = format!(
-                                "{}/r/{}",
-                                relay_url.trim_end_matches('/'),
-                                qr_payload.room_id
-                            );
-                            info!("Uploaded mobile-web to relay: {url}");
-                            url
-                        }
-                        Err(e) => {
-                            error!("Failed to upload mobile-web to relay: {e}; falling back to server-hosted version");
-                            self.config.web_app_url.clone()
-                        }
-                    }
-                } else {
-                    info!("No mobile_web_dir configured; using server-hosted mobile web");
-                    self.config.web_app_url.clone()
-                }
-            }
             ConnectionMethod::CustomServer { .. } => {
                 if let Some(web_dir) = static_dir {
                     match upload_mobile_web(&relay_url, &qr_payload.room_id, web_dir).await {
@@ -622,192 +580,79 @@ impl RemoteConnectService {
 
     async fn start_bot_connection(&self, method: &ConnectionMethod) -> Result<ConnectionResult> {
         let pairing_code = PairingProtocol::generate_bot_pairing_code();
+        let qq_pairing_code = bot::qq::QqBot::pairing_code();
 
         let bot_link = match method {
-            ConnectionMethod::BotTelegram => {
-                match &self.config.bot_telegram {
-                    Some(bot::BotConfig::Telegram { bot_token }) if !bot_token.is_empty() => {
-                        // Stop any existing Telegram bot
-                        if let Some(handle) = self.bot_telegram_handle.write().await.take() {
-                            handle.stop();
-                        }
-
-                        let tg_bot = Arc::new(bot::telegram::TelegramBot::new(
-                            bot::telegram::TelegramConfig {
-                                bot_token: bot_token.clone(),
-                            },
-                        ));
-                        tg_bot.register_pairing(&pairing_code).await?;
-
+            ConnectionMethod::BotQq => {
+                match &self.config.bot_qq {
+                    Some(bot::BotConfig::Qq { app_id, app_secret, sandbox }) if !app_id.is_empty() && !app_secret.is_empty() => {
+                        if let Some(handle) = self.bot_qq_handle.write().await.take() { handle.stop(); }
+                        let qq_cfg = bot::qq::QqBotConfig { app_id: app_id.clone(), app_secret: app_secret.clone(), sandbox: *sandbox };
                         let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
-
-                        let bot_connected_info = self.bot_connected_info.clone();
-                        let bot_for_pair = tg_bot.clone();
-                        let bot_for_loop = tg_bot.clone();
-                        let tg_bot_ref = self.telegram_bot.clone();
-
-                        *tg_bot_ref.write().await = Some(tg_bot.clone());
-
+                        let state = BotChatState::new("qq".into());
+                        let bot = bot::qq::QqBot::new(qq_cfg, state, stop_rx);
+                        let qq_bot = Arc::new(bot);
+                        *self.qq_bot.write().await = Some(qq_bot.clone());
+                        let bot_for_run = qq_bot.clone();
                         tokio::spawn(async move {
-                            let mut stop_rx = stop_rx;
-                            match bot_for_pair.wait_for_pairing(&mut stop_rx).await {
-                                Ok(chat_id) => {
-                                    // Guard against the race where stop_bots() cleared
-                                    // bot_connected_info between pairing completing and
-                                    // this task running.
-                                    if !*stop_rx.borrow() {
-                                        *bot_connected_info.write().await =
-                                            Some(format!("Telegram({chat_id})"));
-                                        info!("Telegram bot paired, starting message loop");
-                                        bot_for_loop.run_message_loop(stop_rx).await;
-                                    } else {
-                                        info!("Telegram pairing completed but bot was stopped; discarding");
-                                    }
-                                }
-                                Err(e) => {
-                                    info!("Telegram pairing ended: {e}");
-                                }
-                            }
+                            info!("QQ Bot starting (pairing code: {qq_pairing_code:06})...");
+                            if let Err(e) = bot_for_run.run().await { info!("QQ Bot ended: {e}"); }
                         });
-
-                        *self.bot_telegram_handle.write().await = Some(BotHandle { stop_tx });
-
-                        "https://t.me/BotFather".to_string()
+                        *self.bot_qq_handle.write().await = Some(BotHandle { stop_tx });
+                        *self.bot_connected_info.write().await = Some("QQ Bot (pairing)".to_string());
+                        format!("发送 {:06} 给 QQ 机器人完成配对", qq_pairing_code)
                     }
-                    _ => {
-                        return Err(anyhow::anyhow!(
-                            "Telegram bot token not configured. Please set bot token first."
-                        ));
-                    }
+                    _ => return Err(anyhow::anyhow!("QQ Bot not configured. Set App ID and App Secret first.")),
                 }
             }
             ConnectionMethod::BotFeishu => {
                 match &self.config.bot_feishu {
-                    Some(bot::BotConfig::Feishu { app_id, app_secret })
-                        if !app_id.is_empty() && !app_secret.is_empty() =>
-                    {
-                        if let Some(handle) = self.bot_feishu_handle.write().await.take() {
-                            handle.stop();
-                        }
-
-                        let fs_bot =
-                            Arc::new(bot::feishu::FeishuBot::new(bot::feishu::FeishuConfig {
-                                app_id: app_id.clone(),
-                                app_secret: app_secret.clone(),
-                            }));
+                    Some(bot::BotConfig::Feishu { app_id, app_secret }) if !app_id.is_empty() && !app_secret.is_empty() => {
+                        if let Some(handle) = self.bot_feishu_handle.write().await.take() { handle.stop(); }
+                        let fs_bot = Arc::new(bot::feishu::FeishuBot::new(bot::feishu::FeishuConfig { app_id: app_id.clone(), app_secret: app_secret.clone() }));
                         fs_bot.register_pairing(&pairing_code).await?;
-
                         let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
-
-                        let bot_connected_info = self.bot_connected_info.clone();
-                        let bot_for_pair = fs_bot.clone();
-                        let bot_for_loop = fs_bot.clone();
-                        let fs_bot_ref = self.feishu_bot.clone();
-
-                        *fs_bot_ref.write().await = Some(fs_bot.clone());
-
+                        let bot_ci = self.bot_connected_info.clone();
+                        let bot_pair = fs_bot.clone(); let bot_loop = fs_bot.clone();
+                        *self.feishu_bot.write().await = Some(fs_bot.clone());
                         tokio::spawn(async move {
-                            let mut stop_rx = stop_rx;
-                            match bot_for_pair.wait_for_pairing(&mut stop_rx).await {
-                                Ok(chat_id) => {
-                                    // Guard against the race where stop_bots() cleared
-                                    // bot_connected_info between pairing completing and
-                                    // this task running.
-                                    if !*stop_rx.borrow() {
-                                        *bot_connected_info.write().await =
-                                            Some(format!("Feishu({chat_id})"));
-                                        info!("Feishu bot paired, starting message loop");
-                                        bot_for_loop.run_message_loop(stop_rx).await;
-                                    } else {
-                                        info!("Feishu pairing completed but bot was stopped; discarding");
-                                    }
-                                }
-                                Err(e) => {
-                                    info!("Feishu pairing ended: {e}");
-                                }
+                            let mut sr = stop_rx;
+                            match bot_pair.wait_for_pairing(&mut sr).await {
+                                Ok(chat_id) => { if !*sr.borrow() { *bot_ci.write().await = Some(format!("Feishu({chat_id})")); info!("Feishu paired, starting loop"); bot_loop.run_message_loop(sr).await; } else { info!("Feishu pairing discarded"); } }
+                                Err(e) => { info!("Feishu pairing ended: {e}"); }
                             }
                         });
-
                         *self.bot_feishu_handle.write().await = Some(BotHandle { stop_tx });
-
                         "https://open.feishu.cn/app".to_string()
                     }
-                    _ => {
-                        return Err(anyhow::anyhow!(
-                            "Feishu bot credentials not configured. \
-                             Please set App ID and App Secret first."
-                        ));
-                    }
+                    _ => return Err(anyhow::anyhow!("Feishu bot not configured.")),
                 }
             }
             ConnectionMethod::BotWeixin => {
                 match &self.config.bot_weixin {
-                    Some(bot::BotConfig::Weixin {
-                        ilink_token,
-                        base_url,
-                        bot_account_id,
-                    }) if !ilink_token.is_empty() && !bot_account_id.is_empty() => {
-                        if let Some(handle) = self.bot_weixin_handle.write().await.take() {
-                            handle.stop();
-                        }
-
-                        let wx_cfg = bot::weixin::WeixinConfig {
-                            ilink_token: ilink_token.clone(),
-                            base_url: if base_url.trim().is_empty() {
-                                "https://ilinkai.weixin.qq.com".to_string()
-                            } else {
-                                base_url.clone()
-                            },
-                            bot_account_id: bot_account_id.clone(),
-                        };
-
+                    Some(bot::BotConfig::Weixin { ilink_token, base_url, bot_account_id }) if !ilink_token.is_empty() && !bot_account_id.is_empty() => {
+                        if let Some(handle) = self.bot_weixin_handle.write().await.take() { handle.stop(); }
+                        let wx_cfg = bot::weixin::WeixinConfig { ilink_token: ilink_token.clone(), base_url: if base_url.trim().is_empty() { "https://ilinkai.weixin.qq.com".into() } else { base_url.clone() }, bot_account_id: bot_account_id.clone() };
                         let wx_bot = Arc::new(bot::weixin::WeixinBot::new(wx_cfg));
                         wx_bot.register_pairing(&pairing_code).await?;
-
                         let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
-
-                        let bot_connected_info = self.bot_connected_info.clone();
-                        let bot_for_pair = wx_bot.clone();
-                        let bot_for_loop = wx_bot.clone();
-                        let wx_bot_ref = self.weixin_bot.clone();
-
-                        *wx_bot_ref.write().await = Some(wx_bot.clone());
-
+                        let bot_ci = self.bot_connected_info.clone();
+                        let bot_pair = wx_bot.clone(); let bot_loop = wx_bot.clone();
+                        *self.weixin_bot.write().await = Some(wx_bot.clone());
                         tokio::spawn(async move {
-                            let mut stop_rx = stop_rx;
-                            match bot_for_pair.wait_for_pairing(&mut stop_rx).await {
-                                Ok(peer_id) => {
-                                    if !*stop_rx.borrow() {
-                                        *bot_connected_info.write().await =
-                                            Some(format!("Weixin({peer_id})"));
-                                        info!("Weixin bot paired, starting message loop");
-                                        bot_for_loop.run_message_loop(stop_rx).await;
-                                    } else {
-                                        info!("Weixin pairing completed but bot was stopped; discarding");
-                                    }
-                                }
-                                Err(e) => {
-                                    info!("Weixin pairing ended: {e}");
-                                }
+                            let mut sr = stop_rx;
+                            match bot_pair.wait_for_pairing(&mut sr).await {
+                                Ok(peer_id) => { if !*sr.borrow() { *bot_ci.write().await = Some(format!("Weixin({peer_id})")); info!("Weixin paired, starting loop"); bot_loop.run_message_loop(sr).await; } else { info!("Weixin pairing discarded"); } }
+                                Err(e) => { info!("Weixin pairing ended: {e}"); }
                             }
                         });
-
                         *self.bot_weixin_handle.write().await = Some(BotHandle { stop_tx });
-
                         "https://www.wechat.com".to_string()
                     }
-                    _ => {
-                        return Err(anyhow::anyhow!(
-                            "Weixin not linked. Complete WeChat QR login in Remote Connect first."
-                        ));
-                    }
+                    _ => return Err(anyhow::anyhow!("Weixin not linked. Complete WeChat QR login first.")),
                 }
             }
-            _ => {
-                return Err(anyhow::anyhow!(
-                    "start_bot_connection: unsupported method {method:?}"
-                ));
-            }
+            _ => return Err(anyhow::anyhow!("unsupported method {method:?}")),
         };
 
         Ok(ConnectionResult {
@@ -821,111 +666,43 @@ impl RemoteConnectService {
         })
     }
 
-    /// Restore a previously paired bot from persistence.
-    /// Skips the pairing step and directly starts the message loop.
+    /// Restore a previously paired QQ bot from persistence.
     pub async fn restore_bot(&self, saved: &bot::SavedBotConnection) -> Result<()> {
-        match saved.config {
-            bot::BotConfig::Telegram { ref bot_token } => {
-                if let Some(handle) = self.bot_telegram_handle.write().await.take() {
-                    handle.stop();
-                }
-
-                let tg_bot = Arc::new(bot::telegram::TelegramBot::new(
-                    bot::telegram::TelegramConfig {
-                        bot_token: bot_token.clone(),
-                    },
-                ));
-
-                let chat_id: i64 = saved.chat_id.parse().map_err(|_| {
-                    anyhow::anyhow!("invalid saved telegram chat_id: {}", saved.chat_id)
-                })?;
-                tg_bot
-                    .restore_chat_state(chat_id, saved.chat_state.clone())
-                    .await;
-
+        match &saved.config {
+            bot::BotConfig::Qq { app_id, app_secret, sandbox } => {
+                if let Some(handle) = self.bot_qq_handle.write().await.take() { handle.stop(); }
                 let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
-                *self.telegram_bot.write().await = Some(tg_bot.clone());
-                *self.bot_connected_info.write().await = Some(format!("Telegram({chat_id})"));
-
-                let bot_for_loop = tg_bot.clone();
-                tokio::spawn(async move {
-                    info!("Telegram bot restored from persistence, starting message loop");
-                    bot_for_loop.run_message_loop(stop_rx).await;
-                });
-
-                *self.bot_telegram_handle.write().await = Some(BotHandle { stop_tx });
-                info!("Telegram bot restored for chat_id={chat_id}");
+                let mut state = BotChatState::new(saved.chat_id.clone()); state.paired = true;
+                let bot = bot::qq::QqBot::new(bot::qq::QqBotConfig { app_id: app_id.clone(), app_secret: app_secret.clone(), sandbox: *sandbox }, state, stop_rx);
+                let qq_bot = Arc::new(bot);
+                *self.qq_bot.write().await = Some(qq_bot.clone());
+                *self.bot_connected_info.write().await = Some(format!("QQ({})", saved.chat_id));
+                let bot_for_run = qq_bot.clone();
+                tokio::spawn(async move { info!("QQ Bot restored"); if let Err(e) = bot_for_run.run().await { info!("QQ Bot ended: {e}"); } });
+                *self.bot_qq_handle.write().await = Some(BotHandle { stop_tx });
             }
-            bot::BotConfig::Feishu {
-                ref app_id,
-                ref app_secret,
-            } => {
-                if let Some(handle) = self.bot_feishu_handle.write().await.take() {
-                    handle.stop();
-                }
-
-                let fs_bot = Arc::new(bot::feishu::FeishuBot::new(bot::feishu::FeishuConfig {
-                    app_id: app_id.clone(),
-                    app_secret: app_secret.clone(),
-                }));
-
-                fs_bot
-                    .restore_chat_state(&saved.chat_id, saved.chat_state.clone())
-                    .await;
-
+            bot::BotConfig::Feishu { app_id, app_secret } => {
+                if let Some(handle) = self.bot_feishu_handle.write().await.take() { handle.stop(); }
+                let fs_bot = Arc::new(bot::feishu::FeishuBot::new(bot::feishu::FeishuConfig { app_id: app_id.clone(), app_secret: app_secret.clone() }));
+                fs_bot.restore_chat_state(&saved.chat_id, saved.chat_state.clone()).await;
                 let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
                 *self.feishu_bot.write().await = Some(fs_bot.clone());
-
-                let cid = saved.chat_id.clone();
-                *self.bot_connected_info.write().await = Some(format!("Feishu({cid})"));
-
-                let bot_for_loop = fs_bot.clone();
-                tokio::spawn(async move {
-                    info!("Feishu bot restored from persistence, starting message loop");
-                    bot_for_loop.run_message_loop(stop_rx).await;
-                });
-
+                *self.bot_connected_info.write().await = Some(format!("Feishu({})", saved.chat_id));
+                let bot_loop = fs_bot.clone();
+                tokio::spawn(async move { info!("Feishu Bot restored"); bot_loop.run_message_loop(stop_rx).await; });
                 *self.bot_feishu_handle.write().await = Some(BotHandle { stop_tx });
-                info!("Feishu bot restored for chat_id={}", saved.chat_id);
             }
-            bot::BotConfig::Weixin {
-                ref ilink_token,
-                ref base_url,
-                ref bot_account_id,
-            } => {
-                if let Some(handle) = self.bot_weixin_handle.write().await.take() {
-                    handle.stop();
-                }
-
-                let wx_cfg = bot::weixin::WeixinConfig {
-                    ilink_token: ilink_token.clone(),
-                    base_url: if base_url.trim().is_empty() {
-                        "https://ilinkai.weixin.qq.com".to_string()
-                    } else {
-                        base_url.clone()
-                    },
-                    bot_account_id: bot_account_id.clone(),
-                };
-
+            bot::BotConfig::Weixin { ilink_token, base_url, bot_account_id } => {
+                if let Some(handle) = self.bot_weixin_handle.write().await.take() { handle.stop(); }
+                let wx_cfg = bot::weixin::WeixinConfig { ilink_token: ilink_token.clone(), base_url: if base_url.trim().is_empty() { "https://ilinkai.weixin.qq.com".into() } else { base_url.clone() }, bot_account_id: bot_account_id.clone() };
                 let wx_bot = Arc::new(bot::weixin::WeixinBot::new(wx_cfg));
-                wx_bot
-                    .restore_chat_state(&saved.chat_id, saved.chat_state.clone())
-                    .await;
-
+                wx_bot.restore_chat_state(&saved.chat_id, saved.chat_state.clone()).await;
                 let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
                 *self.weixin_bot.write().await = Some(wx_bot.clone());
-
-                let cid = saved.chat_id.clone();
-                *self.bot_connected_info.write().await = Some(format!("Weixin({cid})"));
-
-                let bot_for_loop = wx_bot.clone();
-                tokio::spawn(async move {
-                    info!("Weixin bot restored from persistence, starting message loop");
-                    bot_for_loop.run_message_loop(stop_rx).await;
-                });
-
+                *self.bot_connected_info.write().await = Some(format!("Weixin({})", saved.chat_id));
+                let bot_loop = wx_bot.clone();
+                tokio::spawn(async move { info!("Weixin Bot restored"); bot_loop.run_message_loop(stop_rx).await; });
                 *self.bot_weixin_handle.write().await = Some(BotHandle { stop_tx });
-                info!("Weixin bot restored for chat_id={}", saved.chat_id);
             }
         }
         Ok(())
@@ -960,24 +737,15 @@ impl RemoteConnectService {
         info!("Relay connections stopped (bots unaffected)");
     }
 
-    /// Stop all bot connections.
+    /// Stop bot connection.
     pub async fn stop_bots(&self) {
-        if let Some(handle) = self.bot_telegram_handle.write().await.take() {
-            handle.stop();
-        }
-        *self.telegram_bot.write().await = None;
-
-        if let Some(handle) = self.bot_feishu_handle.write().await.take() {
-            handle.stop();
-        }
+        if let Some(handle) = self.bot_qq_handle.write().await.take() { handle.stop(); }
+        *self.qq_bot.write().await = None;
+        if let Some(handle) = self.bot_feishu_handle.write().await.take() { handle.stop(); }
         *self.feishu_bot.write().await = None;
-
-        if let Some(handle) = self.bot_weixin_handle.write().await.take() {
-            handle.stop();
-        }
+        if let Some(handle) = self.bot_weixin_handle.write().await.take() { handle.stop(); }
         *self.weixin_bot.write().await = None;
         *self.bot_connected_info.write().await = None;
-
         info!("Bot connections stopped");
     }
 
@@ -1009,10 +777,10 @@ impl RemoteConnectService {
             .map(String::from)
     }
 
-    /// Check whether a specific bot type is currently running.
+    /// Check whether QQ bot is currently running.
     pub async fn is_bot_running(&self, bot_type: &str) -> bool {
         match bot_type {
-            "telegram" => self.bot_telegram_handle.read().await.is_some(),
+            "qq" => self.bot_qq_handle.read().await.is_some(),
             "feishu" => self.bot_feishu_handle.read().await.is_some(),
             "weixin" => self.bot_weixin_handle.read().await.is_some(),
             _ => false,

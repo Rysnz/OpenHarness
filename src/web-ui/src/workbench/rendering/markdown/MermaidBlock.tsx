@@ -4,6 +4,7 @@
  */
 
 import React, { useEffect, useState, useRef, useCallback } from 'react';
+import DOMPurify from 'dompurify';
 import { useI18n } from '@/infrastructure/i18n';
 import { MermaidService, MERMAID_THEME_CHANGE_EVENT } from '../../../tools/mermaid-editor/services/MermaidService';
 import { Loader2, AlertCircle, Code2, Copy, Check, Edit } from 'lucide-react';
@@ -246,7 +247,12 @@ export const MermaidBlock: React.FC<MermaidBlockProps> = ({
           <div className="mermaid-block__rendered">
             <div 
               className="mermaid-block__diagram"
-              dangerouslySetInnerHTML={{ __html: svgContent }}
+              dangerouslySetInnerHTML={{
+                __html: DOMPurify.sanitize(svgContent, {
+                  USE_PROFILES: { svg: true, svgFilters: true },
+                  ADD_TAGS: ['foreignObject'],
+                }),
+              }}
             />
             
             <div className="mermaid-block__actions">

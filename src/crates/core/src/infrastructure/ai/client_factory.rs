@@ -11,13 +11,13 @@ use crate::service::config::{get_global_config_service, ConfigService};
 use crate::util::errors::{OpenHarnessError, OpenHarnessResult};
 use crate::util::types::AIConfig;
 use anyhow::{anyhow, Result};
-use log::{debug, info, warn};
-use std::collections::HashMap;
-use std::sync::{Arc, OnceLock, RwLock};
+use dashmap::DashMap;
+use log::{debug, info};
+use std::sync::{Arc, OnceLock};
 
 pub struct AIClientFactory {
     config_service: Arc<ConfigService>,
-    client_cache: RwLock<HashMap<String, Arc<AIClient>>>,
+    client_cache: DashMap<String, Arc<AIClient>>,
 }
 
 impl AIClientFactory {
@@ -38,7 +38,7 @@ impl AIClientFactory {
     fn new(config_service: Arc<ConfigService>) -> Self {
         Self {
             config_service,
-            client_cache: RwLock::new(HashMap::new()),
+            client_cache: DashMap::new(),
         }
     }
 
@@ -94,38 +94,17 @@ impl AIClientFactory {
     }
 
     pub fn invalidate_cache(&self) {
-        let mut cache = match self.client_cache.write() {
-            Ok(cache) => cache,
-            Err(poisoned) => {
-                warn!("AI client cache write lock poisoned during invalidate_cache, recovering");
-                poisoned.into_inner()
-            }
-        };
-        let count = cache.len();
-        cache.clear();
+        let count = self.client_cache.len();
+        self.client_cache.clear();
         info!("AI client cache cleared (removed {} clients)", count);
     }
 
     pub fn get_cache_size(&self) -> usize {
-        let cache = match self.client_cache.read() {
-            Ok(cache) => cache,
-            Err(poisoned) => {
-                warn!("AI client cache read lock poisoned during get_cache_size, recovering");
-                poisoned.into_inner()
-            }
-        };
-        cache.len()
+        self.client_cache.len()
     }
 
     pub fn invalidate_model(&self, model_id: &str) {
-        let mut cache = match self.client_cache.write() {
-            Ok(cache) => cache,
-            Err(poisoned) => {
-                warn!("AI client cache write lock poisoned during invalidate_model, recovering");
-                poisoned.into_inner()
-            }
-        };
-        if cache.remove(model_id).is_some() {
+        if self.client_cache.remove(model_id).is_some() {
             debug!("Client cache cleared for model: {}", model_id);
         }
     }
@@ -140,19 +119,9 @@ impl AIClientFactory {
                 .unwrap_or_else(|| model_id.to_string()),
         };
 
-        {
-            let cache = match self.client_cache.read() {
-                Ok(cache) => cache,
-                Err(poisoned) => {
-                    warn!(
-                        "AI client cache read lock poisoned during get_or_create_client, recovering"
-                    );
-                    poisoned.into_inner()
-                }
-            };
-            if let Some(client) = cache.get(&normalized_model_id) {
-                return Ok(client.clone());
-            }
+        // Check cache — lock-free per shard
+        if let Some(client) = self.client_cache.get(&normalized_model_id) {
+            return Ok(client.value().clone());
         }
 
         debug!("Creating new AI client: model_id={}", normalized_model_id);
@@ -178,18 +147,10 @@ impl AIClientFactory {
 
         let client = Arc::new(AIClient::new_with_proxy(ai_config, proxy_config));
 
-        {
-            let mut cache = match self.client_cache.write() {
-                Ok(cache) => cache,
-                Err(poisoned) => {
-                    warn!(
-                        "AI client cache write lock poisoned during get_or_create_client, recovering"
-                    );
-                    poisoned.into_inner()
-                }
-            };
-            cache.insert(model_config.id.clone(), client.clone());
-        }
+        // check-then-insert; if another task already inserted, use theirs
+        self.client_cache
+            .entry(model_config.id.clone())
+            .or_insert_with(|| client.clone());
 
         debug!(
             "AI client created: model_id={}, name={}",

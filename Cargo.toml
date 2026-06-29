@@ -1,13 +1,12 @@
 [workspace]
 members = [
     "src/crates/events",
+    "src/crates/relay-shared",
     "src/crates/core",
     "src/crates/transport",
     "src/crates/api-layer",
     "src/crates/webdriver",
-    "src/apps/cli",
     "src/apps/desktop",
-    "src/apps/server",
     "src/apps/relay-server",
 ]
 

@@ -1,9 +1,35 @@
 import React from 'react';
+import DOMPurify from 'dompurify';
+import type { Config as DOMPurifyConfig } from 'dompurify';
 import type { ModalPage } from '../types';
 import MediaRenderer from './MediaRenderer';
 import { useAnnouncementI18n } from '../hooks/useAnnouncementI18n';
 
 const ANNOUNCEMENT_KEY_PREFIX = 'announcements.';
+
+/// DOMPurify allow-list — only safe formatting tags and attributes
+const PURIFY_CONFIG: DOMPurifyConfig = {
+  ALLOWED_TAGS: [
+    'p', 'br', 'strong', 'em', 'code', 'pre',
+    'table', 'thead', 'tbody', 'tr', 'th', 'td',
+    'ul', 'ol', 'li', 'a', 'h1', 'h2', 'h3', 'h4',
+    'img', 'span', 'div',
+  ],
+  ALLOWED_ATTR: [
+    'href', 'target', 'rel',
+    'src', 'alt', 'width', 'height',
+    'class',
+  ],
+  ALLOW_DATA_ATTR: false,
+  ALLOWED_URI_REGEXP: /^(?:(?:https?|ftp|mailto):|[^a-z]|[a-z+.-]+(?:[^a-z+.-:]|$))/i,
+};
+
+/**
+ * Sanitize a raw HTML string through DOMPurify.
+ * Strips script tags, event handlers, data-* attrs, javascript: URIs etc.
+ */
+const sanitizeHtml = (html: string): string =>
+  DOMPurify.sanitize(html, PURIFY_CONFIG) as unknown as string;
 
 interface FeatureModalPageProps {
   page: ModalPage;
@@ -13,6 +39,9 @@ interface FeatureModalPageProps {
 const FeatureModalPage: React.FC<FeatureModalPageProps> = ({ page, active }) => {
   const { t } = useAnnouncementI18n();
   const resolveText = (key: string) => (key.startsWith(ANNOUNCEMENT_KEY_PREFIX) ? t(key) : key);
+
+  // Sanitize before injecting — prevents XSS via announcement body
+  const safeBodyHtml = sanitizeHtml(renderAnnouncementBody(resolveText(page.body)));
 
   return (
     <div className={`feature-modal-page feature-modal-page--${page.layout}`}>
@@ -27,7 +56,7 @@ const FeatureModalPage: React.FC<FeatureModalPageProps> = ({ page, active }) => 
         <div className="feature-modal-page__rule" aria-hidden />
         <div
           className="feature-modal-page__body"
-          dangerouslySetInnerHTML={{ __html: renderAnnouncementBody(resolveText(page.body)) }}
+          dangerouslySetInnerHTML={{ __html: safeBodyHtml }}
         />
       </div>
     </div>

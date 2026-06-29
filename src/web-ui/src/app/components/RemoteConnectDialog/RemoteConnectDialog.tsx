@@ -1,7 +1,7 @@
 /**
  * Remote Connect dialog with two independent groups:
- *   - Network (LAN / Ngrok / OpenHarness Server / Custom Server) – mutually exclusive
- *   - IM Bot (Telegram / Feishu / WeChat) – mutually exclusive
+ *   - Network (LAN / Ngrok / Custom Server) – mutually exclusive
+ *   - IM Bot (QQ / Feishu / WeChat) – mutually exclusive
  * Both groups can be active simultaneously.
  */
 
@@ -27,8 +27,8 @@ import './RemoteConnectDialog.scss';
 // ── Types ────────────────────────────────────────────────────────────
 
 type ActiveGroup = 'network' | 'bot';
-type NetworkTab = 'lan' | 'ngrok' | 'openharness_server' | 'custom_server';
-type BotTab = 'telegram' | 'feishu' | 'weixin';
+type NetworkTab = 'lan' | 'ngrok' | 'custom_server';
+type BotTab = 'qq' | 'feishu' | 'weixin';
 
 /**
  * iLink `qrcode_img_content` is the string to encode in a QR (OpenPartner passes it to
@@ -50,12 +50,11 @@ function isWeixinRasterQrSrc(raw: string): boolean {
 const NETWORK_TABS: { id: NetworkTab; labelKey: string }[] = [
   { id: 'lan', labelKey: 'remoteConnect.tabLan' },
   { id: 'ngrok', labelKey: 'remoteConnect.tabNgrok' },
-  { id: 'openharness_server', labelKey: 'remoteConnect.tabOpenHarnessServer' },
   { id: 'custom_server', labelKey: 'remoteConnect.tabCustomServer' },
 ];
 
 const BOT_TABS: { id: BotTab; label: string }[] = [
-  { id: 'telegram', label: 'Telegram' },
+  { id: 'qq', label: 'QQ' },
   { id: 'feishu', label: '' }, // filled from i18n
   { id: 'weixin', label: '' },
 ];
@@ -71,14 +70,13 @@ const methodToNetworkTab = (method: string | null | undefined): NetworkTab | nul
   if (!method) return null;
   if (method.startsWith('Lan')) return 'lan';
   if (method.startsWith('Ngrok')) return 'ngrok';
-  if (method.startsWith('OpenHarnessServer')) return 'openharness_server';
   if (method.startsWith('CustomServer')) return 'custom_server';
   return null;
 };
 
 const botInfoToBotTab = (info: string | null | undefined): BotTab | null => {
   if (!info) return null;
-  if (info.startsWith('Telegram')) return 'telegram';
+  if (info.startsWith('QQ')) return 'qq';
   if (info.startsWith('Feishu')) return 'feishu';
   if (info.startsWith('Weixin')) return 'weixin';
   return null;
@@ -112,7 +110,8 @@ export const RemoteConnectDialog: React.FC<RemoteConnectDialogProps> = ({
 
   const [qrCopied, setQrCopied] = useState(false);
   const [customUrl, setCustomUrl] = useState('');
-  const [tgToken, setTgToken] = useState('');
+  const [qqAppId, setQqAppId] = useState('');
+  const [qqAppSecret, setQqAppSecret] = useState('');
   const [feishuAppId, setFeishuAppId] = useState('');
   const [feishuAppSecret, setFeishuAppSecret] = useState('');
   const [weixinIlinkToken, setWeixinIlinkToken] = useState('');
@@ -124,7 +123,8 @@ export const RemoteConnectDialog: React.FC<RemoteConnectDialogProps> = ({
 
   const formSnapshotRef = useRef({
     customUrl: '',
-    tgToken: '',
+    qqAppId: '',
+    qqAppSecret: '',
     feishuAppId: '',
     feishuAppSecret: '',
   });
@@ -235,7 +235,8 @@ export const RemoteConnectDialog: React.FC<RemoteConnectDialogProps> = ({
         const formState = await remoteConnectAPI.getFormState();
         if (cancelled) return;
         setCustomUrl(formState.custom_server_url ?? '');
-        setTgToken(formState.telegram_bot_token ?? '');
+        setQqAppId(formState.qq_app_id ?? '');
+        setQqAppSecret(formState.qq_app_secret ?? '');
         setFeishuAppId(formState.feishu_app_id ?? '');
         setFeishuAppSecret(formState.feishu_app_secret ?? '');
         setWeixinIlinkToken(formState.weixin_ilink_token ?? '');
@@ -254,11 +255,12 @@ export const RemoteConnectDialog: React.FC<RemoteConnectDialogProps> = ({
   useEffect(() => {
     formSnapshotRef.current = {
       customUrl,
-      tgToken,
+      qqAppId,
+      qqAppSecret,
       feishuAppId,
       feishuAppSecret,
     };
-  }, [customUrl, tgToken, feishuAppId, feishuAppSecret]);
+  }, [customUrl, qqAppId, qqAppSecret, feishuAppId, feishuAppSecret]);
 
   const prepareAndStartWeixinBotFromQr = useCallback(async (
     ilinkToken: string,
@@ -268,7 +270,8 @@ export const RemoteConnectDialog: React.FC<RemoteConnectDialogProps> = ({
     const fs = formSnapshotRef.current;
     await remoteConnectAPI.setFormState({
       custom_server_url: fs.customUrl,
-      telegram_bot_token: fs.tgToken,
+      qq_app_id: fs.qqAppId,
+      qq_app_secret: fs.qqAppSecret,
       feishu_app_id: fs.feishuAppId,
       feishu_app_secret: fs.feishuAppSecret,
       weixin_ilink_token: ilinkToken,
@@ -371,7 +374,8 @@ export const RemoteConnectDialog: React.FC<RemoteConnectDialogProps> = ({
     try {
       await remoteConnectAPI.setFormState({
         custom_server_url: customUrl,
-        telegram_bot_token: tgToken,
+        qq_app_id: qqAppId,
+        qq_app_secret: qqAppSecret,
         feishu_app_id: feishuAppId,
         feishu_app_secret: feishuAppSecret,
         weixin_ilink_token: weixinIlinkToken,
@@ -383,15 +387,15 @@ export const RemoteConnectDialog: React.FC<RemoteConnectDialogProps> = ({
       let serverUrl: string | undefined;
 
       if (activeGroup === 'bot') {
-        if (botTab === 'telegram') {
-          method = 'bot_telegram';
+        if (botTab === 'qq') {
+          method = 'bot_qq';
         } else if (botTab === 'feishu') {
           method = 'bot_feishu';
         } else {
           method = 'bot_weixin';
         }
-        if (botTab === 'telegram' && tgToken) {
-          await remoteConnectAPI.configureBot({ botType: 'telegram', botToken: tgToken });
+        if (botTab === 'qq' && qqAppId && qqAppSecret) {
+          await remoteConnectAPI.configureBot({ botType: 'qq', appId: qqAppId, appSecret: qqAppSecret });
         } else if (botTab === 'feishu' && feishuAppId) {
           await remoteConnectAPI.configureBot({
             botType: 'feishu', appId: feishuAppId, appSecret: feishuAppSecret,
@@ -416,7 +420,7 @@ export const RemoteConnectDialog: React.FC<RemoteConnectDialogProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [activeGroup, networkTab, botTab, customUrl, tgToken, feishuAppId, feishuAppSecret, weixinIlinkToken, weixinBaseUrl, weixinBotAccountId, startPolling]);
+  }, [activeGroup, networkTab, botTab, customUrl, qqAppId, feishuAppId, feishuAppSecret, weixinIlinkToken, weixinBaseUrl, weixinBotAccountId, startPolling]);
 
   const handleStartWeixinQr = useCallback(async () => {
     setError(null);
@@ -735,22 +739,30 @@ export const RemoteConnectDialog: React.FC<RemoteConnectDialogProps> = ({
     }
     return (
       <div className="openharness-remote-connect__body">
-        {botTab === 'telegram' ? (
+        {botTab === 'qq' ? (
           <div className="openharness-remote-connect__bot-guide">
             {renderInfoCard(
               <div className="openharness-remote-connect__steps">
-                <p className="openharness-remote-connect__step">1. {t('remoteConnect.botTgStep1')}</p>
-                <p className="openharness-remote-connect__step">2. {t('remoteConnect.botTgStep2')}</p>
-                <p className="openharness-remote-connect__step">3. {t('remoteConnect.botTgStep3')}</p>
+                <p className="openharness-remote-connect__step">1. {t('remoteConnect.botQqStep1')}</p>
+                <p className="openharness-remote-connect__step">2. {t('remoteConnect.botQqStep2')}</p>
+                <p className="openharness-remote-connect__step">3. {t('remoteConnect.botQqStep3')}</p>
               </div>,
             )}
             <Input
               className="openharness-remote-connect__field openharness-remote-connect__field--inline"
               type="text"
-              placeholder="123456:xxxxxxxxxxxxxxxxxxxxxxxx"
-              prefix={<span className="openharness-remote-connect__field-prefix">Bot Token</span>}
-              value={tgToken}
-              onChange={(e) => setTgToken(e.target.value)}
+              placeholder="123456789"
+              prefix={<span className="openharness-remote-connect__field-prefix">App ID</span>}
+              value={qqAppId}
+              onChange={(e) => setQqAppId(e.target.value)}
+            />
+            <Input
+              className="openharness-remote-connect__field openharness-remote-connect__field--inline"
+              type="password"
+              placeholder="xxxxxxxxxxxxxxxx"
+              prefix={<span className="openharness-remote-connect__field-prefix">App Secret</span>}
+              value={qqAppSecret}
+              onChange={(e) => setQqAppSecret(e.target.value)}
             />
           </div>
         ) : botTab === 'feishu' ? (
@@ -881,7 +893,7 @@ export const RemoteConnectDialog: React.FC<RemoteConnectDialogProps> = ({
           onClick={handleConnect}
           disabled={
             loading
-            || (botTab === 'telegram' ? !tgToken
+            || (botTab === 'qq' ? (!qqAppId || !qqAppSecret)
               : botTab === 'feishu' ? !feishuAppId
                 : !weixinIlinkToken || !weixinBotAccountId)
           }

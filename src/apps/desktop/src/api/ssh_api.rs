@@ -10,6 +10,7 @@ use openharness_core::service::remote_ssh::{
     RemoteTreeNode, SSHAuthMethod, SSHConfigEntry, SSHConfigLookupResult, SSHConnectionConfig,
     SSHConnectionResult, SavedConnection, ServerInfo,
 };
+use openharness_core::service::system::security::{assess_command_risk, CommandRisk};
 
 impl From<SSHServiceError> for String {
     fn from(e: SSHServiceError) -> Self {
@@ -381,6 +382,18 @@ pub async fn remote_execute(
     connection_id: String,
     command: String,
 ) -> Result<(String, String, i32), String> {
+    // Security: assess command risk before execution
+    let risk = assess_command_risk(&command, &[]);
+    if risk == CommandRisk::Blocked {
+        return Err(format!(
+            "SSH remote command blocked: {command}"
+        ));
+    }
+
+    // Audit trail for remote commands
+    let preview = if command.len() > 200 { &command[..200] } else { &command };
+    log::warn!("SSH remote_execute on connection '{connection_id}': {preview}");
+
     let manager = state.get_ssh_manager_async().await?;
     manager
         .execute_command(&connection_id, &command)

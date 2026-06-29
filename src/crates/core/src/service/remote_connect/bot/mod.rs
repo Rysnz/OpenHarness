@@ -1,12 +1,12 @@
 //! Bot integration for Remote Connect.
 //!
-//! Supports Feishu, Telegram, and Weixin (iLink) bots as relay channels.
+//! Supports QQ, Feishu, and Weixin (iLink) bots as IM channels.
 //! Shared command logic lives in `command_router`; platform-specific
-//! I/O is handled by `telegram`, `feishu`, and `weixin`.
+//! I/O is handled by `qq`, `feishu`, and `weixin`.
 
 pub mod command_router;
 pub mod feishu;
-pub mod telegram;
+pub mod qq;
 pub mod weixin;
 
 use serde::{Deserialize, Serialize};
@@ -17,12 +17,15 @@ pub use command_router::{BotChatState, ForwardRequest, ForwardedTurnResult, Hand
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "bot_type", rename_all = "snake_case")]
 pub enum BotConfig {
+    Qq {
+        app_id: String,
+        app_secret: String,
+        #[serde(default)]
+        sandbox: bool,
+    },
     Feishu {
         app_id: String,
         app_secret: String,
-    },
-    Telegram {
-        bot_token: String,
     },
     Weixin {
         ilink_token: String,
@@ -54,7 +57,10 @@ pub struct SavedBotConnection {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RemoteConnectFormState {
     pub custom_server_url: String,
-    pub telegram_bot_token: String,
+    pub qq_app_id: String,
+    pub qq_app_secret: String,
+    #[serde(default)]
+    pub qq_sandbox: bool,
     pub feishu_app_id: String,
     pub feishu_app_secret: String,
     /// Weixin iLink credentials after QR login (optional until user links WeChat).
@@ -73,10 +79,12 @@ pub struct BotPersistenceData {
     pub connections: Vec<SavedBotConnection>,
     #[serde(default)]
     pub form_state: RemoteConnectFormState,
-    /// Global verbose mode setting for all bot connections.
-    /// When true, intermediate tool execution progress is sent to the user.
+    /// Global verbose mode setting for bot connections.
     #[serde(default)]
     pub verbose_mode: bool,
+    /// Paired QQ contacts: bot_type -> { chat_id -> (timestamp, user_name) }
+    #[serde(default)]
+    pub bot_paired_contacts: std::collections::HashMap<String, std::collections::HashMap<String, (i64, String)>>,
 }
 
 impl BotPersistenceData {

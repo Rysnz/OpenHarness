@@ -47,7 +47,9 @@ export interface LanNetworkInfo {
 
 export interface RemoteConnectFormState {
   custom_server_url: string;
-  telegram_bot_token: string;
+  qq_app_id: string;
+  qq_app_secret: string;
+  qq_sandbox?: boolean;
   feishu_app_id: string;
   feishu_app_secret: string;
   weixin_ilink_token?: string;

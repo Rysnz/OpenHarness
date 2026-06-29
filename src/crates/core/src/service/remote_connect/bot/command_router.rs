@@ -719,7 +719,7 @@ fn cancel_task_actions(language: BotLanguage, command: impl Into<String>) -> Vec
 
 // ── Main dispatch ───────────────────────────────────────────────────
 
-async fn dispatch_im_bot_command(
+pub async fn dispatch_im_bot_command(
     state: &mut BotChatState,
     cmd: BotCommand,
     image_contexts: Vec<crate::agentic::image_analysis::ImageContextData>,
@@ -731,7 +731,7 @@ async fn dispatch_im_bot_command(
     r
 }
 
-async fn dispatch_im_bot_command_inner(
+pub async fn dispatch_im_bot_command_inner(
     state: &mut BotChatState,
     cmd: BotCommand,
     image_contexts: Vec<crate::agentic::image_analysis::ImageContextData>,

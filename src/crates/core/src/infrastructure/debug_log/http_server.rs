@@ -9,6 +9,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+#[allow(unused_imports)]
 use log::{debug, error, info, trace, warn};
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -51,6 +52,19 @@ impl IngestServerManager {
     }
 
     pub async fn start(&self, config: Option<IngestServerConfig>) -> anyhow::Result<()> {
+        // Defense-in-depth: never start in release builds
+        #[cfg(not(debug_assertions))]
+        {
+            log::warn!("IngestServer refused start in non-debug build");
+            return Ok(());
+        }
+
+        #[cfg(debug_assertions)]
+        self.start_inner(config).await
+    }
+
+    #[cfg(debug_assertions)]
+    async fn start_inner(&self, config: Option<IngestServerConfig>) -> anyhow::Result<()> {
         self.stop().await;
 
         let cfg = config.unwrap_or_default();

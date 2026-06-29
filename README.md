@@ -95,16 +95,17 @@ pnpm run desktop:dev
 pnpm run dev:web
 ```
 
-运行 CLI：
-
-```bash
-pnpm run cli:dev -- chat --workspace .
-```
-
 构建桌面应用：
 
 ```bash
-pnpm run desktop:build
+# Windows
+pnpm run desktop:build    # 生成 target/release/openharness-desktop.exe
+
+# macOS (Apple Silicon)
+pnpm run desktop:build:arm64   # 生成 target/release/bundle/dmg/OpenHarness.app
+
+# macOS (Intel)
+pnpm run desktop:build:x86_64  # 生成 target/release/bundle/dmg/OpenHarness.app
 ```
 
 ## 项目入口
@@ -112,7 +113,6 @@ pnpm run desktop:build
 - 主界面：`src/web-ui`
 - 桌面端：`src/apps/desktop`
 - 核心能力：`src/crates/core`
-- CLI：`src/apps/cli`
 - 中继服务：`src/apps/relay-server`
 - MiniApp：`MiniApp`
 

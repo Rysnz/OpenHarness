@@ -82,6 +82,7 @@ pub fn setup_panic_hook() {
 pub fn init_services(app_handle: tauri::AppHandle, default_log_level: log::LevelFilter) {
     use openharness_core::{infrastructure, service};
 
+    #[cfg(debug_assertions)]
     spawn_ingest_server_with_config_listener();
     spawn_runtime_log_level_listener(default_log_level);
 
@@ -173,6 +174,8 @@ pub fn spawn_runtime_log_level_listener(default_level: log::LevelFilter) {
     });
 }
 
+/// Debug-log ingest server — disabled in release builds for security.
+#[cfg(debug_assertions)]
 pub fn spawn_ingest_server_with_config_listener() {
     use openharness_core::infrastructure::debug_log::IngestServerManager;
     use openharness_core::service::config::{
@@ -299,4 +302,11 @@ pub fn spawn_ingest_server_with_config_listener() {
             }
         }
     });
+}
+
+/// Release-build stub — debug log ingest is disabled for security.
+#[cfg(not(debug_assertions))]
+#[allow(unused)]
+pub fn spawn_ingest_server_with_config_listener() {
+    log::info!("Debug Log Ingest Server disabled in release build");
 }
