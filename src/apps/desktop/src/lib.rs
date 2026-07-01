@@ -164,10 +164,12 @@ pub async fn run() {
 
             logging::register_runtime_log_state(startup_log_level, session_log_dir.clone());
 
-            // Initialize AI request logger with session log directory.
-            openharness_core::agentic::ai_request_logger::AiRequestLogger::set_log_base_dir(
-                session_log_dir.clone(),
-            );
+            // Initialize AI request logger — must happen early so logs capture every turn.
+            if let Ok(log_base) = app.path().app_log_dir() {
+                openharness_core::agentic::ai_request_logger::AiRequestLogger::set_log_base_dir(log_base);
+            } else {
+                log::warn!("Could not resolve app_log_dir; AI request logs will be disabled.");
+            }
 
             // Register bundled mobile-web resource path for remote connect.
             // tauri.conf.json maps "../../mobile-web/dist" -> "mobile-web/dist",

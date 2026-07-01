@@ -7,7 +7,7 @@
 use crate::util::errors::OpenHarnessResult;
 use crate::util::types::Message as AIMessage;
 use crate::util::types::ToolDefinition;
-use log::{debug, warn};
+use log::{debug, info, warn};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -122,6 +122,8 @@ impl AiRequestLogger {
     /// Set the global base directory for AI request logs.
     /// Should be called once during app startup with the session log dir.
     pub fn set_log_base_dir(dir: PathBuf) {
+        // Ensure the directory exists even on first access
+        let _ = std::fs::create_dir_all(&dir);
         let _ = AI_LOG_BASE_DIR.set(dir);
     }
 
@@ -151,12 +153,12 @@ impl AiRequestLogger {
         partial_recovery_reason: Option<&str>,
         error: Option<&str>,
     ) {
-        debug!("save_round_log called: session={session_id} round={round_id} model={model} text={} think={} tc={}",
-            text_full.len(), thinking_full.len(), tool_calls.len());
         let base_dir = AI_LOG_BASE_DIR
             .get()
             .map(|p| p.clone())
             .unwrap_or_else(|| log_root_dir.to_path_buf());
+        info!("save_round_log: base_dir={} session={session_id} round={round_id} model={model} text={} think={} tc={}",
+            base_dir.display(), text_full.len(), thinking_full.len(), tool_calls.len());
         let session_log_dir = base_dir.join(AI_LOGS_DIR).join(session_id);
         let log_dir = session_log_dir.clone();
         if let Err(e) = fs::create_dir_all(&log_dir).await {
