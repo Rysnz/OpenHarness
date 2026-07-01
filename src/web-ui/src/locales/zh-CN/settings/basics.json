@@ -87,13 +87,39 @@
       "logging": "日志",
       "loggingHint": "日志级别与本次启动日志目录",
       "level": "日志级别",
-      "path": "本次启动日志路径"
+      "path": "本次启动日志路径",
+      "aiLogs": "AI 调用记录",
+      "aiLogsHint": "每次模型调用的请求与响应详情，用于排查 AI 行为异常"
     },
     "level": {
       "description": "实时控制日志输出级别，修改后立即生效。"
     },
     "path": {
       "description": "本次启动写入日志文件所在的目录。"
+    },
+    "aiLogs": {
+      "title": "AI 调用记录",
+      "refresh": "刷新",
+      "loading": "加载 AI 调用日志…",
+      "retry": "重试",
+      "empty": "暂无 AI 调用记录",
+      "emptyHint": "与 AI 对话后，每次模型调用会自动生成记录。",
+      "logsCount": "条记录",
+      "noOutput": "无输出",
+      "error": "错误",
+      "lastUserMessage": "最后一条用户消息",
+      "tools": "工具",
+      "thinking": "思考过程",
+      "responseText": "输出文本",
+      "thinkingOnlyWarning": "⚠️ 模型只产出了思考内容，没有输出文本",
+      "errorLabel": "错误",
+      "finish": "结束原因",
+      "thinkingEnabled": "思考模式",
+      "attempt": "尝试次数",
+      "retryN": "重试 #{{n}}",
+      "yes": "是",
+      "no": "否",
+      "emptyContent": "(无内容)"
     },
     "levels": {
       "trace": "Trace",

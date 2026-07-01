@@ -47,6 +47,9 @@ mod util;
 // Insights module
 pub mod insights;
 
+// AI request/response logger (debug)
+pub mod ai_request_logger;
+
 pub use agents::*;
 pub use coordination::*;
 pub use core::*;

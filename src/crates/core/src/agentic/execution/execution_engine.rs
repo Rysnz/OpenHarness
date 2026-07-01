@@ -1775,6 +1775,7 @@ impl ExecutionEngine {
                 context_vars: round_context_vars,
                 cancellation_token: CancellationToken::new(),
                 workspace_services: context.workspace_services.clone(),
+                ai_log_dir: None, // set via global AiRequestLogger base dir
             };
 
             // Execute single model round

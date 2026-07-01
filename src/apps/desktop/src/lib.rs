@@ -164,6 +164,11 @@ pub async fn run() {
 
             logging::register_runtime_log_state(startup_log_level, session_log_dir.clone());
 
+            // Initialize AI request logger with session log directory.
+            openharness_core::agentic::ai_request_logger::AiRequestLogger::set_log_base_dir(
+                session_log_dir.clone(),
+            );
+
             // Register bundled mobile-web resource path for remote connect.
             // tauri.conf.json maps "../../mobile-web/dist" -> "mobile-web/dist",
             // so the primary candidate is "mobile-web/dist". Additional fallbacks
@@ -410,6 +415,8 @@ pub async fn run() {
             sync_config_to_global,
             get_global_config_health,
             get_runtime_logging_info,
+            list_ai_request_logs,
+            read_ai_request_log,
             get_runtime_capabilities,
             get_mode_configs,
             get_mode_config,

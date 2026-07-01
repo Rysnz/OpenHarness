@@ -1,6 +1,10 @@
 //! QQ Bot integration via official QQ Bot API (WebSocket + HTTP).
 
-use crate::service::remote_connect::bot::command_router::{self, BotChatState};
+use crate::service::remote_connect::bot::command_router::{
+    self, BotChatState, BotInteractionHandler, BotInteractiveRequest, BotMessageSender,
+    ForwardedTurnResult,
+};
+use crate::service::remote_connect::bot::{load_bot_persistence, save_bot_persistence, BotConfig, SavedBotConnection};
 use anyhow::{anyhow, Result};
 use log::{info, warn};
 use reqwest::Client;
@@ -29,11 +33,24 @@ struct WsAuthor { id: String, #[serde(default)] user_openid: Option<String> }
 #[derive(Debug, Clone)]
 pub struct QqBotConfig { pub app_id: String, pub app_secret: String, pub sandbox: bool }
 
-pub struct QqBot { config: QqBotConfig, client: Client, token: Arc<Mutex<(String, Instant)>>, state: Arc<Mutex<BotChatState>>, stop_rx: watch::Receiver<bool> }
+#[derive(Clone)]
+pub struct QqBot {
+    config: QqBotConfig,
+    client: Arc<Client>,
+    token: Arc<Mutex<(String, Instant)>>,
+    state: Arc<Mutex<BotChatState>>,
+    stop_rx: watch::Receiver<bool>,
+}
 
 impl QqBot {
     pub fn new(config: QqBotConfig, state: BotChatState, stop_rx: watch::Receiver<bool>) -> Self {
-        Self { config, client: Client::new(), token: Arc::new(Mutex::new((String::new(), Instant::now()))), state: Arc::new(Mutex::new(state)), stop_rx }
+        Self {
+            config,
+            client: Arc::new(Client::new()),
+            token: Arc::new(Mutex::new((String::new(), Instant::now()))),
+            state: Arc::new(Mutex::new(state)),
+            stop_rx,
+        }
     }
 
     async fn get_token(&self) -> Result<String> {
@@ -48,6 +65,35 @@ impl QqBot {
         let resp = self.client.post(url).header("Authorization", format!("QQBot {t}")).json(&serde_json::json!({"content":text,"msg_type":0})).send().await.map_err(|e|anyhow!("QQ send: {e}"))?;
         if !resp.status().is_success() { let b = resp.text().await.unwrap_or_default(); return Err(anyhow!("QQ send err: {b}")); }
         Ok(())
+    }
+
+    /// Send a message to a specific QQ chat URL (used for bot-initiated messages
+    /// during forwarded turn execution and interaction delivery).
+    pub async fn send_message(&self, reply_url: &str, text: &str) -> Result<()> {
+        self.send(reply_url, text).await
+    }
+
+    /// Persist the current chat state to disk so workspace/partner/session
+    /// selections survive restarts.
+    async fn persist_chat_state(&self) {
+        let state = self.state.lock().await;
+        let mut data = load_bot_persistence();
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as i64;
+        data.upsert(SavedBotConnection {
+            bot_type: "qq".to_string(),
+            chat_id: state.chat_id.clone(),
+            chat_state: state.clone(),
+            config: BotConfig::Qq {
+                app_id: self.config.app_id.clone(),
+                app_secret: self.config.app_secret.clone(),
+                sandbox: self.config.sandbox,
+            },
+            connected_at: now_ms,
+        });
+        save_bot_persistence(&data);
     }
 
     pub fn pairing_code() -> u32 { use rand::Rng; rand::thread_rng().gen_range(100000..1000000) }
@@ -95,18 +141,103 @@ use futures::StreamExt;
                                             _ => continue,
                                         };
                                         // Pairing check
-                                        let mut cg = code.lock().await;
-                                        if let Some(expected) = *cg {
-                                            if let Ok(input) = content.parse::<u32>() {
-                                                if input == expected { *cg = None; let _ = self.send(&reply_to.0, "✅ 配对成功！输入 /help 查看命令。").await; continue; }
-                                                else { let _ = self.send(&reply_to.0, "❌ 配对码错误").await; continue; }
+                                        let pairing_done = {
+                                            let mut cg = code.lock().await;
+                                            if let Some(expected) = *cg {
+                                                if let Ok(input) = content.parse::<u32>() {
+                                                    if input == expected {
+                                                        *cg = None;
+                                                        true
+                                                    } else {
+                                                        let _ = self.send(&reply_to.0, "❌ 配对码错误").await;
+                                                        continue;
+                                                    }
+                                                } else {
+                                                    false
+                                                }
+                                            } else {
+                                                false
                                             }
+                                        };
+
+                                        if pairing_done {
+                                            // Complete pairing: bootstrap the chat state
+                                            let pairing_result = {
+                                                let mut state = self.state.lock().await;
+                                                let result = command_router::complete_im_bot_pairing(&mut state).await;
+                                                drop(state); // Release lock before persist
+                                                result
+                                            };
+                                            self.persist_chat_state().await;
+                                            let _ = self.send(&reply_to.0, &pairing_result.reply).await;
+                                            continue;
                                         }
                                         // Command dispatch
                                         let cmd = command_router::parse_command(&content);
-                                        let mut state = self.state.lock().await;
-                                        let r = command_router::dispatch_im_bot_command(&mut state, cmd, vec![]).await;
-                                        if !r.reply.is_empty() { let _ = self.send(&reply_to.0, &r.reply).await; }
+                                        let (reply, forward_req) = {
+                                            let mut state = self.state.lock().await;
+                                            let r = command_router::dispatch_im_bot_command(&mut state, cmd, vec![]).await;
+                                            (r.reply, r.forward_to_session)
+                                        };
+                                        if !reply.is_empty() { let _ = self.send(&reply_to.0, &reply).await; }
+
+                                        // Persist state so partner/session selections survive restarts
+                                        self.persist_chat_state().await;
+
+                                        // If the command handler requested an AI turn, spawn it
+                                        if let Some(forward) = forward_req {
+                                            let bot = self.clone();
+                                            let reply_url = reply_to.0.clone();
+                                            tokio::spawn(async move {
+                                                let interaction_bot = bot.clone();
+                                                let interaction_reply_url = reply_url.clone();
+                                                let handler: BotInteractionHandler = std::sync::Arc::new(
+                                                    move |interaction: BotInteractiveRequest| {
+                                                        let interaction_bot = interaction_bot.clone();
+                                                        let interaction_reply_url = interaction_reply_url.clone();
+                                                        Box::pin(async move {
+                                                            // Update state then persist
+                                                            {
+                                                                let mut s = interaction_bot.state.lock().await;
+                                                                s.pending_action = Some(interaction.pending_action.clone());
+                                                                s.last_menu_commands = interaction.actions.iter().map(|a| a.command.clone()).collect();
+                                                                drop(s); // Release lock before persist
+                                                            }
+                                                            interaction_bot.persist_chat_state().await;
+                                                            if let Err(err) = interaction_bot.send_message(&interaction_reply_url, &interaction.reply).await {
+                                                                warn!("Failed to send QQ interaction message: {err}");
+                                                            }
+                                                        })
+                                                    },
+                                                );
+                                                let msg_bot = bot.clone();
+                                                let msg_reply_url = reply_url.clone();
+                                                let sender: BotMessageSender = std::sync::Arc::new(
+                                                    move |text: String| {
+                                                        let msg_bot = msg_bot.clone();
+                                                        let msg_reply_url = msg_reply_url.clone();
+                                                        Box::pin(async move {
+                                                            if let Err(err) = msg_bot.send_message(&msg_reply_url, &text).await {
+                                                                warn!("Failed to send QQ intermediate message: {err}");
+                                                            }
+                                                        })
+                                                    },
+                                                );
+                                                let verbose_mode = load_bot_persistence().verbose_mode;
+                                                let result: ForwardedTurnResult = command_router::execute_forwarded_turn(
+                                                    forward,
+                                                    Some(handler),
+                                                    Some(sender),
+                                                    verbose_mode,
+                                                )
+                                                .await;
+                                                if !result.display_text.is_empty() {
+                                                    if let Err(err) = bot.send_message(&reply_url, &result.display_text).await {
+                                                        warn!("Failed to send QQ final message: {err}");
+                                                    }
+                                                }
+                                            });
+                                        }
                                     }
                                 }
                             }

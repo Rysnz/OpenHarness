@@ -34,7 +34,7 @@ pub struct RoundExecutor {
 }
 
 impl RoundExecutor {
-    const MAX_RETRIES_WITHOUT_OUTPUT: usize = 1;
+    const MAX_RETRIES_WITHOUT_OUTPUT: usize = 2;
     const RETRY_BASE_DELAY_MS: u64 = 500;
 
     pub fn new(
@@ -104,7 +104,7 @@ impl RoundExecutor {
     /// Execute a single model round
     pub async fn execute_round(
         &self,
-        ai_client: Arc<AIClient>,
+        mut ai_client: Arc<AIClient>,
         context: RoundContext,
         ai_messages: Vec<AIMessage>,
         tool_definitions: Option<Vec<ToolDefinition>>,
@@ -277,6 +277,13 @@ impl RoundExecutor {
                             delay_ms
                         );
                         tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+
+                        // On retry, disable thinking to force model to produce text output.
+                        // If the model produced only reasoning (thinking) content on the first
+                        // attempt, repeating with the same settings likely won't help.
+                        let mut retry_config = ai_client.config.clone();
+                        retry_config.enable_thinking_process = false;
+                        ai_client = Arc::new(AIClient::new(retry_config));
                         attempt_index += 1;
                         continue;
                     }
@@ -306,6 +313,50 @@ impl RoundExecutor {
                 }
             }
         };
+
+        // ── AI request/response debug logging ──
+        {
+            debug!("Writing AI log: session={} round={} model={}", context.session_id, round_id, context.model_name);
+            let log_dir = context
+                .workspace
+                .as_ref()
+                .map(|w| w.root_path.clone())
+                .unwrap_or_else(|| std::path::PathBuf::from("."));
+            let tool_calls_info: Vec<(String, String)> = stream_result
+                .tool_calls
+                .iter()
+                .map(|tc| {
+                    (
+                        tc.tool_name.clone(),
+                        serde_json::to_string(&tc.arguments)
+                            .unwrap_or_else(|_| "{...}".to_string()),
+                    )
+                })
+                .collect();
+            crate::agentic::ai_request_logger::AiRequestLogger::save_round_log(
+                &log_dir,
+                &context.session_id,
+                &context.dialog_turn_id,
+                &round_id,
+                &context.agent_type,
+                &context.model_name,
+                ai_client.config.enable_thinking_process,
+                attempt_index,
+                &ai_messages,
+                tool_definitions.as_deref().unwrap_or(&[]),
+                &stream_result.full_thinking,
+                &stream_result.full_text,
+                &tool_calls_info,
+                None, // finish_reason (not tracked in stream_result explicitly)
+                stream_result.usage.as_ref().map(|u| u.prompt_token_count),
+                stream_result.usage.as_ref().map(|u| u.candidates_token_count),
+                stream_result.usage.as_ref().map(|u| u.total_token_count),
+                stream_result.has_effective_output,
+                stream_result.partial_recovery_reason.as_deref(),
+                None, // error
+            )
+            .await;
+        }
 
         // Model returned successfully (output to AI log file)
         if let Some(ref reason) = stream_result.partial_recovery_reason {

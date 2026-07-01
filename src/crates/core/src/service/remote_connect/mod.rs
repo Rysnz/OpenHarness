@@ -672,7 +672,7 @@ impl RemoteConnectService {
             bot::BotConfig::Qq { app_id, app_secret, sandbox } => {
                 if let Some(handle) = self.bot_qq_handle.write().await.take() { handle.stop(); }
                 let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
-                let mut state = BotChatState::new(saved.chat_id.clone()); state.paired = true;
+                let state = saved.chat_state.clone();
                 let bot = bot::qq::QqBot::new(bot::qq::QqBotConfig { app_id: app_id.clone(), app_secret: app_secret.clone(), sandbox: *sandbox }, state, stop_rx);
                 let qq_bot = Arc::new(bot);
                 *self.qq_bot.write().await = Some(qq_bot.clone());

@@ -5,7 +5,7 @@
 
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Copy, Check, RotateCcw, Loader2, ArrowDownToLine, X } from 'lucide-react';
+import { Copy, Check, Undo2, Loader2, ArrowDownToLine, X } from 'lucide-react';
 import type { DialogTurn } from '@/flow_chat/types/flow-chat';
 import { useFlowChatContext } from './FlowChatContext';
 import { useActiveSession } from '@/flow_chat/store/modernFlowChatStore';
@@ -226,7 +226,7 @@ export const UserMessageItem = React.memo<UserMessageItemProps>(
                   {isRollingBack ? (
                     <Loader2 size={14} className="user-message-item__rollback-spinner" />
                   ) : (
-                    <RotateCcw size={14} />
+                    <Undo2 size={14} />
                   )}
                 </button>
               </Tooltip>

@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { AlertCircle, Check, Loader2, RotateCcw } from 'lucide-react';
+import { AlertCircle, Check, Loader2, Undo2 } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { createLogger } from '@/shared/utils/logger';
 import './SnapshotRollbackButton.scss';
@@ -144,7 +144,7 @@ const RollbackButtonContent: React.FC<{ isRollingBack: boolean }> = ({ isRolling
     </>
   ) : (
     <>
-      <RotateCcw size={14} />
+      <Undo2 size={14} />
       <span>Rollback to this turn</span>
     </>
   );

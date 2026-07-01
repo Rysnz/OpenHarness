@@ -117,5 +117,4 @@ export const SETTINGS_TAB_SEARCH_CONTENT: Record<ConfigTab, readonly SettingsTab
     { ns: 'settings', key: 'keyboard.shortcuts.tab.switchMergedHint' },
   ],
 
-  // lsp: [ ... ], // nav entry temporarily hidden; omit from search index
 };

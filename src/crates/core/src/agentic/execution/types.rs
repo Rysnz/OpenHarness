@@ -7,6 +7,7 @@ use crate::agentic::workspace::WorkspaceServices;
 use crate::agentic::WorkspaceBinding;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
@@ -43,6 +44,9 @@ pub struct RoundContext {
     pub context_vars: HashMap<String, String>,
     pub cancellation_token: CancellationToken,
     pub workspace_services: Option<WorkspaceServices>,
+    /// Optional directory for AI request/response debug logs.
+    /// When set, each model round is logged to `{ai_log_dir}/ai_requests/{session_id}/`.
+    pub ai_log_dir: Option<PathBuf>,
 }
 
 /// Round result

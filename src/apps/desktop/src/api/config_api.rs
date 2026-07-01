@@ -242,6 +242,39 @@ pub async fn get_runtime_logging_info(
     to_json_value(logging_info, "runtime logging info")
 }
 
+/// List AI request log entries (session dirs under ai_requests/).
+#[derive(Debug, Serialize)]
+pub struct AiLogSession {
+    pub session_id: String,
+    pub file_count: usize,
+    pub latest_timestamp: Option<String>,
+    pub files: Vec<AiLogFile>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AiLogFile {
+    pub filename: String,
+    pub timestamp: String,
+    pub size_bytes: u64,
+}
+
+#[tauri::command]
+pub async fn list_ai_request_logs() -> Result<Value, String> {
+    use openharness_core::agentic::ai_request_logger::AiRequestLogger;
+    let sessions = AiRequestLogger::list_sessions()
+        .await
+        .map_err(|e| format!("Failed to list AI request logs: {}", e))?;
+    to_json_value(sessions, "ai request logs")
+}
+
+#[tauri::command]
+pub async fn read_ai_request_log(session_id: String, filename: String) -> Result<Value, String> {
+    use openharness_core::agentic::ai_request_logger::AiRequestLogger;
+    AiRequestLogger::read_log(&session_id, &filename)
+        .await
+        .map_err(|e| format!("Failed to read AI request log: {}", e))
+}
+
 #[tauri::command]
 pub async fn get_mode_configs(_state: State<'_, AppState>) -> Result<Value, String> {
     let mode_configs =

@@ -287,15 +287,63 @@ impl DialogScheduler {
             }
 
             Some(SessionState::Processing { .. }) => {
-                let may_preempt = Self::user_message_may_preempt(&queued_turn.policy);
-                self.enqueue(&session_id, queued_turn)?;
-                if may_preempt {
-                    self.round_yield_flags.request_yield(&session_id);
+                // Detect stale Processing state: if session reports Processing but
+                // no active turn is tracked in dispatch_queue, the previous turn's
+                // execution task likely crashed or panicked before resetting state.
+                // Auto-recover by resetting to Idle and dispatching immediately.
+                let has_active_turn = self.active_turns.contains_key(&session_id);
+                if !has_active_turn {
+                    warn!(
+                        "Stale Processing state detected (no active turn): session_id={}, auto-recovering to Idle",
+                        session_id
+                    );
+                    if let Some(session) = self.session_manager.get_session(&session_id) {
+                        if matches!(session.state, SessionState::Processing { .. }) {
+                            let _ = self
+                                .session_manager
+                                .update_session_state(&session_id, SessionState::Idle)
+                                .await;
+                        }
+                    }
+                    // After recovery, dispatch immediately (same as Idle path)
+                    let queue_non_empty = self
+                        .queues
+                        .get(&session_id)
+                        .map(|q| !q.is_empty())
+                        .unwrap_or(false);
+                    if queue_non_empty {
+                        self.enqueue(&session_id, queued_turn.clone())?;
+                        let started_tid = self.try_start_next_queued(&session_id).await?;
+                        let outcome = match started_tid {
+                            Some(tid) if tid == resolved_turn_id => DialogSubmitOutcome::Started {
+                                session_id: session_id.clone(),
+                                turn_id: tid,
+                            },
+                            _ => DialogSubmitOutcome::Queued {
+                                session_id: session_id.clone(),
+                                turn_id: resolved_turn_id,
+                            },
+                        };
+                        Ok(outcome)
+                    } else {
+                        let tid = self.start_turn(&session_id, &queued_turn).await?;
+                        Ok(DialogSubmitOutcome::Started {
+                            session_id,
+                            turn_id: tid,
+                        })
+                    }
+                } else {
+                    // Normal Processing: real turn is running, enqueue with optional yield request
+                    let may_preempt = Self::user_message_may_preempt(&queued_turn.policy);
+                    self.enqueue(&session_id, queued_turn)?;
+                    if may_preempt {
+                        self.round_yield_flags.request_yield(&session_id);
+                    }
+                    Ok(DialogSubmitOutcome::Queued {
+                        session_id,
+                        turn_id: resolved_turn_id,
+                    })
                 }
-                Ok(DialogSubmitOutcome::Queued {
-                    session_id,
-                    turn_id: resolved_turn_id,
-                })
             }
         }
     }
@@ -377,8 +425,27 @@ impl DialogScheduler {
             .session_manager
             .get_session(session_id)
             .map(|s| s.state.clone());
+        // Also recover stale Processing states at queue-drain time:
+        // if the previous turn completed but its completion handler didn't
+        // reset the session state (or panicked mid-handler), fix it here.
         if matches!(state, Some(SessionState::Processing { .. })) {
-            return Ok(None);
+            let has_active = self.active_turns.contains_key(session_id);
+            if !has_active {
+                warn!(
+                    "Stale Processing during queue drain: session_id={}, auto-recovering",
+                    session_id
+                );
+                if let Some(session) = self.session_manager.get_session(session_id) {
+                    if matches!(session.state, SessionState::Processing { .. }) {
+                        let _ = self
+                            .session_manager
+                            .update_session_state(session_id, SessionState::Idle)
+                            .await;
+                    }
+                }
+            } else {
+                return Ok(None);
+            }
         }
 
         let Some(next_turn) = self.dequeue_next(session_id) else {

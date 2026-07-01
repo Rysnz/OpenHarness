@@ -31,6 +31,7 @@ import {
 import { configManager } from '../services/ConfigManager';
 import { createLogger } from '@/shared/utils/logger';
 import type { BackendLogLevel, RuntimeLoggingInfo, TerminalConfig as TerminalSettings } from '../types';
+import AiLogViewer from '@/app/scenes/settings/components/AiLogViewer';
 import './BasicsConfig.scss';
 
 const log = createLogger('BasicsConfig');
@@ -391,6 +392,13 @@ function BasicsLoggingSection() {
                 </button>
               </Tooltip>
             </div>
+          </ConfigPageRow>
+          <ConfigPageRow
+            label={t('logging.sections.aiLogs')}
+            description={t('logging.sections.aiLogsHint')}
+            multiline
+          >
+            <AiLogViewer />
           </ConfigPageRow>
         </ConfigPageSection>
       </div>

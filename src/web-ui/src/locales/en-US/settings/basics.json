@@ -87,13 +87,39 @@
       "logging": "Logging",
       "loggingHint": "Log level and directory for this session",
       "level": "Log Level",
-      "path": "Startup Log Path"
+      "path": "Startup Log Path",
+      "aiLogs": "AI Call Records",
+      "aiLogsHint": "Request & response details for each model call, useful for diagnosing AI behavior"
     },
     "level": {
       "description": "Controls log verbosity in real time. Changes apply immediately."
     },
     "path": {
       "description": "Directory where log files for this run are written."
+    },
+    "aiLogs": {
+      "title": "AI Call Records",
+      "refresh": "Refresh",
+      "loading": "Loading AI call logs…",
+      "retry": "Retry",
+      "empty": "No AI call logs yet",
+      "emptyHint": "Logs are recorded automatically when the AI model is invoked. Start a conversation to generate log entries.",
+      "logsCount": "log(s)",
+      "noOutput": "no output",
+      "error": "error",
+      "lastUserMessage": "Last User Message",
+      "tools": "Tools",
+      "thinking": "Thinking",
+      "responseText": "Response Text",
+      "thinkingOnlyWarning": "⚠️ Model produced thinking but NO text output.",
+      "errorLabel": "Error",
+      "finish": "Finish reason",
+      "thinkingEnabled": "Thinking enabled",
+      "attempt": "Attempt",
+      "retryN": "retry #{{n}}",
+      "yes": "yes",
+      "no": "no",
+      "emptyContent": "(empty)"
     },
     "levels": {
       "trace": "Trace",
