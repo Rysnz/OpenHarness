@@ -1194,6 +1194,101 @@ impl SSHConnectionManager {
         guard.clear();
     }
 
+    /// Attempt to reconnect to a previously-saved connection.
+    ///
+    /// Looks up the saved config by `connection_id` and re-establishes the SSH session.
+    /// Uses exponential backoff with up to `max_retries` attempts.
+    /// Passwords are retrieved from the vault; private-key paths come from the saved config.
+    pub async fn reconnect(
+        &self,
+        connection_id: &str,
+        max_retries: u32,
+    ) -> anyhow::Result<SSHConnectionResult> {
+        // Remove the broken connection first.
+        {
+            let mut guard = self.connections.write().await;
+            guard.remove(connection_id);
+        }
+
+        // Look up the saved config and resolve auth method.
+        let config = {
+            let guard = self.saved_connections.read().await;
+            let saved = guard
+                .iter()
+                .find(|c| c.id == connection_id)
+                .ok_or_else(|| anyhow!("Saved connection {} not found", connection_id))?;
+
+            let auth = match &saved.auth_type {
+                crate::service::remote_ssh::types::SavedAuthType::Password => {
+                    let pw: String = self
+                        .password_vault
+                        .load(connection_id)
+                        .await
+                        .unwrap_or_default()
+                        .unwrap_or_default();
+                    SSHAuthMethod::Password { password: pw }
+                }
+                crate::service::remote_ssh::types::SavedAuthType::PrivateKey { key_path } => {
+                    SSHAuthMethod::PrivateKey {
+                        key_path: key_path.clone(),
+                        passphrase: None,
+                    }
+                }
+            };
+
+            SSHConnectionConfig {
+                id: saved.id.clone(),
+                name: saved.name.clone(),
+                host: saved.host.clone(),
+                port: saved.port,
+                username: saved.username.clone(),
+                auth,
+                default_workspace: saved.default_workspace.clone(),
+            }
+        };
+
+        let mut last_err: Option<anyhow::Error> = None;
+        for attempt in 0..max_retries {
+            if attempt > 0 {
+                let delay_secs = 2u64.pow(attempt.min(6));
+                log::info!(
+                    "SSH reconnect attempt {} / {} for {} after {}s",
+                    attempt + 1,
+                    max_retries,
+                    connection_id,
+                    delay_secs
+                );
+                tokio::time::sleep(std::time::Duration::from_secs(delay_secs)).await;
+            } else {
+                log::info!("SSH reconnect attempt 1 / {} for {}", max_retries, connection_id);
+            }
+
+            match self.connect_with_timeout(config.clone(), 30).await {
+                Ok(result) => {
+                    log::info!("SSH reconnect succeeded for {}", connection_id);
+                    return Ok(result);
+                }
+                Err(e) => {
+                    log::warn!(
+                        "SSH reconnect attempt {} failed for {}: {}",
+                        attempt + 1,
+                        connection_id,
+                        e
+                    );
+                    last_err = Some(e);
+                }
+            }
+        }
+
+        Err(last_err.unwrap_or_else(|| {
+            anyhow::anyhow!(
+                "Reconnect failed for {} after {} attempts",
+                connection_id,
+                max_retries
+            )
+        }))
+    }
+
     /// Check if connected
     pub async fn is_connected(&self, connection_id: &str) -> bool {
         let guard = self.connections.read().await;

@@ -2,7 +2,7 @@ use crate::service::snapshot::snapshot_system::FileSnapshotSystem;
 use crate::service::snapshot::types::{
     DiffSummary, FileOperation, OperationType, SnapshotError, SnapshotResult, ToolContext,
 };
-use log::{debug, info, warn};
+use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -145,8 +145,8 @@ impl SnapshotCore {
                         );
                     }
                     Err(e) => {
-                        warn!(
-                            "Failed to create baseline snapshot: file_path={:?} error={}",
+                        error!(
+                            "Failed to create baseline snapshot — rollback will be unavailable for this file: file_path={:?} error={}",
                             file_path, e
                         );
                     }

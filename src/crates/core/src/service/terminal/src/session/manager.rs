@@ -1336,6 +1336,9 @@ impl SessionManager {
             }
         }
 
+        // Clean up terminal binding mappings (primary + background).
+        self.binding.clear();
+
         self.pty_service.shutdown_all().await;
     }
 

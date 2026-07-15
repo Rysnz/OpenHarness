@@ -496,33 +496,11 @@ impl AIConfig {
             .map(|m| m.id.clone())
     }
 
-    /// Resolves a model selector value.
-    ///
-    /// Special values:
-    /// - `primary`: must resolve to a valid primary model
-    /// - `fast`: first tries the configured fast model, then falls back to primary
-    ///
-    /// Regular values are resolved by `id`, `name`, or `model_name`.
+    /// Resolves a model reference by `id`, `name`, or `model_name`.
+    /// This is the canonical resolution; `resolve_model_selection` was removed
+    /// because `primary`/`fast` symbolic selectors are no longer used.
     pub fn resolve_model_selection(&self, model_ref: &str) -> Option<String> {
-        match model_ref {
-            "primary" => self
-                .default_models
-                .primary
-                .as_deref()
-                .and_then(|value| self.resolve_model_reference(value)),
-            "fast" => self
-                .default_models
-                .fast
-                .as_deref()
-                .and_then(|value| self.resolve_model_reference(value))
-                .or_else(|| {
-                    self.default_models
-                        .primary
-                        .as_deref()
-                        .and_then(|value| self.resolve_model_reference(value))
-                }),
-            _ => self.resolve_model_reference(model_ref),
-        }
+        self.resolve_model_reference(model_ref)
     }
 }
 
@@ -1415,6 +1393,7 @@ impl AIModelConfig {
             || model_name_lower.contains("gemini-pro-vision")
             || model_name_lower.contains("gemini-1.5")
             || model_name_lower.starts_with("kimi")
+            || model_name_lower.contains("minimax")
         {
             return ModelCategory::Multimodal;
         }

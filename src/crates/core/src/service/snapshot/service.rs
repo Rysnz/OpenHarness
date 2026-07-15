@@ -6,7 +6,7 @@ use crate::service::snapshot::snapshot_system::FileSnapshotSystem;
 use crate::service::snapshot::types::{
     OperationType, SessionInfo, SnapshotConfig, SnapshotError, SnapshotResult,
 };
-use log::info;
+use log::{info, warn};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -245,6 +245,25 @@ impl SnapshotService {
             );
         }
 
+        // Notify other components that files were rolled back.
+        let affected: Vec<String> = restored_files
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect();
+        emit_snapshot_session_event(
+            session_id,
+            SnapshotEvent::SessionRolledBack {
+                session_id: session_id.to_string(),
+                target_turn: 0,
+                affected_files: affected,
+                timestamp: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64,
+            },
+        )
+        .await;
+
         Ok(restored_files)
     }
 
@@ -260,7 +279,28 @@ impl SnapshotService {
         );
 
         let mut snapshot_core = self.snapshot_core.write().await;
-        snapshot_core.rollback_to_turn(session_id, turn_index).await
+        let restored_files = snapshot_core.rollback_to_turn(session_id, turn_index).await?;
+
+        // Notify other components that files were rolled back.
+        let affected: Vec<String> = restored_files
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect();
+        emit_snapshot_session_event(
+            session_id,
+            SnapshotEvent::SessionRolledBack {
+                session_id: session_id.to_string(),
+                target_turn: turn_index,
+                affected_files: affected,
+                timestamp: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64,
+            },
+        )
+        .await;
+
+        Ok(restored_files)
     }
 
     pub async fn accept_session(&self, session_id: &str) -> SnapshotResult<()> {
@@ -411,11 +451,20 @@ impl SnapshotService {
 
     pub async fn update_file_diff_incremental(
         &self,
-        _session_id: &str,
-        _operation: &crate::service::snapshot::types::FileOperation,
-        _before_content: Option<&str>,
-        _after_content: Option<&str>,
+        session_id: &str,
+        operation: &crate::service::snapshot::types::FileOperation,
+        before_content: Option<&str>,
+        after_content: Option<&str>,
     ) -> SnapshotResult<()> {
+        // Incremental diff storage is not yet implemented.  The caller expects
+        // the diff to be persisted; log the gap so operators are aware.
+        warn!(
+            "update_file_diff_incremental not yet implemented: session={}, file={}, has_before={}, has_after={}",
+            session_id,
+            operation.file_path.display(),
+            before_content.is_some(),
+            after_content.is_some()
+        );
         Ok(())
     }
 
