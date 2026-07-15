@@ -29,6 +29,7 @@
     "granted": "Granted",
     "notGranted": "Not granted",
     "openSettings": "Setting",
+    "openSettingsFailed": "Failed to open system settings. Please open your system preferences manually.",
     "refreshStatus": "Refresh status",
     "desktopOnly": "Computer use settings are only available in the OpenHarness desktop app.",
     "platformNote": "Note"

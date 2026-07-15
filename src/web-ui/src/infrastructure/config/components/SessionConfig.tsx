@@ -209,7 +209,7 @@ const SessionConfig: React.FC = () => {
       await invoke('computer_use_open_system_settings', { request: { pane } });
     } catch (error) {
       log.error('computer_use_open_system_settings failed', error);
-      notificationService.error(t('messages.saveFailed'));
+      notificationService.error(t('computerUse.openSettingsFailed'), { duration: 4000 });
     }
   };
 

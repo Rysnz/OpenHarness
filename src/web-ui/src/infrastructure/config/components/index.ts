@@ -6,8 +6,6 @@ export { default as McpToolsConfig } from './McpToolsConfig';
 export { default as EditorConfig } from './EditorConfig';
 export { default as BasicsConfig } from './BasicsConfig';
 
-
-export { default as DefaultModelConfig } from './DefaultModelConfig';
 export { default as ModelSelectionRadio } from './ModelSelectionRadio';
 export type { ModelSelectionRadioProps } from './ModelSelectionRadio';
 

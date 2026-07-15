@@ -29,6 +29,7 @@
     "granted": "已授权",
     "notGranted": "未授权",
     "openSettings": "系统设置",
+    "openSettingsFailed": "无法打开系统设置，请手动打开系统偏好设置。",
     "refreshStatus": "刷新状态",
     "desktopOnly": "Computer use 仅在 OpenHarness 桌面应用中可用。",
     "platformNote": "说明"
