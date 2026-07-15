@@ -11,19 +11,27 @@ use std::sync::Arc;
 /// Core application state
 pub struct CoreAppState {
     pub app_start_time: std::time::Instant,
+    /// Workspace root directory — used to sandbox file read/write operations.
+    pub workspace_root: std::path::PathBuf,
+    /// Pre-computed canonical root for path traversal checks (avoid I/O on every request).
+    canonical_root: std::path::PathBuf,
 }
 
 impl CoreAppState {
-    pub fn new() -> Self {
+    pub fn new(workspace_root: std::path::PathBuf) -> Self {
+        let canonical_root = std::fs::canonicalize(&workspace_root)
+            .unwrap_or_else(|_| workspace_root.clone());
         Self {
             app_start_time: std::time::Instant::now(),
+            workspace_root,
+            canonical_root,
         }
     }
 }
 
 impl Default for CoreAppState {
     fn default() -> Self {
-        Self::new()
+        Self::new(std::path::PathBuf::from("."))
     }
 }
 
@@ -60,12 +68,26 @@ pub async fn handle_get_session_history(
     })
 }
 
+/// Sanitize a user-supplied path against path traversal.
+/// Resolves relative components (..) and verifies the result stays inside `workspace_root`.
+/// Uses the pre-computed canonical root from state to avoid I/O on every request.
+fn sanitize_path(state: &CoreAppState, user_path: &str) -> Result<std::path::PathBuf> {
+    let resolved = state.workspace_root.join(user_path.trim_start_matches('/').trim_start_matches('\\'));
+    let canonical = std::fs::canonicalize(&resolved)
+        .map_err(|e| anyhow::anyhow!("Invalid or inaccessible path: {}", e))?;
+    if !canonical.starts_with(&state.canonical_root) {
+        return Err(anyhow::anyhow!("Path traversal detected"));
+    }
+    Ok(canonical)
+}
+
 /// Read file content
 pub async fn handle_read_file(
-    _state: &CoreAppState,
+    state: &CoreAppState,
     request: ReadFileRequest,
 ) -> Result<ReadFileResponse> {
-    let content = std::fs::read_to_string(&request.path)?;
+    let safe_path = sanitize_path(state, &request.path)?;
+    let content = std::fs::read_to_string(&safe_path)?;
 
     Ok(ReadFileResponse {
         content,
@@ -75,20 +97,22 @@ pub async fn handle_read_file(
 
 /// Write file content
 pub async fn handle_write_file(
-    _state: &CoreAppState,
+    state: &CoreAppState,
     request: WriteFileRequest,
 ) -> Result<SuccessResponse> {
+    let safe_path = sanitize_path(state, &request.path)?;
+
     if request.create_dirs.unwrap_or(false) {
-        if let Some(parent) = std::path::Path::new(&request.path).parent() {
+        if let Some(parent) = safe_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
     }
 
-    std::fs::write(&request.path, request.content)?;
+    std::fs::write(&safe_path, request.content)?;
 
     Ok(SuccessResponse {
         success: true,
-        message: Some(format!("File written: {}", request.path)),
+        message: Some(format!("File written: {}", safe_path.display())),
         data: None,
     })
 }

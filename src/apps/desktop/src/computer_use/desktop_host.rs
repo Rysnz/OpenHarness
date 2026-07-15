@@ -37,10 +37,14 @@ const POINTER_OVERLAY_SVG: &str = include_str!("../../assets/computer_use_pointe
 const SCREENSHOT_CACHE_TTL_MS: u64 = 1000;
 
 /// Error text when `click_needs_fresh_screenshot` blocks `click` or Enter `key_chord` (single source of truth).
-const STALE_CAPTURE_TOOL_MESSAGE: &str = "Computer use refused: call **`screenshot`** first. Use a **bare** `screenshot` (do not set `screenshot_reset_navigation`) — the host applies a **~500×500** crop around the **mouse**. Before Return/Enter in a focused text field, set **`screenshot_implicit_center`**: **`text_caret`**. This is required after the pointer moved since the last capture, before **`click`** or before **`key_chord`** that includes Return/Enter.";
+/// IMPORTANT: this is NOT a permission / policy denial — the action is blocked solely because the
+/// pointer moved (or a UI action happened) since the last screenshot.  The model MUST take a fresh
+/// screenshot before the next guarded action.
+const STALE_CAPTURE_TOOL_MESSAGE: &str = "Stale capture: call **`screenshot`** first before this action. Use a **bare** `screenshot` (do not set `screenshot_reset_navigation`) — the host applies a **~500×500** crop around the **mouse**. Before Return/Enter in a focused text field, set **`screenshot_implicit_center`**: **`text_caret`**. This is required after the pointer moved since the last capture, before **`click`** or before **`key_chord`** that includes Return/Enter.";
 
-/// Relative nudges (`pointer_move_rel`, `ComputerUseMouseStep`) right after a model-driven screenshot are almost always wrong when deltas are guessed from the image; block until a trusted absolute move.
-const VISION_PIXEL_NUDGE_AFTER_SCREENSHOT_MSG: &str = "Computer use refused: do not use `pointer_move_rel` or `ComputerUseMouseStep` immediately after a `screenshot` — nudging from the JPEG is inaccurate. First reposition with `move_to_text`, `click_element`, `click_label`, `locate` + `mouse_move` (`use_screen_coordinates`: true), or `mouse_move` using globals from tool JSON; then relative nudges are allowed if still needed.";
+/// Relative nudges (`pointer_move_rel`) right after a model-driven screenshot are almost always
+/// wrong when deltas are guessed from the image; block until a trusted absolute move.
+const VISION_PIXEL_NUDGE_AFTER_SCREENSHOT_MSG: &str = "Stale capture: do not use `pointer_move_rel` immediately after a `screenshot` — nudging from the JPEG is inaccurate. First reposition with `move_to_text`, `click_element`, `click_label`, `locate` + `mouse_move` (`use_screen_coordinates`: true), or `mouse_move` using globals from tool JSON; then relative nudges are allowed if still needed.";
 
 #[derive(Debug, Clone)]
 struct ScreenshotCacheEntry {
@@ -2730,7 +2734,7 @@ impl ComputerUseHost for DesktopComputerUseHost {
             Some(ComputerUseScreenshotRefinement::FullDisplay) => {}
             _ => {
                 return Err(OpenHarnessError::tool(
-                    "Click refused: use a **fine** screenshot basis — either a **~500×500 point crop** (`screenshot_crop_center_x` / `y` in full-display native pixels) **or** keep drilling with `screenshot_navigate_quadrant` until `quadrant_navigation_click_ready` is true in the tool result, then `ComputerUseMousePrecise` / `ComputerUseMouseStep` / **`ComputerUse`** **`mouse_move`** (**`use_screen_coordinates`: true** only) to position, then **`click`**. Or take a **full-screen** `screenshot` (no pointer move since capture), then **`mouse_move`** with globals from tool results, then **`click`**.".to_string(),
+                    "Click refused: use a **fine** screenshot basis — either a **~500×500 point crop** (`screenshot_crop_center_x` / `y` in full-display native pixels) **or** keep drilling with `screenshot_navigate_quadrant` until `quadrant_navigation_click_ready` is true in the tool result, then **`ComputerUse`** **`mouse_move`** (**`use_screen_coordinates`: true** only) to position, then **`click`**. Or take a **full-screen** `screenshot` (no pointer move since capture), then **`mouse_move`** with globals from tool results, then **`click`**.".to_string(),
                 ));
             }
         }

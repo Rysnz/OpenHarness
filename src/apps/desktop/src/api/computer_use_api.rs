@@ -82,8 +82,20 @@ pub async fn computer_use_open_system_settings(
     }
     #[cfg(target_os = "windows")]
     {
-        let _ = request;
-        Err("Open system settings is not wired for Windows yet.".to_string())
+        // Map to Windows Settings URIs (ms-settings: protocol).
+        // Accessibility → Ease of Access; Screen capture privacy is managed
+        // per-app via Windows Settings > Privacy & security > Camera and
+        // cannot be opened via a single URI, so open the main privacy page.
+        let uri = match request.pane.as_str() {
+            "accessibility" => "ms-settings:easeofaccess",
+            "screen_capture" => "ms-settings:privacy",
+            _ => return Err(format!("Unknown settings pane: {}", request.pane)),
+        };
+        std::process::Command::new("cmd")
+            .args(["/C", "start", uri])
+            .status()
+            .map_err(|e| format!("Failed to open system settings on Windows: {}", e))?;
+        return Ok(());
     }
     #[cfg(target_os = "linux")]
     {

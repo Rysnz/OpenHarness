@@ -76,6 +76,11 @@ pub async fn set_config(
                 || request.path.starts_with("ai.default_models")
                 || request.path.starts_with("ai.agent_models")
                 || request.path.starts_with("ai.proxy")
+                || request.path.starts_with("ai.computer_use")
+                || request.path.starts_with("ai.tool_execution_timeout")
+                || request.path.starts_with("ai.tool_confirmation_timeout")
+                || request.path.starts_with("ai.command_approval")
+                || request.path.starts_with("ai.skip_tool_confirmation")
             {
                 state.ai_client_factory.invalidate_cache();
                 info!(
