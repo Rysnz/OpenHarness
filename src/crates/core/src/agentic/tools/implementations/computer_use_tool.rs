@@ -516,7 +516,7 @@ The **primary model cannot consume images** in tool results — **do not** use *
             "navigation_native_rect": shot.navigation_native_rect,
             "quadrant_navigation_click_ready": shot.quadrant_navigation_click_ready,
             "implicit_confirmation_crop_applied": shot.implicit_confirmation_crop_applied,
-            "debug_screenshot_path": debug_rel,
+            "debug_screenshot_path": debug_rel.as_ref().map(|p| format!("{p} (already attached — do NOT use Read tool to open this binary file)")),
             "som_label_note": som_note,
         });
         let shortcut_policy = format!(

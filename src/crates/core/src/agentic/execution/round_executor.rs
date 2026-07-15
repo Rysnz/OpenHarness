@@ -614,6 +614,16 @@ impl RoundExecutor {
             {
                 Ok(results) => results,
                 Err(e) => {
+                    let is_permission_denied = matches!(e, OpenHarnessError::Validation(_));
+                    let base_msg = if is_permission_denied {
+                        format!(
+                            "Tool execution was rejected by security policy: {}. \
+                             Consider using a different approach.",
+                            e
+                        )
+                    } else {
+                        format!("Tool pipeline execution failed: {}", e)
+                    };
                     error!(
                         "Tool pipeline execution failed, generating error results for all {} tool calls: {}",
                         stream_result.tool_calls.len(),
@@ -630,9 +640,9 @@ impl RoundExecutor {
                                 tool_name: tc.tool_name.clone(),
                                 result: serde_json::json!({
                                     "error": e.to_string(),
-                                    "message": format!("Tool pipeline execution failed: {}", e)
+                                    "message": base_msg.clone()
                                 }),
-                                result_for_assistant: Some(format!("Tool execution failed: {}", e)),
+                                result_for_assistant: Some(base_msg.clone()),
                                 is_error: true,
                                 duration_ms: None,
                                 image_attachments: None,

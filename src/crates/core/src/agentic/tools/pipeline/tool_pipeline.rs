@@ -214,6 +214,65 @@ pub enum ConfirmationResponse {
     Denied(String),
 }
 
+/// Build formatted tool result descriptions for model consumption.
+/// - For permissions / validation errors the model is nudged to try
+///   a different approach instead of just receiving "execution failed".
+fn fmt_assistant_msg_for_error(tool_name: &str, err: &OpenHarnessError) -> String {
+    if matches!(err, OpenHarnessError::Validation(_)) {
+        format!(
+            "Tool '{}' was rejected by security policy: {}. \
+             Consider using a different approach or tool to accomplish your task.",
+            tool_name, err
+        )
+    } else {
+        format!("Tool '{}' execution failed: {}", tool_name, err)
+    }
+}
+
+/// Create a `ToolExecutionResult` that carries an error back to the model.
+fn build_error_result(
+    tool_id: &str,
+    tool_name: &str,
+    err: &OpenHarnessError,
+    assistant_msg: &str,
+) -> ToolExecutionResult {
+    ToolExecutionResult {
+        tool_id: tool_id.to_string(),
+        tool_name: tool_name.to_string(),
+        result: ModelToolResult {
+            tool_id: tool_id.to_string(),
+            tool_name: tool_name.to_string(),
+            result: serde_json::json!({
+                "error": err.to_string(),
+                "message": assistant_msg
+            }),
+            result_for_assistant: Some(assistant_msg.to_string()),
+            is_error: true,
+            duration_ms: None,
+            image_attachments: None,
+        },
+        execution_time_ms: 0,
+    }
+}
+
+/// Helper to retrieve tool id / name from the state manager for a list of task ids.
+fn get_tool_ids(
+    state_manager: &ToolStateManager,
+    task_ids: &[String],
+    idx: usize,
+) -> (String, String) {
+    let task_id = &task_ids[idx];
+    if let Some(task) = state_manager.get_task(task_id) {
+        (
+            task.tool_call.tool_id.clone(),
+            task.tool_call.tool_name.clone(),
+        )
+    } else {
+        warn!("Task not found in state manager: {}", task_id);
+        (task_id.clone(), "unknown".to_string())
+    }
+}
+
 /// Tool pipeline
 pub struct ToolPipeline {
     tool_registry: Arc<TokioRwLock<ToolRegistry>>,
@@ -541,36 +600,11 @@ impl ToolPipeline {
             match result {
                 Ok(r) => all_results.push(r),
                 Err(e) => {
-                    error!("Tool execution failed: error={}", e);
+                    let (tool_id, tool_name) = get_tool_ids(&self.state_manager, &task_ids, idx);
+                    let assistant_msg = fmt_assistant_msg_for_error(&tool_name, &e);
+                    error!("Tool execution failed: tool_name={}, error={}", tool_name, e);
 
-                    let task_id = &task_ids[idx];
-                    let (tool_id, tool_name) =
-                        if let Some(task) = self.state_manager.get_task(task_id) {
-                            (
-                                task.tool_call.tool_id.clone(),
-                                task.tool_call.tool_name.clone(),
-                            )
-                        } else {
-                            warn!("Task not found in state manager: {}", task_id);
-                            (task_id.clone(), "unknown".to_string())
-                        };
-                    let error_result = ToolExecutionResult {
-                        tool_id: tool_id.clone(),
-                        tool_name: tool_name.clone(),
-                        result: ModelToolResult {
-                            tool_id,
-                            tool_name,
-                            result: serde_json::json!({
-                                "error": e.to_string(),
-                                "message": format!("Tool execution failed: {}", e)
-                            }),
-                            result_for_assistant: Some(format!("Tool execution failed: {}", e)),
-                            is_error: true,
-                            duration_ms: None,
-                            image_attachments: None,
-                        },
-                        execution_time_ms: 0,
-                    };
+                    let error_result = build_error_result(&tool_id, &tool_name, &e, &assistant_msg);
                     all_results.push(error_result);
                 }
             }
@@ -590,8 +624,6 @@ impl ToolPipeline {
             match self.execute_single_tool(task_id.clone()).await {
                 Ok(result) => results.push(result),
                 Err(e) => {
-                    error!("Tool execution failed: error={}", e);
-
                     let (tool_id, tool_name) =
                         if let Some(task) = self.state_manager.get_task(&task_id) {
                             (
@@ -602,23 +634,10 @@ impl ToolPipeline {
                             warn!("Task not found in state manager: {}", task_id);
                             (task_id.clone(), "unknown".to_string())
                         };
-                    let error_result = ToolExecutionResult {
-                        tool_id: tool_id.clone(),
-                        tool_name: tool_name.clone(),
-                        result: ModelToolResult {
-                            tool_id,
-                            tool_name,
-                            result: serde_json::json!({
-                                "error": e.to_string(),
-                                "message": format!("Tool execution failed: {}", e)
-                            }),
-                            result_for_assistant: Some(format!("Tool execution failed: {}", e)),
-                            is_error: true,
-                            duration_ms: None,
-                            image_attachments: None,
-                        },
-                        execution_time_ms: 0,
-                    };
+                    let assistant_msg = fmt_assistant_msg_for_error(&tool_name, &e);
+                    error!("Tool execution failed: tool_name={}, error={}", tool_name, e);
+
+                    let error_result = build_error_result(&tool_id, &tool_name, &e, &assistant_msg);
                     results.push(error_result);
                 }
             }
@@ -669,28 +688,35 @@ impl ToolPipeline {
         }
 
         // Security check: check if the tool is in the allowed list
-        // If allowed_tools is not empty, only allow execution of tools in the whitelist
-        if !task.context.allowed_tools.is_empty()
-            && !task.context.allowed_tools.contains(&tool_name)
-        {
-            let error_msg = format!(
-                "Tool '{}' is not in the allowed list: {:?}",
-                tool_name, task.context.allowed_tools
-            );
-            warn!("Tool not allowed: {}", error_msg);
+        // If allowed_tools is not empty, only allow execution of tools in the whitelist.
+        // Case-insensitive comparison to match model's tool call names.
+        if !task.context.allowed_tools.is_empty() {
+            let tool_name_lower = tool_name.to_ascii_lowercase();
+            let is_allowed = task
+                .context
+                .allowed_tools
+                .iter()
+                .any(|allowed| allowed.to_ascii_lowercase() == tool_name_lower);
+            if !is_allowed {
+                let error_msg = format!(
+                    "Tool '{}' is not in the allowed list: {:?}",
+                    tool_name, task.context.allowed_tools
+                );
+                warn!("Tool not allowed: {}", error_msg);
 
-            // Update state to failed
-            self.state_manager
-                .update_state(
-                    &tool_id,
-                    ToolExecutionState::Failed {
-                        error: error_msg.clone(),
-                        is_retryable: false,
-                    },
-                )
-                .await;
+                // Update state to failed
+                self.state_manager
+                    .update_state(
+                        &tool_id,
+                        ToolExecutionState::Failed {
+                            error: error_msg.clone(),
+                            is_retryable: false,
+                        },
+                    )
+                    .await;
 
-            return Err(OpenHarnessError::Validation(error_msg));
+                return Err(OpenHarnessError::Validation(error_msg));
+            }
         }
 
         // Create cancellation token

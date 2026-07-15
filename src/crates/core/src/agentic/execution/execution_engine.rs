@@ -454,23 +454,6 @@ impl ExecutionEngine {
         Self::is_recoverable_historical_image_error(err)
     }
 
-    fn resolve_configured_model_id(
-        ai_config: &crate::service::config::types::AIConfig,
-        model_id: &str,
-    ) -> String {
-        let trimmed = model_id.trim();
-        if trimmed.is_empty() || trimmed == "auto" || trimmed == "default" {
-            return "auto".to_string();
-        }
-        ai_config
-            .resolve_model_selection(trimmed)
-            .unwrap_or_else(|| "auto".to_string())
-    }
-
-    fn should_use_fast_auto_model(turn_index: usize, original_user_input: &str) -> bool {
-        turn_index == 0 && original_user_input.chars().count() <= 10
-    }
-
     pub(crate) async fn resolve_model_id_for_turn(
         &self,
         session: &Session,
@@ -501,35 +484,56 @@ impl ExecutionEngine {
             .map(|model_id| model_id.trim())
             .filter(|model_id| !model_id.is_empty())
             .map(str::to_string)
-            .unwrap_or(fallback_model_id.clone());
-        let resolved_configured_model_id =
-            Self::resolve_configured_model_id(&ai_config, &configured_model_id);
+            .unwrap_or_else(|| "auto".to_string());
 
-        let model_id = if configured_model_id == "auto" || resolved_configured_model_id == "auto" {
-            let use_fast_model = Self::should_use_fast_auto_model(turn_index, original_user_input);
-            let fallback_model = if use_fast_model { "fast" } else { "primary" };
-            let resolved_model_id = ai_config.resolve_model_selection(fallback_model);
+        let model_id = if configured_model_id == "auto" || configured_model_id == "default" {
+            // Auto mode: pick from enabled text_chat models based on turn complexity.
+            // Short first message → prefer smaller/faster models.
+            // Longer messages or subsequent turns → prefer models with larger context windows.
+            let chat_models: Vec<_> = ai_config
+                .models
+                .iter()
+                .filter(|m| m.enabled && m.capabilities.iter().any(|c| *c == ModelCapability::TextChat))
+                .collect();
 
-            if let Some(resolved_model_id) = resolved_model_id {
+            if chat_models.is_empty() {
+                warn!(
+                    "Auto model: no enabled chat-capable model found, falling back to agent default: session_id={}",
+                    session.session_id
+                );
+                fallback_model_id.clone()
+            } else {
+                // For the first turn with a very short message, prefer a model with
+                // a smaller context window (likely faster/cheaper).  Otherwise pick
+                // the model with the largest context window.
+                let is_quick_turn = turn_index == 0 && original_user_input.chars().count() <= 10;
+                let selected = if is_quick_turn && chat_models.len() > 1 {
+                    chat_models
+                        .iter()
+                        .min_by_key(|m| m.context_window.unwrap_or(0))
+                        .unwrap()
+                } else {
+                    chat_models
+                        .iter()
+                        .max_by_key(|m| m.context_window.unwrap_or(0))
+                        .unwrap()
+                };
                 info!(
-                    "Auto model resolved without locking session: session_id={}, turn_index={}, user_input_chars={}, strategy={}, resolved_model_id={}",
+                    "Auto model resolved: session_id={}, turn_index={}, strategy={}, model_id={}",
                     session.session_id,
                     turn_index,
-                    original_user_input.chars().count(),
-                    fallback_model,
-                    resolved_model_id
+                    if is_quick_turn { "quick" } else { "full" },
+                    selected.id
                 );
-
-                resolved_model_id
-            } else {
-                warn!(
-                    "Auto model strategy unresolved, keeping symbolic selector: session_id={}, strategy={}",
-                    session.session_id, fallback_model
-                );
-                fallback_model.to_string()
+                selected.id.clone()
             }
         } else {
-            resolved_configured_model_id
+            // User explicitly chose a specific model — resolve against config to get
+            // the canonical model id (supports lookup by id, name, or model_name).
+            // A mismatch here is a bug: the frontend only offers models from ai.models.
+            ai_config
+                .resolve_model_reference(&configured_model_id)
+                .unwrap_or_else(|| configured_model_id.clone())
         };
 
         Ok(model_id)
@@ -684,7 +688,8 @@ impl ExecutionEngine {
                         continue;
                     }
                     let mut ai = AIMessage::from(msg.clone());
-                    if let Some(atts) = ai.tool_image_attachments.take() {
+                    let image_atts = ai.tool_image_attachments.take();
+                    if let Some(atts) = image_atts {
                         if !atts.is_empty() {
                             if keep_this_message_images {
                                 let next_count = attached_image_count + atts.len();
@@ -695,7 +700,34 @@ impl ExecutionEngine {
                                     )));
                                 }
                                 attached_image_count = next_count;
-                                ai.tool_image_attachments = Some(atts);
+                                // Emit images as separate user multimodal messages instead of
+                                // attaching them to the tool message (some providers reject
+                                // array content in tool messages).
+                                for (img_idx, att) in atts.iter().enumerate() {
+                                    let data_url = format!(
+                                        "data:{};base64,{}",
+                                        att.mime_type, att.data_base64
+                                    );
+                                    let img = ImageContextData {
+                                        id: format!("tool_img_{}", img_idx),
+                                        image_path: None,
+                                        data_url: Some(data_url),
+                                        mime_type: att.mime_type.clone(),
+                                        metadata: None,
+                                    };
+                                    let processed = process_image_contexts_for_provider(
+                                        &[img],
+                                        provider,
+                                        workspace_path,
+                                    )
+                                    .await?;
+                                    let multimodal = build_multimodal_message_with_images(
+                                        "(screenshot from tool result)",
+                                        &processed,
+                                        provider,
+                                    )?;
+                                    result.extend(multimodal);
+                                }
                             } else {
                                 let dropped = atts.len();
                                 let content_str = ai.content.as_deref().unwrap_or("");
@@ -705,7 +737,6 @@ impl ExecutionEngine {
                                     dropped,
                                     MAX_IMAGE_BEARING_MESSAGE_ROUNDS
                                 ));
-                                ai.tool_image_attachments = None;
                             }
                         }
                     }
@@ -832,10 +863,16 @@ impl ExecutionEngine {
                 );
 
                 // Update session state
-                let _ = self
+                if let Err(e) = self
                     .session_manager
                     .update_compression_state(session_id, session.compression_state.clone())
-                    .await;
+                    .await
+                {
+                    warn!(
+                        "Failed to update compression state: session={}, error={}",
+                        session_id, e
+                    );
+                }
 
                 // Calculate duration
                 let duration_ms = start_time.elapsed().as_millis() as u64;
@@ -984,10 +1021,16 @@ impl ExecutionEngine {
 
                 session.compression_state.increment_compression_count();
                 let compression_count = session.compression_state.compression_count;
-                let _ = self
+                if let Err(e) = self
                     .session_manager
                     .update_compression_state(session_id, session.compression_state.clone())
-                    .await;
+                    .await
+                {
+                    warn!(
+                        "Failed to update compression state after compact: session={}, error={}",
+                        session_id, e
+                    );
+                }
 
                 let duration_ms = start_time.elapsed().as_millis() as u64;
                 let tokens_after = compressed_messages
@@ -1074,13 +1117,35 @@ impl ExecutionEngine {
         // Execute actual logic
         let result = self
             .execute_dialog_turn_impl(
-                agent_type,
+                agent_type.clone(),
                 initial_messages,
                 context,
                 start_time,
                 initial_count,
             )
             .await;
+
+        // Disconnect transient inline MCP servers — must run on both success and error paths.
+        // (The _impl connects them; this guard ensures they are always torn down.)
+        let agent_registry = crate::agentic::agents::get_agent_registry();
+        if let Some(definition) = agent_registry.get_agent_definition(&agent_type, None) {
+            if !definition.inline_mcp_servers.is_empty() {
+                if let Some(mcp_manager) =
+                    crate::service::mcp::get_global_mcp_service()
+                        .as_ref()
+                        .map(|svc| svc.server_manager())
+                {
+                    for server_id in definition.inline_mcp_servers.keys() {
+                        mcp_manager.disconnect_transient(server_id).await;
+                    }
+                    info!(
+                        "Disconnected inline MCP servers (guard): agent={}, count={}",
+                        agent_type,
+                        definition.inline_mcp_servers.len()
+                    );
+                }
+            }
+        }
 
         // Cleanup cancellation token
         self.round_executor
@@ -1214,7 +1279,9 @@ impl ExecutionEngine {
                 let ai_config: crate::service::config::types::AIConfig =
                     service.get_config(Some("ai")).await.unwrap_or_default();
 
-                let resolved_id = Self::resolve_configured_model_id(&ai_config, &model_id);
+                let resolved_id = ai_config
+                    .resolve_model_reference(&model_id)
+                    .unwrap_or_else(|| model_id.clone());
 
                 let model_cfg = ai_config
                     .models
@@ -2053,11 +2120,15 @@ impl ExecutionEngine {
                                 match pipeline.consolidate_session(&observations).await {
                                     Ok(result) => {
                                         if let Some(summary) = &result.summary {
-                                            let _ = storage.save_session_summary(summary).await;
+                                            if let Err(e) = storage.save_session_summary(summary).await {
+                                                warn!("Failed to save memory session summary: {}", e);
+                                            }
                                         }
                                         let entries: Vec<_> = result.all_entries().into_iter().cloned().collect();
                                         if !entries.is_empty() {
-                                            let _ = storage.save_entries(&entries).await;
+                                            if let Err(e) = storage.save_entries(&entries).await {
+                                                warn!("Failed to save memory entries: {}", e);
+                                            }
                                         }
                                         info!(
                                             "Memory consolidation complete: session={}, episodic={}, semantic={}",
@@ -2239,12 +2310,6 @@ mod tests {
     }
 
     #[test]
-    fn auto_model_uses_fast_for_short_first_message() {
-        assert!(ExecutionEngine::should_use_fast_auto_model(0, "你好"));
-        assert!(ExecutionEngine::should_use_fast_auto_model(0, "1234567890"));
-    }
-
-    #[test]
     fn configured_skill_refs_match_name_key_or_dir() {
         let skill = SkillInfo {
             key: "openharness:pdf".to_string(),
@@ -2273,31 +2338,4 @@ mod tests {
         assert_eq!(ExecutionEngine::effective_max_rounds(3, 200, Some(7)), 3);
         assert_eq!(ExecutionEngine::effective_max_rounds(200, 200, None), 200);
         assert_eq!(ExecutionEngine::effective_max_rounds(200, 0, Some(0)), 1);
-    }
-
-    #[test]
-    fn auto_model_uses_primary_for_long_first_message() {
-        assert!(!ExecutionEngine::should_use_fast_auto_model(
-            0,
-            "12345678901"
-        ));
-    }
-
-    #[test]
-    fn auto_model_uses_primary_after_first_turn() {
-        assert!(!ExecutionEngine::should_use_fast_auto_model(1, "短消息"));
-    }
-
-    #[test]
-    fn resolve_configured_fast_model_falls_back_to_primary_when_fast_is_stale() {
-        let mut ai_config = AIConfig::default();
-        ai_config.models = vec![build_model("model-primary", "Primary", "claude-sonnet-4.5")];
-        ai_config.default_models.primary = Some("model-primary".to_string());
-        ai_config.default_models.fast = Some("deleted-fast-model".to_string());
-
-        assert_eq!(
-            ExecutionEngine::resolve_configured_model_id(&ai_config, "fast"),
-            "model-primary"
-        );
-    }
-}
+    }}

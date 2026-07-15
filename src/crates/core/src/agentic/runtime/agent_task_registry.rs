@@ -414,6 +414,30 @@ impl AgentTaskRegistry {
         Ok(())
     }
 
+    /// Remove terminal (Succeeded / Failed / Cancelled) tasks older than `max_age`.
+    /// Returns the number of records pruned.
+    pub async fn prune_terminal_tasks(&self, max_age: std::time::Duration) -> usize {
+        let now = now_ms();
+        let threshold = now.saturating_sub(max_age.as_millis() as u64);
+        let mut removed = 0;
+        let mut records = self.records.write().await;
+        records.retain(|_id, record| {
+            if record.snapshot.status.is_terminal()
+                && record.terminal_notified
+                && record.snapshot.completed_at_ms.unwrap_or(0) < threshold
+            {
+                removed += 1;
+                false
+            } else {
+                true
+            }
+        });
+        if removed > 0 {
+            log::debug!("Pruned {} terminal agent tasks", removed);
+        }
+        removed
+    }
+
     async fn read_persisted_store(&self) -> OpenHarnessResult<PersistedTaskStore> {
         if !tokio::fs::try_exists(&self.snapshot_file)
             .await

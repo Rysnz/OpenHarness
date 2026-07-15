@@ -514,7 +514,9 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
             let supervisor = Arc::clone(&agent_task_supervisor);
             handle.spawn(async move {
-                let _ = supervisor.recover_interrupted_tasks().await;
+                if let Err(e) = supervisor.recover_interrupted_tasks().await {
+                    warn!("Failed to recover interrupted tasks: {}", e);
+                }
             });
         }
 
@@ -1182,7 +1184,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                     context_window,
                     compression_threshold,
                 );
-                let _ = self
+                if let Err(e) = self
                     .session_manager
                     .fail_maintenance_turn(
                         &session_id,
@@ -1190,11 +1192,23 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                         error_text.clone(),
                         vec![model_round],
                     )
-                    .await;
-                let _ = self
+                    .await
+                {
+                    warn!(
+                        "Failed to persist failed maintenance turn: session={}, turn={}, error={}",
+                        session_id, turn_id, e
+                    );
+                }
+                if let Err(e) = self
                     .session_manager
                     .update_session_state(&session_id, SessionState::Idle)
-                    .await;
+                    .await
+                {
+                    warn!(
+                        "Failed to update session state to Idle: session={}, error={}",
+                        session_id, e
+                    );
+                }
                 self.emit_event(AgenticEvent::DialogTurnFailed {
                     session_id,
                     turn_id,
@@ -1613,7 +1627,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             // Cancel token is created in execute_dialog_turn -> execute_round
             // execute_dialog_turn has proper cancellation checks internally
 
-            let _ = session_manager
+            if let Err(e) = session_manager
                 .update_session_state(
                     &session_id_clone,
                     SessionState::Processing {
@@ -1621,7 +1635,13 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                         phase: ProcessingPhase::Thinking,
                     },
                 )
-                .await;
+                .await
+            {
+                warn!(
+                    "Failed to update session state to Processing: session={}, error={}",
+                    session_id_clone, e
+                );
+            }
 
             let workspace_turn_status = match execution_engine
                 .execute_dialog_turn(effective_agent_type_clone, messages, execution_context)
@@ -1638,7 +1658,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                         session_id_clone, turn_id_clone, execution_result.total_rounds
                     );
 
-                    let _ = session_manager
+                    if let Err(e) = session_manager
                         .complete_dialog_turn(
                             &session_id_clone,
                             &turn_id_clone,
@@ -1650,11 +1670,23 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                                 duration_ms: 0,
                             },
                         )
-                        .await;
+                        .await
+                    {
+                        warn!(
+                            "Failed to persist completed dialog turn: session={}, turn={}, error={}",
+                            session_id_clone, turn_id_clone, e
+                        );
+                    }
 
-                    let _ = session_manager
+                    if let Err(e) = session_manager
                         .update_session_state(&session_id_clone, SessionState::Idle)
-                        .await;
+                        .await
+                    {
+                        warn!(
+                            "Failed to update session state to Idle: session={}, error={}",
+                            session_id_clone, e
+                        );
+                    }
 
                     if let Some(tx) = &scheduler_notify_tx {
                         let _ = tx.try_send((
@@ -1681,7 +1713,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                         // cancellation is detected between rounds.  If cancellation
                         // interrupted streaming mid-round, no event was emitted.
                         // Emit it here unconditionally (duplicates are harmless).
-                        let _ = event_queue
+                        if let Err(e) = event_queue
                             .enqueue(
                                 AgenticEvent::DialogTurnCancelled {
                                     session_id: session_id_clone.clone(),
@@ -1690,12 +1722,18 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                                 },
                                 Some(EventPriority::Critical),
                             )
-                            .await;
+                            .await
+                        {
+                            warn!(
+                                "Failed to enqueue cancellation event: session={}, turn={}, error={}",
+                                session_id_clone, turn_id_clone, e
+                            );
+                        }
 
                         // Mark the turn as completed in persistence so its partial
                         // content appears in historical messages (turns_to_chat_messages
                         // skips InProgress turns).
-                        let _ = session_manager
+                        if let Err(e) = session_manager
                             .complete_dialog_turn(
                                 &session_id_clone,
                                 &turn_id_clone,
@@ -1707,11 +1745,23 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                                     duration_ms: 0,
                                 },
                             )
-                            .await;
+                            .await
+                        {
+                            warn!(
+                                "Failed to persist cancelled dialog turn: session={}, turn={}, error={}",
+                                session_id_clone, turn_id_clone, e
+                            );
+                        }
 
-                        let _ = session_manager
+                        if let Err(e) = session_manager
                             .update_session_state(&session_id_clone, SessionState::Idle)
-                            .await;
+                            .await
+                        {
+                            warn!(
+                                "Failed to update session state to Idle (cancelled): session={}, error={}",
+                                session_id_clone, e
+                            );
+                        }
 
                         if let Some(tx) = &scheduler_notify_tx {
                             let _ = tx.try_send((
@@ -1732,7 +1782,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                             OpenHarnessError::AIClient(_) | OpenHarnessError::Timeout(_)
                         );
 
-                        let _ = event_queue
+                        if let Err(e) = event_queue
                             .enqueue(
                                 AgenticEvent::DialogTurnFailed {
                                     session_id: session_id_clone.clone(),
@@ -1742,13 +1792,25 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                                 },
                                 Some(EventPriority::Critical),
                             )
-                            .await;
+                            .await
+                        {
+                            warn!(
+                                "Failed to enqueue failure event: session={}, turn={}, error={}",
+                                session_id_clone, turn_id_clone, e
+                            );
+                        }
 
-                        let _ = session_manager
+                        if let Err(e) = session_manager
                             .fail_dialog_turn(&session_id_clone, &turn_id_clone, error_text.clone())
-                            .await;
+                            .await
+                        {
+                            warn!(
+                                "Failed to persist failed dialog turn: session={}, turn={}, error={}",
+                                session_id_clone, turn_id_clone, e
+                            );
+                        }
 
-                        let _ = session_manager
+                        if let Err(e) = session_manager
                             .update_session_state(
                                 &session_id_clone,
                                 SessionState::Error {
@@ -1756,7 +1818,13 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                                     recoverable,
                                 },
                             )
-                            .await;
+                            .await
+                        {
+                            warn!(
+                                "Failed to update session state to Error: session={}, error={}",
+                                session_id_clone, e
+                            );
+                        }
 
                         if let Some(tx) = &scheduler_notify_tx {
                             let _ = tx.try_send((
@@ -2564,7 +2632,12 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             if token.is_cancelled() {
                 debug!("Subagent task cancelled before AI call, cleaning up resources");
                 if overrides.cleanup_session_on_finish {
-                    let _ = self.cleanup_subagent_resources(&session.session_id).await;
+                    if let Err(e) = self.cleanup_subagent_resources(&session.session_id).await {
+                        warn!(
+                            "Failed to cleanup subagent resources: session={}, error={}",
+                            session.session_id, e
+                        );
+                    }
                 }
                 return Err(OpenHarnessError::Cancelled(
                     "Subagent task has been cancelled".to_string(),
