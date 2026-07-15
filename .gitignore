@@ -63,4 +63,17 @@ tests/e2e/reports/
 .cursor
 .cursor/rules/no-cargo.mdc
 
+# AI Agent workspaces & metadata
+.agents/
+.omo/
+agent/
+skills-lock.json
+
+# Temporary / generated / debug files
+*.orig
+debug_body.json
+build_latest_done.txt
+cargo_direct_done.txt
+src/web-ui/tsc_out.txt
+
 ASSETS_LICENSES.md
