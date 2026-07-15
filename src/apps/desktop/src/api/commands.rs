@@ -14,11 +14,78 @@ use openharness_core::service::workspace::{
     ScanOptions, WorkspaceInfo, WorkspaceKind, WorkspaceOpenOptions,
 };
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, State};
+
+/// Resolves `file_path` relative to `workspace_path` and validates that the
+/// resolved path stays within `workspace_path` boundaries (anti-path-traversal).
+///
+/// Returns the canonicalized absolute path on success.
+///
+/// - If `workspace_path` is empty, validation is skipped (backward compat).
+/// - If the target file does not yet exist, its deepest existing ancestor is
+///   canonicalized and the remainder appended — this eliminates all `..`
+///   components without requiring the file itself to exist.
+fn resolve_workspace_path(
+    workspace_path: &str,
+    file_path: &str,
+) -> Result<PathBuf, String> {
+    if workspace_path.is_empty() {
+        return Ok(Path::new(file_path).to_path_buf());
+    }
+
+    let ws = Path::new(workspace_path);
+    let candidate = ws.join(file_path);
+
+    let canonical_ws =
+        std::fs::canonicalize(ws).map_err(|e| {
+            format!("Workspace path is not accessible '{}': {}", workspace_path, e)
+        })?;
+
+    // Walk up `candidate` until we find an existing ancestor, canonicalize that,
+    // then re-append the peeled components.  This works even for brand-new files.
+    let canonical_candidate = {
+        let mut tail: Vec<&std::ffi::OsStr> = vec![];
+        let mut p = candidate.as_path();
+        loop {
+            if p.exists() {
+                let mut base = std::fs::canonicalize(p).map_err(|e| {
+                    format!("Cannot canonicalize '{}': {}", p.display(), e)
+                })?;
+                for comp in tail.into_iter().rev() {
+                    base.push(comp);
+                }
+                break base;
+            }
+            match (p.file_name(), p.parent()) {
+                (Some(name), Some(parent)) => {
+                    tail.push(name);
+                    p = parent;
+                }
+                _ => {
+                    // Shouldn't happen in a valid workspace, but handle gracefully.
+                    return Err(format!(
+                        "Cannot resolve path '{}' — no existing ancestor found",
+                        candidate.display()
+                    ));
+                }
+            }
+        }
+    };
+
+    if !canonical_candidate.starts_with(&canonical_ws) {
+        return Err(format!(
+            "Security denied: path '{}' escapes workspace '{}'",
+            canonical_candidate.display(),
+            canonical_ws.display()
+        ));
+    }
+
+    Ok(canonical_candidate)
+}
 
 fn remote_workspace_from_info(info: &WorkspaceInfo) -> Option<crate::api::RemoteWorkspace> {
     if info.workspace_kind != WorkspaceKind::Remote {
@@ -1966,7 +2033,9 @@ pub async fn write_file_content(
         return Ok(());
     }
 
-    let full_path = request.file_path;
+    // 路径穿越防护：解析 file_path 前先校验它在 workspace_path 范围内
+    let full_path = resolve_workspace_path(&request.workspace_path, &request.file_path)?;
+
     let options = FileOperationOptions {
         backup_on_overwrite: false,
         ..FileOperationOptions::default()
@@ -1974,13 +2043,13 @@ pub async fn write_file_content(
 
     match state
         .filesystem_service
-        .write_file_with_options(&full_path, &request.content, options)
+        .write_file_with_options(&full_path.to_string_lossy(), &request.content, options)
         .await
     {
         Ok(_) => Ok(()),
         Err(e) => {
-            error!("Failed to write file: path={}, error={}", full_path, e);
-            Err(format!("Failed to write file {}, error: {}", full_path, e))
+            error!("Failed to write file: path={}, error={}", full_path.display(), e);
+            Err(format!("Failed to write file {}, error: {}", full_path.display(), e))
         }
     }
 }
