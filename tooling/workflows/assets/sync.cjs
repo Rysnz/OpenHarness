@@ -17,18 +17,14 @@ function copyRecursive(source, target) {
 }
 
 function syncMonacoAssets() {
-  const source = path.join(
-    repoRoot,
-    'src',
-    'web-ui',
-    'node_modules',
-    'monaco-editor',
-    'min',
-    'vs'
-  );
+  const candidates = [
+    path.join(repoRoot, 'src', 'web-ui', 'node_modules', 'monaco-editor', 'min', 'vs'),
+    path.join(repoRoot, 'node_modules', 'monaco-editor', 'min', 'vs'),
+  ];
+  const source = candidates.find((p) => fs.existsSync(p));
   const target = path.join(repoRoot, 'src', 'web-ui', 'public', 'monaco-editor', 'vs');
-  if (!fs.existsSync(source)) {
-    throw new Error(`Monaco source not found: ${source}`);
+  if (!source) {
+    throw new Error(`Monaco source not found, tried: ${candidates.join(', ')}`);
   }
   copyRecursive(source, target);
   return target;
