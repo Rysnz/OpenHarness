@@ -26,20 +26,21 @@ const log = createLogger('MessageModule');
 function normalizeModelSelection(
   modelId: string | undefined,
   models: AIModelConfig[],
-  defaultModels: DefaultModelsConfig,
+  _defaultModels: DefaultModelsConfig,
 ): string {
   const value = modelId?.trim();
   if (!value || value === 'auto') return 'auto';
 
-  if (value === 'primary' || value === 'fast') {
-    const resolvedDefaultId = value === 'primary' ? defaultModels.primary : defaultModels.fast;
-    const matchedModel = models.find(model => model.id === resolvedDefaultId);
-    return matchedModel ? value : 'auto';
-  }
-
   const matchedModel = models.find(model =>
     model.id === value || model.name === value || model.model_name === value,
   );
+  if (!matchedModel) {
+    log.warn('Model selection unresolved: model not found in available models', {
+      selectedValue: value,
+      availableModelIds: models.map(m => m.id),
+    });
+    return 'auto';
+  }
   return matchedModel ? value : 'auto';
 }
 

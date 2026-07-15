@@ -36,7 +36,11 @@ export class FlowChatStore {
   private state: FlowChatState;
   private listeners: Set<(state: FlowChatState) => void> = new Set();
   
-  private silentMode = false;
+  private silentModeDepth = 0;
+
+  private get silentMode(): boolean {
+    return this.silentModeDepth > 0;
+  }
 
   private constructor() {
     this.clearOldStorage();
@@ -99,15 +103,15 @@ export class FlowChatStore {
   
   /**
    * Silent state update (does not trigger listeners)
-   * Used for batch updates, call notifyListeners() after completion
+   * Uses depth-based nesting so nested silent calls restore correctly.
+   * Call notifyListeners() manually after batch updates complete.
    */
   public setStateSilent(updater: (prevState: FlowChatState) => FlowChatState): void {
-    const prevSilentMode = this.silentMode;
-    this.silentMode = true;
+    this.silentModeDepth++;
     try {
       this.setState(updater);
     } finally {
-      this.silentMode = prevSilentMode;
+      this.silentModeDepth--;
     }
   }
   
@@ -124,13 +128,29 @@ export class FlowChatStore {
     });
   }
   
+  /** Enter silent mode. Nesting-safe — call endSilentMode() once for each call. */
   public beginSilentMode(): void {
-    this.silentMode = true;
+    this.silentModeDepth++;
   }
   
+  /** Exit silent mode. Notifies listeners when depth reaches zero. */
   public endSilentMode(): void {
-    this.silentMode = false;
-    this.notifyListeners();
+    if (this.silentModeDepth > 0) {
+      this.silentModeDepth--;
+    }
+    if (this.silentModeDepth === 0) {
+      this.notifyListeners();
+    }
+  }
+
+  /** Execute fn in silent mode, always restoring the depth on exit. */
+  public runSilent<T>(fn: () => T): T {
+    this.beginSilentMode();
+    try {
+      return fn();
+    } finally {
+      this.endSilentMode();
+    }
   }
 
   private collectCascadeSessionIds(
@@ -1009,12 +1029,11 @@ export class FlowChatStore {
    * Used for batch update scenarios
    */
   public addModelRoundItemSilent(sessionId: string, dialogTurnId: string, item: AnyFlowItem, modelRoundId?: string): void {
-    const prevSilentMode = this.silentMode;
-    this.silentMode = true;
+    this.beginSilentMode();
     try {
       this.addModelRoundItem(sessionId, dialogTurnId, item, modelRoundId);
     } finally {
-      this.silentMode = prevSilentMode;
+      this.endSilentMode();
     }
   }
 
@@ -1121,12 +1140,11 @@ export class FlowChatStore {
    * Used for batch update scenarios
    */
   public updateModelRoundItemSilent(sessionId: string, dialogTurnId: string, itemId: string, updates: Partial<FlowItem>): void {
-    const prevSilentMode = this.silentMode;
-    this.silentMode = true;
+    this.beginSilentMode();
     try {
       this.updateModelRoundItem(sessionId, dialogTurnId, itemId, updates);
     } finally {
-      this.silentMode = prevSilentMode;
+      this.endSilentMode();
     }
   }
 

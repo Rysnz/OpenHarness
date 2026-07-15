@@ -1555,19 +1555,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       );
       return;
     }
-    
-    // Add to history before clearing (session-scoped)
-    if (effectiveTargetSessionId) {
-      addToHistory(effectiveTargetSessionId, message);
-    }
-    setHistoryIndex(-1);
-    setSavedDraft('');
-    
-    dispatchInput({ type: 'CLEAR_VALUE' });
-    clearPendingLargePastes();
-    // Clear machine queue too; otherwise the queuedInput→input sync effect puts the text back after send.
-    setQueuedInput(null);
 
+    // Validate message length BEFORE mutating state (history, input, pastes).
     if (messageCharCount > CHAT_INPUT_CONFIG.largePaste.maxMessageChars) {
       notificationService.error(
         t('input.messageTooLarge', {
@@ -1577,17 +1566,24 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         }),
         { duration: 4000 }
       );
-      pendingLargePastesRef.current = originalPendingLargePastes;
-      dispatchInput({ type: 'ACTIVATE' });
-      dispatchInput({ type: 'SET_VALUE', payload: originalMessage });
       return;
     }
+    
+    // Add to history before clearing (session-scoped)
+    if (effectiveTargetSessionId) {
+      addToHistory(effectiveTargetSessionId, message);
+    }
+    setHistoryIndex(-1);
+    setSavedDraft('');
+    
+    dispatchInput({ type: 'CLEAR_VALUE' });
+    dispatchInput({ type: 'DEACTIVATE' });
+    clearPendingLargePastes();
+    // Clear machine queue too; otherwise the queuedInput→input sync effect puts the text back after send.
+    setQueuedInput(null);
 
     try {
       await sendMessage(message);
-      clearPendingLargePastes();
-      dispatchInput({ type: 'CLEAR_VALUE' });
-      dispatchInput({ type: 'DEACTIVATE' });
     } catch (error) {
       log.error('Failed to send message', { error });
       pendingLargePastesRef.current = originalPendingLargePastes;
@@ -1651,7 +1647,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     );
   }, [canSwitchModes, incrementalCodeModes, slashCommandState.query]);
 
-  const applyModeChange = useCallback((modeId: string) => {
+  const applyModeChange = useCallback(async (modeId: string) => {
     dispatchMode({
       type: 'SET_CURRENT_MODE',
       payload: modeId,
@@ -1665,6 +1661,38 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
     if (effectiveTargetSessionId) {
       FlowChatStore.getInstance().updateSessionMode(effectiveTargetSessionId, modeId);
+
+      // Sync the new mode's model to the backend session.
+      // Without this, the backend continues using the old mode's model until the next message send.
+      try {
+        const [agentModels, allModels, defaultModels] = await Promise.all([
+          configManager.getConfig<Record<string, string>>('ai.agent_models') || {},
+          configManager.getConfig<any[]>('ai.models') || [],
+          configManager.getConfig<Record<string, string | null>>('ai.default_models') || {},
+        ]);
+        const configuredModel = agentModels[modeId] || 'auto';
+        let modelName: string;
+        if (configuredModel === 'primary' || configuredModel === 'fast') {
+          const resolvedId = defaultModels[configuredModel];
+          if (resolvedId && allModels.some(m => m.id === resolvedId)) {
+            modelName = configuredModel;
+          } else {
+            modelName = 'auto';
+          }
+        } else if (configuredModel === 'auto') {
+          modelName = 'auto';
+        } else {
+          modelName = allModels.some(m => m.id === configuredModel || m.name === configuredModel || m.model_name === configuredModel)
+            ? configuredModel : 'auto';
+        }
+        FlowChatStore.getInstance().updateSessionModelName(effectiveTargetSessionId, modelName);
+        await agentAPI.updateSessionModel({
+          sessionId: effectiveTargetSessionId,
+          modelName,
+        });
+      } catch (err) {
+        log.warn('Failed to sync model on mode change', { modeId, error: err });
+      }
     }
   }, [effectiveTargetSessionId]);
 
@@ -1684,7 +1712,9 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       return;
     }
 
-    applyModeChange(modeId);
+    // Fire-and-forget: close dropdown immediately; model sync runs in background.
+    // Errors are logged inside applyModeChange.
+    void applyModeChange(modeId);
     dispatchMode({ type: 'CLOSE_DROPDOWN' });
   }, [applyModeChange, canSwitchModes, currentMode, switchableModes]);
   

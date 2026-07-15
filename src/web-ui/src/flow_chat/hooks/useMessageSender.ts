@@ -8,7 +8,7 @@
  * ImageContextData[] through to the backend.
  */
 
-import { useCallback } from 'react';
+import { useCallback, useState, useRef } from 'react';
 import { FlowChatManager } from '../services/FlowChatManager';
 import { notificationService } from '@/shared/notification-system';
 import type { ContextItem, ImageContext } from '@/shared/types/context';
@@ -22,21 +22,22 @@ const log = createLogger('FlowChat');
 function normalizeModelSelection(
   modelId: string | undefined,
   models: AIModelConfig[],
-  defaultModels: DefaultModelsConfig,
+  _defaultModels: DefaultModelsConfig,
 ): string {
   const value = modelId?.trim();
   if (!value || value === 'auto') return 'auto';
 
-  if (value === 'primary' || value === 'fast') {
-    const resolvedDefaultId = value === 'primary' ? defaultModels.primary : defaultModels.fast;
-    const matchedModel = models.find(model => model.id === resolvedDefaultId);
-    return matchedModel ? value : 'auto';
-  }
-
   const matchedModel = models.find(model =>
     model.id === value || model.name === value || model.model_name === value,
   );
-  return matchedModel ? value : 'auto';
+  if (!matchedModel) {
+    log.warn('Model selection unresolved: model not found in available models', {
+      selectedValue: value,
+      availableModelIds: models.map(m => m.id),
+    });
+    return 'auto';
+  }
+  return matchedModel.id || 'auto';
 }
 
 interface UseMessageSenderProps {
@@ -76,6 +77,10 @@ export function useMessageSender(props: UseMessageSenderProps): UseMessageSender
     currentAgentType,
   } = props;
 
+  const [isSending, setIsSending] = useState(false);
+  // Track whether a new session was created during this send so we can roll it back on failure.
+  const createdSessionIdRef = useRef<string | null>(null);
+
   const sendMessage = useCallback(async (
     message: string,
     options?: {
@@ -88,6 +93,7 @@ export function useMessageSender(props: UseMessageSenderProps): UseMessageSender
 
     const trimmedMessage = message.trim();
     let sessionId = currentSessionId;
+    createdSessionIdRef.current = null;
     log.debug('Send message initiated', {
       textLength: trimmedMessage.length,
       contextCount: contexts.length,
@@ -95,6 +101,7 @@ export function useMessageSender(props: UseMessageSenderProps): UseMessageSender
       agentType: currentAgentType || 'agentic',
     });
 
+    setIsSending(true);
     try {
       const flowChatManager = FlowChatManager.getInstance();
 
@@ -110,6 +117,7 @@ export function useMessageSender(props: UseMessageSenderProps): UseMessageSender
         sessionId = await flowChatManager.createChatSession({
           modelName: modelId || undefined
         }, agentType);
+        createdSessionIdRef.current = sessionId;
         log.debug('Session created', { sessionId, modelId, agentType });
       } else {
         log.debug('Reusing existing session', { sessionId });
@@ -146,6 +154,14 @@ export function useMessageSender(props: UseMessageSenderProps): UseMessageSender
             imageCount: clipboardImages.length,
             error: (error as Error)?.message ?? 'unknown',
           });
+          // Roll back the newly-created session so we don't leave an empty session behind.
+          if (createdSessionIdRef.current) {
+            try {
+              await FlowChatManager.getInstance().deleteChatSession(createdSessionIdRef.current);
+            } catch (cleanupErr) {
+              log.warn('Failed to clean up empty session after image upload failure', { sessionId: createdSessionIdRef.current, error: cleanupErr });
+            }
+          }
           notificationService.error('Image upload failed. Please try again.', { duration: 3000 });
           throw error;
         }
@@ -254,11 +270,13 @@ export function useMessageSender(props: UseMessageSenderProps): UseMessageSender
         error: (error as Error)?.message ?? 'unknown',
       });
       throw error;
+    } finally {
+      setIsSending(false);
     }
   }, [currentSessionId, contexts, onClearContexts, onSuccess, onExitTemplateMode, currentAgentType]);
 
   return {
     sendMessage,
-    isSending: false,
+    isSending,
   };
 }

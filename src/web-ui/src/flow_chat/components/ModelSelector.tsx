@@ -45,8 +45,8 @@ interface ModelInfo {
 }
 
 // Helper: identify special model IDs.
-const isSpecialModel = (value: string): value is 'auto' | 'primary' | 'fast' => {
-  return value === 'auto' || value === 'primary' || value === 'fast';
+const isSpecialModel = (value: string): value is 'auto' => {
+  return value === 'auto';
 };
 
 const formatContextWindow = (contextWindow?: number): string | null => {
@@ -117,7 +117,6 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
 }) => {
   const { t } = useTranslation('flow-chat');
   const [allModels, setAllModels] = useState<AIModelConfig[]>([]);
-  const [defaultModels, setDefaultModels] = useState<Record<string, string>>({});
   const [agentModels, setAgentModels] = useState<Record<string, string>>({}); // mode_id -> model_id
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -127,14 +126,12 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
   // Load configuration data.
   const loadConfigData = useCallback(async () => {
     try {
-      const [models, defaultModelsData, agentModelsData] = await Promise.all([
+      const [models, agentModelsData] = await Promise.all([
         configManager.getConfig<AIModelConfig[]>('ai.models') || [],
-        configManager.getConfig<any>('ai.default_models') || {},
         configManager.getConfig<Record<string, string>>('ai.agent_models') || {}
       ]);
 
       setAllModels(models);
-      setDefaultModels(defaultModelsData);
       setAgentModels(agentModelsData);
 
       log.debug('Configuration loaded', {
@@ -187,39 +184,15 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
   const getCurrentModelId = useCallback((): string => {
     const configuredModelId = agentModels[currentMode] || 'auto';
     if (configuredModelId === 'auto') return 'auto';
-    if (configuredModelId === 'primary' || configuredModelId === 'fast') {
-      const actualModelId = defaultModels[configuredModelId];
-      const model = allModels.find(m => m.id === actualModelId);
-      return model ? configuredModelId : 'auto';
-    }
     const model = allModels.find(m => m.id === configuredModelId);
     return model ? configuredModelId : 'auto';
-  }, [allModels, currentMode, agentModels, defaultModels]);
+  }, [allModels, currentMode, agentModels]);
 
   const currentModel = useMemo((): ModelInfo | null => {
     const modelId = getCurrentModelId();
 
     if (modelId === 'auto') {
       return buildAutoModelInfo(t);
-    }
-
-    if (isSpecialModel(modelId)) {
-      const actualModelId = defaultModels[modelId];
-      if (!actualModelId) return buildAutoModelInfo(t);
-
-      const model = allModels.find(m => m.id === actualModelId);
-      if (!model) return buildAutoModelInfo(t);
-
-      return {
-        id: modelId,
-        configName: modelId === 'primary' ? t('modelSelector.primaryModel') : t('modelSelector.fastModel'),
-        modelName: model.model_name,
-        providerName: getProviderDisplayName(model),
-        provider: model.provider,
-        contextWindow: model.context_window,
-        enableThinking: model.enable_thinking_process,
-        reasoningEffort: model.reasoning_effort,
-      };
     }
 
     const model = allModels.find(m => m.id === modelId);
@@ -235,7 +208,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
       enableThinking: model.enable_thinking_process,
       reasoningEffort: model.reasoning_effort,
     };
-  }, [getCurrentModelId, allModels, defaultModels, t]);
+  }, [getCurrentModelId, allModels, t]);
   
   const availableModels = useMemo((): ModelInfo[] => {
     return allModels
@@ -347,56 +320,6 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
               )}
             </div>
           </Tooltip>
-
-          {(() => {
-            const primaryModel = allModels.find(m => m.id === defaultModels.primary);
-            const primaryTooltip = primaryModel
-              ? buildResolvedModelTooltipText(primaryModel.model_name, {
-                providerName: getProviderDisplayName(primaryModel),
-                contextWindow: primaryModel.context_window
-              }, t('modelSelector.autoModelDesc'))
-              : t('modelSelector.autoModelDesc');
-            return (
-              <Tooltip content={primaryTooltip} placement="right">
-                <div
-                  className={`openharness-model-selector__option openharness-model-selector__option--special ${currentModelId === 'primary' ? 'openharness-model-selector__option--selected' : ''}`}
-                  onClick={() => handleSelectModel('primary')}
-                >
-                  <div className="openharness-model-selector__option-main">
-                    <span className="openharness-model-selector__option-name">{t('modelSelector.primaryModel')}</span>
-                  </div>
-                  {currentModelId === 'primary' && (
-                    <Check size={14} className="openharness-model-selector__option-check" />
-                  )}
-                </div>
-              </Tooltip>
-            );
-          })()}
-
-          {(() => {
-            const fastModel = allModels.find(m => m.id === defaultModels.fast);
-            const fastTooltip = fastModel
-              ? buildResolvedModelTooltipText(fastModel.model_name, {
-                providerName: getProviderDisplayName(fastModel),
-                contextWindow: fastModel.context_window
-              }, t('modelSelector.autoModelDesc'))
-              : t('modelSelector.autoModelDesc');
-            return (
-              <Tooltip content={fastTooltip} placement="right">
-                <div
-                  className={`openharness-model-selector__option openharness-model-selector__option--special ${currentModelId === 'fast' ? 'openharness-model-selector__option--selected' : ''}`}
-                  onClick={() => handleSelectModel('fast')}
-                >
-                  <div className="openharness-model-selector__option-main">
-                    <span className="openharness-model-selector__option-name">{t('modelSelector.fastModel')}</span>
-                  </div>
-                  {currentModelId === 'fast' && (
-                    <Check size={14} className="openharness-model-selector__option-check" />
-                  )}
-                </div>
-              </Tooltip>
-            );
-          })()}
 
           <div className="openharness-model-selector__divider" />
 
