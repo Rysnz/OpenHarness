@@ -50,7 +50,7 @@ impl ShellDetector {
             }
 
             // Check for WSL shells
-            // shells.extend(Self::detect_wsl_shells());
+            shells.extend(Self::detect_wsl_shells());
         }
 
         #[cfg(not(windows))]
@@ -285,10 +285,58 @@ impl ShellDetector {
     }
 
     #[cfg(windows)]
-    #[allow(dead_code)]
     fn detect_wsl_shells() -> Vec<DetectedShell> {
-        // TODO: Enumerate WSL distributions
-        Vec::new()
+        let mut shells = Vec::new();
+
+        // Execute "wsl.exe -l -q" to list installed distributions
+        // -l: list distributions
+        // -q: quiet mode (no headers)
+        let output = create_command("wsl.exe")
+            .args(["-l", "-q"])
+            .output();
+
+        if let Ok(out) = output {
+            if out.status.success() {
+                // wsl.exe -l -q output is UTF-16LE with BOM on some Windows versions
+                let stdout_str = String::from_utf16_lossy(
+                    &out.stdout
+                        .chunks_exact(2)
+                        .map(|a| u16::from_ne_bytes([a[0], a[1]]))
+                        .collect::<Vec<u16>>(),
+                );
+
+                for line in stdout_str.lines() {
+                    let distro = line.trim().trim_matches('\0');
+                    if !distro.is_empty() && !distro.contains(' ') {
+                        shells.push(DetectedShell {
+                            shell_type: ShellType::Wsl,
+                            path: PathBuf::from("wsl.exe"),
+                            version: None,
+                            display_name: format!("WSL: {}", distro),
+                        });
+                    }
+                }
+
+                // If UTF-16LE parsing produced nothing, fall back to UTF-8
+                if shells.is_empty() {
+                    if let Ok(utf8_str) = String::from_utf8(out.stdout) {
+                        for line in utf8_str.lines() {
+                            let distro = line.trim().trim_matches('\0');
+                            if !distro.is_empty() && !distro.contains(' ') {
+                                shells.push(DetectedShell {
+                                    shell_type: ShellType::Wsl,
+                                    path: PathBuf::from("wsl.exe"),
+                                    version: None,
+                                    display_name: format!("WSL: {}", distro),
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        shells
     }
 
     #[cfg(not(windows))]
@@ -400,6 +448,14 @@ impl DetectedShell {
         let (args, use_login_shell) = if matches!(self.shell_type, ShellType::Bash) {
             // Git Bash on Windows: use --login -i
             (vec!["--login".to_string(), "-i".to_string()], true)
+        } else if matches!(self.shell_type, ShellType::Wsl) {
+            // WSL: extract distro name from display_name ("WSL: Ubuntu" -> "Ubuntu")
+            let distro = self.display_name.strip_prefix("WSL: ").unwrap_or("").to_string();
+            if !distro.is_empty() {
+                (vec!["-d".to_string(), distro], true)
+            } else {
+                (vec!["~".to_string()], true)
+            }
         } else {
             (Vec::new(), false)
         };

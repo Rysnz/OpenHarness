@@ -24,6 +24,7 @@ interface ProjectInfo {
 class WorkspaceLspInitializer {
   private static instance: WorkspaceLspInitializer | null = null;
   private removeListener: (() => void) | null = null;
+  private lastWorkspacePath: string | null = null;
   
   private constructor() {
   }
@@ -67,6 +68,7 @@ class WorkspaceLspInitializer {
   }
   
   private async handleWorkspaceOpened(workspacePath: string): Promise<void> {
+    this.lastWorkspacePath = workspacePath;
     try {
       const manager = WorkspaceLspManager.getOrCreate(workspacePath);
       
@@ -130,7 +132,11 @@ class WorkspaceLspInitializer {
   
   private async handleWorkspaceClosed(): Promise<void> {
     try {
-      // TODO: clean up the manager for the currently active workspace (if needed).
+      if (this.lastWorkspacePath) {
+        await WorkspaceLspManager.remove(this.lastWorkspacePath);
+        log.info('LSP Manager disposed for closed workspace', { workspacePath: this.lastWorkspacePath });
+        this.lastWorkspacePath = null;
+      }
     } catch (error) {
       log.error('Failed to cleanup LSP', { error });
     }

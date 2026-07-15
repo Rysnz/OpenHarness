@@ -64,21 +64,21 @@ fn scoped_agent_memory_path(
     let agent_dir_name = sanitize_agent_memory_name(agent_name);
     match normalized_agent_memory_scope(scope) {
         "user" => dirs::home_dir().map(|home| {
-            home.join(CLAUDE_DIR_NAME)
+            home.join(OPENHARNESS_DIR_NAME)
                 .join(AGENT_MEMORY_DIR_NAME)
                 .join(agent_dir_name)
                 .join(AGENT_MEMORY_FILE)
         }),
         "project" => Some(
             workspace_root
-                .join(CLAUDE_DIR_NAME)
+                .join(OPENHARNESS_DIR_NAME)
                 .join(AGENT_MEMORY_DIR_NAME)
                 .join(agent_dir_name)
                 .join(AGENT_MEMORY_FILE),
         ),
         _ => Some(
             workspace_root
-                .join(CLAUDE_DIR_NAME)
+                .join(OPENHARNESS_DIR_NAME)
                 .join(AGENT_MEMORY_LOCAL_DIR_NAME)
                 .join(agent_dir_name)
                 .join(AGENT_MEMORY_FILE),
@@ -384,7 +384,7 @@ mod tests {
             .unwrap();
 
         let expected_path = workspace
-            .join(".claude")
+            .join(".openharness")
             .join("agent-memory")
             .join("Coding")
             .join("MEMORY.md");
@@ -406,7 +406,7 @@ mod tests {
             .unwrap();
 
         let expected_path = workspace
-            .join(".claude")
+            .join(".openharness")
             .join("agent-memory-local")
             .join("reviewer")
             .join("MEMORY.md");

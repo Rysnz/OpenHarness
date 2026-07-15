@@ -40,6 +40,8 @@ pub enum ShellType {
     Ksh,
     /// Csh (C shell)
     Csh,
+    /// WSL (Windows Subsystem for Linux) distribution
+    Wsl,
     /// Custom shell with name
     Custom(String),
 }
@@ -61,6 +63,7 @@ impl ShellType {
             ShellType::Ksh => "Ksh",
             ShellType::Csh => "Csh",
             ShellType::Custom(name) => name,
+            ShellType::Wsl => "WSL",
         }
     }
 
@@ -82,6 +85,7 @@ impl ShellType {
             }
             ShellType::PowerShellCore => "pwsh",
             ShellType::Cmd => "cmd.exe",
+            ShellType::Wsl => "wsl.exe",
             ShellType::Sh => "sh",
             ShellType::Ksh => "ksh",
             ShellType::Csh => "csh",
@@ -93,7 +97,7 @@ impl ShellType {
     pub fn is_posix(&self) -> bool {
         matches!(
             self,
-            ShellType::Bash | ShellType::Zsh | ShellType::Sh | ShellType::Ksh | ShellType::Csh
+            ShellType::Bash | ShellType::Zsh | ShellType::Sh | ShellType::Ksh | ShellType::Csh | ShellType::Wsl
         )
     }
 
@@ -106,6 +110,7 @@ impl ShellType {
                 | ShellType::Fish
                 | ShellType::PowerShell
                 | ShellType::PowerShellCore
+                | ShellType::Wsl
         )
     }
 
@@ -127,6 +132,7 @@ impl ShellType {
             "sh" => ShellType::Sh,
             "ksh" => ShellType::Ksh,
             "csh" | "tcsh" => ShellType::Csh,
+            "wsl" => ShellType::Wsl,
             _ => ShellType::Custom(name),
         }
     }
@@ -157,6 +163,7 @@ impl std::fmt::Display for ShellType {
             ShellType::Sh => write!(f, "sh"),
             ShellType::Ksh => write!(f, "ksh"),
             ShellType::Csh => write!(f, "csh"),
+            ShellType::Wsl => write!(f, "wsl"),
             ShellType::Custom(name) => write!(f, "{}", name),
         }
     }

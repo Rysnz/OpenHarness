@@ -12,6 +12,7 @@ import {
 } from '../types';
 import { globalEventBus } from '../../../infrastructure/event-bus';
 import { getMonacoLanguage } from '@/infrastructure/language-detection';
+import { invoke } from '@tauri-apps/api/core';
 import { createLogger } from '@/shared/utils/logger';
 
 const log = createLogger('EditorManager');
@@ -90,13 +91,23 @@ export class EditorManager implements IEditorManager {
   private config: EditorConfig;
   private listeners = new Set<(event: EditorEvent) => void>();
   private autoSaveTimers = new Map<number, ReturnType<typeof setTimeout>>();
+  private filePaths = new Map<number, string>();
+  private workspacePath: string = '';
 
   constructor(initialConfig?: Partial<EditorConfig>) {
     this.config = { ...DEFAULT_CONFIG, ...initialConfig };
     this.loadConfig();
   }
 
-  async openFile(file: FileContent): Promise<number> {
+  setWorkspacePath(path: string): void {
+    this.workspacePath = path;
+  }
+
+  getWorkspacePath(): string {
+    return this.workspacePath;
+  }
+
+  async openFile(file: FileContent, filePath?: string): Promise<number> {
     try {
       const existingIndex = this.openFiles.findIndex(f => f.name === file.name);
       if (existingIndex !== -1) {
@@ -121,6 +132,13 @@ export class EditorManager implements IEditorManager {
       const newIndex = this.openFiles.length - 1;
       this.activeFileIndex = newIndex;
 
+      // Track file path for persistent save
+      if (filePath) {
+        this.filePaths.set(newIndex, filePath);
+      } else {
+        this.filePaths.set(newIndex, file.name);
+      }
+
       this.setupAutoSave(newIndex);
 
       this.emitEvent({
@@ -133,6 +151,18 @@ export class EditorManager implements IEditorManager {
       log.error('Failed to open file', error);
       throw error;
     }
+  }
+
+  /** Set or update the file path for a given file index. */
+  setFilePath(index: number, filePath: string): void {
+    if (index >= 0 && index < this.openFiles.length) {
+      this.filePaths.set(index, filePath);
+    }
+  }
+
+  /** Get the tracked file path for a given index. */
+  getFilePath(index: number): string | undefined {
+    return this.filePaths.get(index);
   }
 
   async closeFile(index: number): Promise<void> {
@@ -173,8 +203,19 @@ export class EditorManager implements IEditorManager {
     const file = this.openFiles[index];
     
     try {
-      // TODO: Persist to workspace/file system (this manager currently only updates in-memory state).
-      
+      // Persist to disk via Tauri backend if we have a file path
+      const filePath = this.filePaths.get(index);
+      if (filePath && this.workspacePath) {
+        await invoke('write_file_content', {
+          workspacePath: this.workspacePath,
+          filePath,
+          content: file.content,
+        });
+        log.info('File saved to disk', { filePath });
+      } else {
+        log.warn('File path or workspace path not set, skipping disk write', { fileName: file.name });
+      }
+
       file.isDirty = false;
       file.lastModified = new Date();
       this.openFiles[index] = file;
@@ -442,6 +483,7 @@ export class EditorManager implements IEditorManager {
     
     this.openFiles = [];
     this.activeFileIndex = -1;
+    this.filePaths.clear();
   }
 }
 
