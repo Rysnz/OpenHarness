@@ -8,6 +8,19 @@ use crate::util::errors::OpenHarnessResult;
 use crate::util::types::Message as AIMessage;
 use crate::util::types::ToolDefinition;
 use log::{debug, info, warn};
+
+/// Safely truncate a string to at most `max_bytes` bytes by
+/// falling back to the nearest valid char boundary.
+fn truncate_to_bytes(text: &str, max_bytes: usize) -> &str {
+    if text.len() <= max_bytes {
+        return text;
+    }
+    let mut end = max_bytes;
+    while end > 0 && !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    &text[..end]
+}
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -69,6 +82,7 @@ struct RequestSection {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct MessageSummary {
     role: String,
     content_len: usize,
@@ -157,8 +171,9 @@ impl AiRequestLogger {
             .get()
             .map(|p| p.clone())
             .unwrap_or_else(|| log_root_dir.to_path_buf());
-        info!("save_round_log: base_dir={} session={session_id} round={round_id} model={model} text={} think={} tc={}",
-            base_dir.display(), text_full.len(), thinking_full.len(), tool_calls.len());
+        info!("save_round_log: base_dir={} session={} round={} model={} text={} think={} tc={}",
+            base_dir.display(), session_id, round_id, model,
+            text_full.len(), thinking_full.len(), tool_calls.len());
         let session_log_dir = base_dir.join(AI_LOGS_DIR).join(session_id);
         let log_dir = session_log_dir.clone();
         if let Err(e) = fs::create_dir_all(&log_dir).await {
@@ -174,7 +189,8 @@ impl AiRequestLogger {
                 let text = m.content.as_deref().unwrap_or("");
                 let limit = 2000usize;
                 if text.len() > limit {
-                    format!("{}…(+{} chars)", &text[..limit], text.len() - limit)
+                    let truncated = truncate_to_bytes(text, limit);
+                    format!("{}…(+{} chars)", truncated, text.len() - limit)
                 } else {
                     text.to_string()
                 }
@@ -203,7 +219,8 @@ impl AiRequestLogger {
                     role: m.role.clone(),
                     content_len: content.len(),
                     content_preview: if content.len() > 500 {
-                        format!("{}…", &content[..500])
+                        let truncated = truncate_to_bytes(content, 500);
+                        format!("{}…", truncated)
                     } else {
                         content.to_string()
                     },
@@ -238,9 +255,10 @@ impl AiRequestLogger {
             },
             response: ResponseSection {
                 thinking_full: (if thinking_full.len() > 5000 {
+                    let truncated = truncate_to_bytes(thinking_full, 5000);
                     format!(
                         "{}…(+{} chars)",
-                        &thinking_full[..5000],
+                        truncated,
                         thinking_full.len() - 5000
                     )
                 } else {
@@ -256,7 +274,8 @@ impl AiRequestLogger {
                         arguments_preview: {
                             let limit = 500usize;
                             if args.len() > limit {
-                                format!("{}…", &args[..limit])
+                                let truncated = truncate_to_bytes(args, limit);
+                                format!("{}…", truncated)
                             } else {
                                 args.clone()
                             }

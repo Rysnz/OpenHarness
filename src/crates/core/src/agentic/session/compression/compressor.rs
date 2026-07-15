@@ -342,19 +342,24 @@ impl ContextCompressor {
         context_window: usize,
     ) -> OpenHarnessResult<CompressionSummaryArtifact> {
         let summary_result = match get_global_ai_client_factory().await {
-            Ok(ai_client_factory) => match ai_client_factory
-                .get_client_by_func_agent("compression")
-                .await
-            {
-                Ok(ai_client) => {
-                    self.execute_compression(ai_client, turns_to_compress.clone(), context_window)
-                        .await
+            Ok(ai_client_factory) => {
+                // Try dedicated "compression" model first, then fall back to
+                // "auto" (current conversation model) so local models (LMStudio)
+                // can also perform AI compression.
+                let client = match ai_client_factory.get_client_by_func_agent("compression").await {
+                    Ok(c) => Some(c),
+                    Err(_) => ai_client_factory.get_client_resolved("auto").await.ok(),
+                };
+                match client {
+                    Some(ai_client) => {
+                        self.execute_compression(ai_client, turns_to_compress.clone(), context_window)
+                            .await
+                    }
+                    None => Err(OpenHarnessError::AIClient(
+                        "Failed to get any AI client for compression".to_string(),
+                    )),
                 }
-                Err(err) => Err(OpenHarnessError::AIClient(format!(
-                    "Failed to get AI client: {}",
-                    err
-                ))),
-            },
+            }
             Err(err) => Err(OpenHarnessError::AIClient(format!(
                 "Failed to get AI client factory: {}",
                 err

@@ -215,32 +215,17 @@ impl OpenAIMessageConverter {
             }
         }
 
-        // Chat Completions: multimodal tool message (e.g. GPT-4o vision + tools) — image parts + text.
+        // Chat Completions: tool message with image attachments.
+        // OpenAI spec requires tool content to be a STRING, not an array.
+        // Some providers (NVIDIA, LMStudio) reject array content in tool messages.
         if msg.role == "tool" {
             if let Some(ref attachments) = msg.tool_image_attachments {
                 if !attachments.is_empty() {
-                    let mut parts: Vec<Value> = attachments
-                        .iter()
-                        .map(|att| {
-                            let url = format!("data:{};base64,{}", att.mime_type, att.data_base64);
-                            json!({
-                                "type": "image_url",
-                                "image_url": { "url": url, "detail": "auto" }
-                            })
-                        })
-                        .collect();
-                    let text = msg.content.clone().unwrap_or_default();
-                    if text.trim().is_empty() {
-                        parts.push(json!({
-                            "type": "text",
-                            "text": "Tool execution completed"
-                        }));
-                    } else {
-                        parts.push(json!({ "type": "text", "text": text }));
-                    }
+                    let text = msg.content.clone().unwrap_or_else(|| "Tool execution completed".to_string());
+                    let note = format!(" ({} image attachment(s) attached)", attachments.len());
                     let mut openai_msg = json!({
                         "role": "tool",
-                        "content": Value::Array(parts),
+                        "content": Value::String(format!("{}{}", text, note)),
                     });
                     if let Some(id) = msg.tool_call_id {
                         openai_msg["tool_call_id"] = Value::String(id);

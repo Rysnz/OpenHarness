@@ -127,10 +127,11 @@ impl MemoryCaptureService {
     }
 
     fn truncate_summary(text: &str, max_chars: usize) -> String {
-        if text.len() <= max_chars {
+        if text.chars().count() <= max_chars {
             text.to_string()
         } else {
-            format!("{}...", &text[..max_chars])
+            let truncated: String = text.chars().take(max_chars).collect();
+            format!("{}...", truncated)
         }
     }
 

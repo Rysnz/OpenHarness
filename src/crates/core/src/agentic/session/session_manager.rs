@@ -83,6 +83,10 @@ pub struct SessionManager {
 
     /// Configuration
     config: SessionManagerConfig,
+
+    /// Cancellation token for background tasks (auto-save, cleanup).
+    /// Dropping this token stops all spawned loops.
+    bg_cancel: tokio_util::sync::CancellationToken,
 }
 
 impl SessionManager {
@@ -377,6 +381,7 @@ impl SessionManager {
             context_store,
             persistence_manager,
             config,
+            bg_cancel: tokio_util::sync::CancellationToken::new(),
         };
 
         // Start background tasks
@@ -672,9 +677,15 @@ impl SessionManager {
                     "Session evicted from memory, restoring for model update: session_id={}",
                     session_id
                 );
-                let _ = self
+                if let Err(e) = self
                     .restore_session(&workspace_path.clone(), session_id)
-                    .await;
+                    .await
+                {
+                    warn!(
+                        "Failed to restore evicted session for model update: session_id={}, error={}",
+                        session_id, e
+                    );
+                }
             }
         }
 
@@ -780,6 +791,7 @@ impl SessionManager {
 
         // 4. Remove from memory
         self.sessions.remove(session_id);
+        self.session_workspace_index.remove(session_id);
 
         info!("Session deletion completed: session_id={}", session_id);
 
@@ -961,7 +973,12 @@ impl SessionManager {
     ) -> OpenHarnessResult<()> {
         // Ensure session is in memory (restore from persistence if necessary)
         if !self.sessions.contains_key(session_id) && self.config.enable_persistence {
-            let _ = self.restore_session(workspace_path, session_id).await;
+            if let Err(e) = self.restore_session(workspace_path, session_id).await {
+                warn!(
+                    "Failed to restore session for context rollback: session_id={}, error={}",
+                    session_id, e
+                );
+            }
         }
 
         // 1) Load target context (target_turn == 0 => empty context)
@@ -1823,12 +1840,19 @@ impl SessionManager {
         let sessions = self.sessions.clone();
         let persistence = self.persistence_manager.clone();
         let interval = self.config.auto_save_interval;
+        let cancel = self.bg_cancel.clone();
 
         tokio::spawn(async move {
             let mut ticker = time::interval(interval);
 
             loop {
-                ticker.tick().await;
+                tokio::select! {
+                    _ = cancel.cancelled() => {
+                        debug!("Auto-save task stopping (cancelled)");
+                        break;
+                    }
+                    _ = ticker.tick() => {}
+                }
 
                 for entry in sessions.iter() {
                     let session = entry.value();
@@ -1852,16 +1876,24 @@ impl SessionManager {
     /// Start cleanup task for expired sessions
     fn spawn_cleanup_task(&self) {
         let sessions = self.sessions.clone();
+        let session_workspace_index = self.session_workspace_index.clone();
         let timeout = self.config.session_idle_timeout;
         let persistence = self.persistence_manager.clone();
         let enable_persistence = self.config.enable_persistence;
         let context_store = self.context_store.clone();
+        let cancel = self.bg_cancel.clone();
 
         tokio::spawn(async move {
             let mut ticker = time::interval(Duration::from_secs(60));
 
             loop {
-                ticker.tick().await;
+                tokio::select! {
+                    _ = cancel.cancelled() => {
+                        debug!("Cleanup task stopping (cancelled)");
+                        break;
+                    }
+                    _ = ticker.tick() => {}
+                }
 
                 let now = SystemTime::now();
                 let mut expired_sessions = Vec::new();
@@ -1884,13 +1916,20 @@ impl SessionManager {
                             if let Some(workspace_path) =
                                 Self::effective_workspace_path_from_config(&session.config).await
                             {
-                                let _ = persistence.save_session(&workspace_path, &session).await;
+                                if let Err(e) = persistence.save_session(&workspace_path, &session).await {
+                                    warn!(
+                                        "Failed to save expired session before cleanup: session_id={}, error={}",
+                                        session_id, e
+                                    );
+                                }
                             }
                         }
                     }
 
                     context_store.delete_session(&session_id);
                     sessions.remove(&session_id);
+                    // Prevent the workspace→session mapping from growing indefinitely.
+                    session_workspace_index.remove(&session_id);
                 }
             }
         });

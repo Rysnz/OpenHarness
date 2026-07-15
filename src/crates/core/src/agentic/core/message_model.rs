@@ -265,9 +265,11 @@ impl From<Message> for AIMessage {
                     )
                 };
 
-                // When there are tool_calls, empty text should use None
+                // Assistant messages with tool_calls must have content present.
+                // OpenAI spec allows null, but many OpenAI-compatible providers
+                // (LMStudio, etc.) reject null content.  Use a single space.
                 let content = if text.trim().is_empty() {
-                    None // OpenAI API allows content to be null when assistant + tool_calls
+                    Some(" ".to_string())
                 } else {
                     Some(text)
                 };

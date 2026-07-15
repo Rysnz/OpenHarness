@@ -59,7 +59,8 @@ impl Message {
     pub fn assistant_with_tools(tool_calls: Vec<ToolCall>) -> Self {
         Self {
             role: "assistant".to_string(),
-            content: None,
+            // Many OpenAI-compatible providers reject null content even with tool_calls.
+            content: Some(" ".to_string()),
             reasoning_content: None,
             thinking_signature: None,
             tool_calls: Some(tool_calls),

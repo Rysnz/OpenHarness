@@ -432,6 +432,13 @@ impl AIClient {
             }
             return;
         }
+        // `thinking` parameter is only supported by Anthropic and DashScope/MiniMax.
+        // Generic OpenAI-compatible providers (including function-gateway APIs)
+        // reject unknown top-level parameters — some return 404 when trying to
+        // route `thinking` as a function call.
+        if !api_format.eq_ignore_ascii_case("anthropic") {
+            return;
+        }
         let thinking_value = if enable {
             if api_format.eq_ignore_ascii_case("anthropic") && model_name.starts_with("claude") {
                 let mut obj = serde_json::map::Map::new();
@@ -863,10 +870,9 @@ impl AIClient {
             }
         }
 
-        debug!(target: "ai::openai_stream_request",
-            "OpenAI stream request body (excluding tools):\n{}",
-            serde_json::to_string_pretty(&request_body).unwrap_or_else(|_| "serialization failed".to_string())
-        );
+        let body_dump = serde_json::to_string_pretty(&request_body).unwrap_or_default();
+        error!(target: "ai::openai_stream_request", "REQUEST:\n{}", body_dump);
+        let _ = std::fs::write("F:\\G\\demo\\OpenHarness-V2\\debug_body.json", &body_dump);
 
         if let Some(tools) = openai_tools {
             let tool_names = tools

@@ -8,6 +8,7 @@
 
 use crate::infrastructure::ai::AIClient;
 use crate::service::config::{get_global_config_service, ConfigService};
+use crate::service::config::types::ModelCapability;
 use crate::util::errors::{OpenHarnessError, OpenHarnessResult};
 use crate::util::types::AIConfig;
 use anyhow::{anyhow, Result};
@@ -55,7 +56,7 @@ impl AIClientFactory {
     }
 
     /// Get a functional agent's AI client
-    /// Prefer func_agent_models, fall back to agent_models (legacy), then fast
+    /// Prefer func_agent_models, fall back to agent_models, then first available model
     pub async fn get_client_by_func_agent(&self, func_agent_name: &str) -> Result<Arc<AIClient>> {
         let global_config: crate::service::config::GlobalConfig =
             self.config_service.get_config(None).await?;
@@ -66,7 +67,7 @@ impl AIClientFactory {
             .get(func_agent_name)
             .or_else(|| global_config.ai.agent_models.get(func_agent_name))
             .map(String::as_str)
-            .unwrap_or("fast");
+            .unwrap_or("auto");
 
         self.get_client_resolved(model_id).await
     }
@@ -75,17 +76,19 @@ impl AIClientFactory {
         self.get_or_create_client(model_id).await
     }
 
-    /// Get a client (supports resolving primary/fast)
+    /// Get a client, resolving model references through ai.models config
     pub async fn get_client_resolved(&self, model_id: &str) -> Result<Arc<AIClient>> {
         let global_config: crate::service::config::GlobalConfig =
             self.config_service.get_config(None).await?;
 
         let resolved_model_id = match model_id {
-            "primary" => Self::resolve_model_selection_in_config(&global_config, "primary")
-                .ok_or_else(|| anyhow!("Primary model not configured or invalid"))?,
-            "fast" => Self::resolve_model_selection_in_config(&global_config, "fast").ok_or_else(
-                || anyhow!("Fast model not configured or invalid, and primary model not configured or invalid"),
-            )?,
+            "auto" => global_config
+                .ai
+                .models
+                .iter()
+                .find(|m| m.enabled && m.capabilities.iter().any(|c| *c == ModelCapability::TextChat))
+                .map(|m| m.id.clone())
+                .ok_or_else(|| anyhow!("Auto model: no enabled chat-capable model configured"))?,
             _ => Self::resolve_model_reference_in_config(&global_config, model_id)
                 .unwrap_or_else(|| model_id.to_string()),
         };
