@@ -77,6 +77,7 @@ type EditorEventMap = {
   'file:closed': { index: number };
   'file:saved': { index: number; content: string };
   'file:changed': { index: number; content: string };
+  'file:save-error': { index: number; fileName: string; error: string };
   'selection:changed': { range: Range };
   'cursor:moved': { position: Position };
   'search:performed': { query: string; results: SearchResult[] };

@@ -213,7 +213,7 @@ export class EditorManager implements IEditorManager {
         });
         log.info('File saved to disk', { filePath });
       } else {
-        log.warn('File path or workspace path not set, skipping disk write', { fileName: file.name });
+        throw new Error(`File path not set for "${file.name}" — cannot persist to disk`);
       }
 
       file.isDirty = false;
@@ -226,6 +226,14 @@ export class EditorManager implements IEditorManager {
       });
     } catch (error) {
       log.error('Failed to save file', { fileName: file.name, error });
+      this.emitEvent({
+        type: 'file:save-error',
+        payload: {
+          index,
+          fileName: file.name,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
       throw error;
     }
   }

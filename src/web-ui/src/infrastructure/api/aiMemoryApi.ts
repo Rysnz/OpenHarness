@@ -42,12 +42,23 @@ export interface UpdateMemoryRequest {
 }
 
  
-export async function getAllMemories(): Promise<AIMemory[]> {
+/**
+ * Fetch all AI memories.
+ * @param _workspacePath - Reserved for future workspace-scoped queries
+ */
+export async function getAllMemories(_workspacePath?: string): Promise<AIMemory[]> {
+  // Backend does not support workspace-scoped query yet — pass no extra args
   return await invoke<AIMemory[]>('get_all_memories');
 }
 
  
-export async function addMemory(request: CreateMemoryRequest): Promise<AIMemory> {
+/**
+ * Add a new AI memory.
+ * @param request - Memory data
+ * @param _workspacePath - Reserved for future workspace-scoped storage
+ */
+export async function addMemory(request: CreateMemoryRequest, _workspacePath?: string): Promise<AIMemory> {
+  // Backend does not support workspace-scoped storage yet — pass only the request
   return await invoke<AIMemory>('add_memory', { request });
 }
 

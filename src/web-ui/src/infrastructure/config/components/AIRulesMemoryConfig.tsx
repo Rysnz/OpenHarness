@@ -29,7 +29,6 @@ import {
   type AIMemory,
   type MemoryType
 } from '../../api/aiMemoryApi';
-import { memoryAPI, type MemoryStatsResponse } from '@/workbench/services/api/MemoryAPI';
 import { useNotification } from '@/shared/notification-system';
 import { i18nService } from '@/infrastructure/i18n';
 import { createLogger } from '@/shared/utils/logger';
@@ -528,59 +527,180 @@ function MemoryPanel() {
 }
 
 function ProjectMemoryPanel({ workspacePath }: { workspacePath?: string }) {
-  const { t } = useTranslation('settings/ai-context');
-  const [stats, setStats] = useState<MemoryStatsResponse | null>(null);
-  const [loading, setLoading] = useState(false);
+  const { t } = useTranslation('settings/ai-memory');
+  const notification = useNotification();
+  const [memories, setMemories] = useState<AIMemory[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [editingMemory, setEditingMemory] = useState<AIMemory | null>(null);
+
+  const loadMemories = useCallback(async () => {
+    try {
+      setLoading(true);
+      const data = await getAllMemories(workspacePath);
+      setMemories(data);
+    } catch (error) {
+      notification.error(t('messages.loadFailed', { error: String(error) }));
+    } finally {
+      setLoading(false);
+    }
+  }, [workspacePath, notification, t]);
 
   useEffect(() => {
-    if (!workspacePath) return;
-    setLoading(true);
-    memoryAPI
-      .stats(workspacePath)
-      .then(setStats)
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [workspacePath]);
+    loadMemories();
+  }, [loadMemories]);
 
-  if (loading) {
-    return <div className="openharness-collection-empty"><p>Loading...</p></div>;
-  }
+  const memoryTypeMap: Record<MemoryType, { label: string; color: string }> = {
+    tech_preference: { label: t('memoryTypes.tech_preference'), color: '#60a5fa' },
+    project_context: { label: t('memoryTypes.project_context'), color: '#a78bfa' },
+    user_habit: { label: t('memoryTypes.user_habit'), color: '#34d399' },
+    code_pattern: { label: t('memoryTypes.code_pattern'), color: '#fbbf24' },
+    decision: { label: t('memoryTypes.decision'), color: '#f87171' },
+    other: { label: t('memoryTypes.other'), color: '#94a3b8' },
+  };
 
-  if (!stats) {
-    return <div className="openharness-collection-empty"><p>{t('memoryProjectPlaceholder')}</p></div>;
-  }
+  const sortedMemories = [...memories].sort((a, b) => b.importance - a.importance);
+  const [expandedMemoryIds, setExpandedMemoryIds] = useState<Set<string>>(new Set());
 
-  const tiers = [
-    { label: 'Working', count: stats.workingCount, color: '#888' },
-    { label: 'Episodic', count: stats.episodicCount, color: '#4a9eff' },
-    { label: 'Semantic', count: stats.semanticCount, color: '#22c55e' },
-    { label: 'Procedural', count: stats.proceduralCount, color: '#f59e0b' },
-  ];
-  const total = tiers.reduce((s, t) => s + t.count, 0);
+  const toggleMemoryExpanded = (memoryId: string) => {
+    setExpandedMemoryIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(memoryId)) next.delete(memoryId);
+      else next.add(memoryId);
+      return next;
+    });
+  };
+
+  const handleDelete = async (id: string, event: React.MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (isDeleting) return;
+    if (!(await window.confirm(t('messages.confirmDelete')))) return;
+    try {
+      setIsDeleting(true);
+      await deleteMemory(id);
+      notification.success(t('messages.deleteSuccess'));
+      await loadMemories();
+    } catch (error) {
+      log.error('Failed to delete memory', { memoryId: id, error });
+      notification.error(t('messages.deleteFailed', { error: String(error) }));
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleToggle = async (id: string) => {
+    try {
+      await toggleMemory(id);
+      loadMemories();
+    } catch (error) {
+      notification.error(t('messages.toggleFailed', { error: String(error) }));
+    }
+  };
+
+  const handleAdd = () => {
+    setEditingMemory(null);
+    setIsAddDialogOpen(true);
+  };
+
+  const handleEdit = (memory: AIMemory, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingMemory(memory);
+    setIsAddDialogOpen(true);
+  };
+
+  const formatDate = (dateStr: string) => {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
+    if (diffDays === 0) return t('date.today');
+    if (diffDays === 1) return t('date.yesterday');
+    if (diffDays < 7) return t('date.daysAgo', { days: diffDays });
+    return i18nService.formatDate(date, { year: 'numeric', month: '2-digit', day: '2-digit' });
+  };
+
+  const renderMemoryBadge = (memory: AIMemory) => {
+    const typeInfo = memoryTypeMap[memory.type];
+    return (
+      <>
+        <span className="openharness-ai-memory-config__badge--type" style={{ background: `${typeInfo.color}20`, color: typeInfo.color }}>
+          {typeInfo.label}
+        </span>
+        <span className="openharness-collection-item__badge">{formatDate(memory.created_at)}</span>
+      </>
+    );
+  };
+
+  const renderMemoryControl = (memory: AIMemory) => (
+    <>
+      <IconButton tooltip={memory.enabled ? t('actions.disable') : t('actions.enable')} onClick={() => handleToggle(memory.id)} size="small" variant="ghost">
+        {memory.enabled ? <Eye size={14} /> : <EyeOff size={14} />}
+      </IconButton>
+      <IconButton tooltip={t('actions.edit')} onClick={(e) => handleEdit(memory, e)} size="small" variant="ghost">
+        <Edit2 size={14} />
+      </IconButton>
+      <IconButton tooltip={t('actions.delete')} onClick={(e) => handleDelete(memory.id, e)} size="small" variant="danger" disabled={isDeleting}>
+        <Trash2 size={14} />
+      </IconButton>
+    </>
+  );
+
+  const renderMemoryDetails = (memory: AIMemory) => (
+    <>
+      <div className="openharness-collection-details__field">
+        <div className="openharness-collection-details__label">{t('list.item.contentLabel')}</div>
+        {memory.content}
+      </div>
+      <div className="openharness-collection-details__meta">
+        <span>{t('list.item.sourcePrefix')}{memory.source}</span>
+        {' · '}
+        <span>{t('list.item.createdPrefix')}{i18nService.formatDate(new Date(memory.created_at))}</span>
+      </div>
+    </>
+  );
+
+  const addButton = (
+    <IconButton variant="ghost" size="small" onClick={handleAdd} tooltip={t('toolbar.addTooltip')}>
+      <Plus size={16} />
+    </IconButton>
+  );
 
   return (
-    <div style={{ padding: '16px 0' }}>
-      <div style={{ display: 'flex', gap: '24px', marginBottom: '16px' }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '28px', fontWeight: 700, color: '#4a9eff' }}>{total}</div>
-          <div style={{ fontSize: '13px', color: '#888' }}>Total Memories</div>
+    <div>
+      {loading && (
+        <div className="openharness-collection-empty"><p>{t('list.loading')}</p></div>
+      )}
+      {!loading && sortedMemories.length === 0 && (
+        <div className="openharness-collection-empty">
+          <p>{t('list.empty.title')}</p>
+          <Button variant="dashed" size="small" onClick={handleAdd}>
+            <Plus size={14} /> {t('toolbar.addTooltip')}
+          </Button>
         </div>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '28px', fontWeight: 700, color: '#4a9eff' }}>{stats.sessionCount}</div>
-          <div style={{ fontSize: '13px', color: '#888' }}>Sessions</div>
-        </div>
-      </div>
-      {tiers.map((tier) => (
-        <div key={tier.label} style={{ marginBottom: '8px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '2px' }}>
-            <span style={{ color: tier.color }}>{tier.label}</span>
-            <span>{tier.count}</span>
-          </div>
-          <div style={{ height: '6px', borderRadius: '3px', background: '#222', overflow: 'hidden' }}>
-            <div style={{ width: total > 0 ? `${(tier.count / total) * 100}%` : '0%', height: '100%', borderRadius: '3px', background: tier.color }} />
-          </div>
-        </div>
+      )}
+      {!loading && sortedMemories.map((memory) => (
+        <ConfigCollectionItem
+          key={memory.id}
+          label={memory.title}
+          badge={renderMemoryBadge(memory)}
+          control={renderMemoryControl(memory)}
+          details={renderMemoryDetails(memory)}
+          disabled={!memory.enabled}
+          expanded={expandedMemoryIds.has(memory.id)}
+          onToggle={() => toggleMemoryExpanded(memory.id)}
+        />
       ))}
+
+      {isAddDialogOpen && (
+        <MemoryEditDialog
+          memory={editingMemory}
+          memoryTypeMap={memoryTypeMap}
+          workspacePath={workspacePath}
+          onClose={() => setIsAddDialogOpen(false)}
+          onSave={loadMemories}
+        />
+      )}
     </div>
   );
 }
@@ -588,11 +708,12 @@ function ProjectMemoryPanel({ workspacePath }: { workspacePath?: string }) {
 interface MemoryEditDialogProps {
   memory: AIMemory | null;
   memoryTypeMap: Record<MemoryType, { label: string; color: string }>;
+  workspacePath?: string;
   onClose: () => void;
   onSave: () => void;
 }
 
-const MemoryEditDialog: React.FC<MemoryEditDialogProps> = ({ memory, memoryTypeMap, onClose, onSave }) => {
+const MemoryEditDialog: React.FC<MemoryEditDialogProps> = ({ memory, memoryTypeMap, workspacePath, onClose, onSave }) => {
   const { t } = useTranslation('settings/ai-memory');
   const notification = useNotification();
   const [title, setTitle] = useState(memory?.title || '');
@@ -614,7 +735,7 @@ const MemoryEditDialog: React.FC<MemoryEditDialogProps> = ({ memory, memoryTypeM
         await updateMemory({ id: memory.id, title, content, type: memoryType, importance, tags: tagsArray, enabled: memory.enabled });
         notification.success(t('messages.updateSuccess'));
       } else {
-        await addMemory({ title, content, type: memoryType, importance, tags: tagsArray });
+        await addMemory({ title, content, type: memoryType, importance, tags: tagsArray }, workspacePath);
         notification.success(t('messages.createSuccess'));
       }
       onSave();

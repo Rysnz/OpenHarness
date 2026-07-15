@@ -241,12 +241,104 @@ Read this memory before making assumptions about long-running preferences, role 
     ))
 }
 
+/// Archive excess daily/topic files beyond the configured max limits.
+/// If the index file exceeds MEMORY_INDEX_MAX_LINES, truncate it.
+/// Old files are moved to an `archive/` subdirectory.
+async fn consolidate_and_prune_memories(
+    memory_dir: &Path,
+) -> OpenHarnessResult<()> {
+    let (daily_files, topic_files) = list_memory_file_groups(memory_dir).await?;
+    let archive_dir = memory_dir.join("archive");
+
+    // Archive excess daily files (oldest first, since list is newest-first)
+    if daily_files.len() > DAILY_MEMORY_MAX_FILES {
+        let excess = &daily_files[DAILY_MEMORY_MAX_FILES..];
+        for file_name in excess {
+            let src = memory_dir.join(file_name);
+            let dst = archive_dir.join(file_name);
+            if let Some(parent) = dst.parent() {
+                if !parent.exists() {
+                    fs::create_dir_all(parent).await.map_err(|e| {
+                        OpenHarnessError::service(format!(
+                            "Failed to create archive directory {}: {}",
+                            parent.display(),
+                            e
+                        ))
+                    })?;
+                }
+            }
+            fs::rename(&src, &dst).await.map_err(|e| {
+                OpenHarnessError::service(format!(
+                    "Failed to archive daily file {}: {}",
+                    src.display(),
+                    e
+                ))
+            })?;
+        }
+    }
+
+    // Archive excess topic files (oldest, by sorted order)
+    if topic_files.len() > TOPIC_MEMORY_MAX_FILES {
+        let excess = &topic_files[TOPIC_MEMORY_MAX_FILES..];
+        for file_name in excess {
+            let src = memory_dir.join(file_name);
+            let dst = archive_dir.join(file_name);
+            if let Some(parent) = dst.parent() {
+                if !parent.exists() {
+                    fs::create_dir_all(parent).await.map_err(|e| {
+                        OpenHarnessError::service(format!(
+                            "Failed to create archive directory {}: {}",
+                            parent.display(),
+                            e
+                        ))
+                    })?;
+                }
+            }
+            fs::rename(&src, &dst).await.map_err(|e| {
+                OpenHarnessError::service(format!(
+                    "Failed to archive topic file {}: {}",
+                    src.display(),
+                    e
+                ))
+            })?;
+        }
+    }
+
+    // Truncate index file if it exceeds MEMORY_INDEX_MAX_LINES
+    let index_path = memory_dir.join(MEMORY_INDEX_FILE);
+    if index_path.exists() {
+        let content = fs::read_to_string(&index_path).await.map_err(|e| {
+            OpenHarnessError::service(format!(
+                "Failed to read index file {}: {}",
+                index_path.display(),
+                e
+            ))
+        })?;
+        let lines: Vec<&str> = content.lines().collect();
+        if lines.len() > MEMORY_INDEX_MAX_LINES {
+            let truncated = lines[..MEMORY_INDEX_MAX_LINES].join("\n");
+            fs::write(&index_path, &truncated).await.map_err(|e| {
+                OpenHarnessError::service(format!(
+                    "Failed to truncate index file {}: {}",
+                    index_path.display(),
+                    e
+                ))
+            })?;
+        }
+    }
+
+    Ok(())
+}
+
 pub(crate) async fn build_workspace_agent_memory_prompt(
     workspace_root: &Path,
 ) -> OpenHarnessResult<String> {
     ensure_workspace_memory_files_for_prompt(workspace_root).await?;
 
     let memory_dir = memory_dir_path(workspace_root);
+
+    // Prune excess memory files before building prompt
+    consolidate_and_prune_memories(&memory_dir).await?;
     let memory_dir_display = format_path_for_prompt(&memory_dir);
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
 
