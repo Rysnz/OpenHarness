@@ -13,6 +13,7 @@ import { flowChatManager } from '@/flow_chat/services/FlowChatManager';
 import { useI18n } from '@/infrastructure/i18n/hooks/useI18n';
 import { createLogger } from '@/shared/utils/logger';
 import { globalEventBus } from '@/infrastructure/event-bus';
+import { useNotification } from '@/shared/notification-system';
 
 const log = createLogger('FlexiblePanel');
 
@@ -110,6 +111,7 @@ const FlexiblePanel: React.FC<ExtendedFlexiblePanelProps> = memo(({
   onFileMissingFromDiskChange,
 }) => {
   const { t } = useI18n('components');
+  const notification = useNotification();
 
   // Use ref to save latest content, avoiding it in callback dependencies
   const contentRef = React.useRef(content);
@@ -131,6 +133,15 @@ const FlexiblePanel: React.FC<ExtendedFlexiblePanelProps> = memo(({
       onDirtyStateChange(metadata.isDirty);
     }
   }, [content?.type, content?.data?.filePath, onDirtyStateChange]);
+
+  // Subscribe to editor file save errors and show a notification
+  React.useEffect(() => {
+    const unsub = globalEventBus.on('editor:file:save-error', (payload: unknown) => {
+      const { fileName, error } = payload as { fileName: string; error: string };
+      notification.error(`保存失败: ${fileName}\n${error}`);
+    });
+    return unsub;
+  }, [notification]);
 
   const handleClose = useCallback(async () => {
     if (onBeforeClose) {

@@ -660,12 +660,6 @@ function ProjectMemoryPanel({ workspacePath }: { workspacePath?: string }) {
     </>
   );
 
-  const addButton = (
-    <IconButton variant="ghost" size="small" onClick={handleAdd} tooltip={t('toolbar.addTooltip')}>
-      <Plus size={16} />
-    </IconButton>
-  );
-
   return (
     <div>
       {loading && (
