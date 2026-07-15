@@ -316,7 +316,11 @@ async fn consolidate_and_prune_memories(
         })?;
         let lines: Vec<&str> = content.lines().collect();
         if lines.len() > MEMORY_INDEX_MAX_LINES {
-            let truncated = lines[..MEMORY_INDEX_MAX_LINES].join("\n");
+            // Keep header row + most recent (N-1) lines, discard oldest
+            let mut kept = vec![lines[0]];
+            let skip = lines.len() - (MEMORY_INDEX_MAX_LINES - 1);
+            kept.extend_from_slice(&lines[skip..]);
+            let truncated = kept.join("\n");
             fs::write(&index_path, &truncated).await.map_err(|e| {
                 OpenHarnessError::service(format!(
                     "Failed to truncate index file {}: {}",

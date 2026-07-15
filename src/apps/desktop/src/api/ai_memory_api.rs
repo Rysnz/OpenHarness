@@ -28,14 +28,27 @@ pub struct UpdateMemoryRequest {
     pub enabled: bool,
 }
 
+/// Create an AIMemoryManager scoped to user-level or project-level.
+async fn create_memory_manager(
+    path_manager: &PathManager,
+    workspace_path: Option<&str>,
+) -> Result<AIMemoryManager, String> {
+    match workspace_path {
+        Some(path) => AIMemoryManager::new_project(Arc::new(path_manager.clone()), path)
+            .await
+            .map_err(|e| e.to_string()),
+        None => AIMemoryManager::new(Arc::new(path_manager.clone()))
+            .await
+            .map_err(|e| e.to_string()),
+    }
+}
+
 #[tauri::command]
 pub async fn get_all_memories(
     path_manager: State<'_, Arc<PathManager>>,
+    workspace_path: Option<String>,
 ) -> Result<Vec<AIMemory>, String> {
-    let manager = AIMemoryManager::new(path_manager.inner().clone())
-        .await
-        .map_err(|e| e.to_string())?;
-
+    let manager = create_memory_manager(path_manager.inner(), workspace_path.as_deref()).await?;
     manager.get_all_memories().await.map_err(|e| e.to_string())
 }
 
@@ -43,10 +56,9 @@ pub async fn get_all_memories(
 pub async fn add_memory(
     path_manager: State<'_, Arc<PathManager>>,
     request: CreateMemoryRequest,
+    workspace_path: Option<String>,
 ) -> Result<AIMemory, String> {
-    let manager = AIMemoryManager::new(path_manager.inner().clone())
-        .await
-        .map_err(|e| e.to_string())?;
+    let manager = create_memory_manager(path_manager.inner(), workspace_path.as_deref()).await?;
 
     let mut memory = AIMemory::new(
         request.title,
@@ -66,10 +78,9 @@ pub async fn add_memory(
 pub async fn update_memory(
     path_manager: State<'_, Arc<PathManager>>,
     request: UpdateMemoryRequest,
+    workspace_path: Option<String>,
 ) -> Result<bool, String> {
-    let manager = AIMemoryManager::new(path_manager.inner().clone())
-        .await
-        .map_err(|e| e.to_string())?;
+    let manager = create_memory_manager(path_manager.inner(), workspace_path.as_deref()).await?;
 
     let now = chrono::Utc::now().to_rfc3339();
     let memory = AIMemory {
@@ -95,11 +106,9 @@ pub async fn update_memory(
 pub async fn delete_memory(
     path_manager: State<'_, Arc<PathManager>>,
     id: String,
+    workspace_path: Option<String>,
 ) -> Result<bool, String> {
-    let manager = AIMemoryManager::new(path_manager.inner().clone())
-        .await
-        .map_err(|e| e.to_string())?;
-
+    let manager = create_memory_manager(path_manager.inner(), workspace_path.as_deref()).await?;
     manager.delete_memory(&id).await.map_err(|e| e.to_string())
 }
 
@@ -107,10 +116,8 @@ pub async fn delete_memory(
 pub async fn toggle_memory(
     path_manager: State<'_, Arc<PathManager>>,
     id: String,
+    workspace_path: Option<String>,
 ) -> Result<bool, String> {
-    let manager = AIMemoryManager::new(path_manager.inner().clone())
-        .await
-        .map_err(|e| e.to_string())?;
-
+    let manager = create_memory_manager(path_manager.inner(), workspace_path.as_deref()).await?;
     manager.toggle_memory(&id).await.map_err(|e| e.to_string())
 }

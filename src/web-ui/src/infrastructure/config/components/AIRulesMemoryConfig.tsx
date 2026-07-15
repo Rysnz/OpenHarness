@@ -579,7 +579,7 @@ function ProjectMemoryPanel({ workspacePath }: { workspacePath?: string }) {
     if (!(await window.confirm(t('messages.confirmDelete')))) return;
     try {
       setIsDeleting(true);
-      await deleteMemory(id);
+      await deleteMemory(id, workspacePath);
       notification.success(t('messages.deleteSuccess'));
       await loadMemories();
     } catch (error) {
@@ -592,7 +592,7 @@ function ProjectMemoryPanel({ workspacePath }: { workspacePath?: string }) {
 
   const handleToggle = async (id: string) => {
     try {
-      await toggleMemory(id);
+      await toggleMemory(id, workspacePath);
       loadMemories();
     } catch (error) {
       notification.error(t('messages.toggleFailed', { error: String(error) }));
@@ -732,7 +732,7 @@ const MemoryEditDialog: React.FC<MemoryEditDialogProps> = ({ memory, memoryTypeM
       setSaving(true);
       const tagsArray = tags.split(',').map((s) => s.trim()).filter(Boolean);
       if (memory) {
-        await updateMemory({ id: memory.id, title, content, type: memoryType, importance, tags: tagsArray, enabled: memory.enabled });
+        await updateMemory({ id: memory.id, title, content, type: memoryType, importance, tags: tagsArray, enabled: memory.enabled }, workspacePath);
         notification.success(t('messages.updateSuccess'));
       } else {
         await addMemory({ title, content, type: memoryType, importance, tags: tagsArray }, workspacePath);

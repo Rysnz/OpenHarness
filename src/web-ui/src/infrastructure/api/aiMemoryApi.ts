@@ -44,36 +44,48 @@ export interface UpdateMemoryRequest {
  
 /**
  * Fetch all AI memories.
- * @param _workspacePath - Reserved for future workspace-scoped queries
+ * @param workspacePath - Optional workspace scope (null = user-level, path = project-level)
  */
-export async function getAllMemories(_workspacePath?: string): Promise<AIMemory[]> {
-  // Backend does not support workspace-scoped query yet — pass no extra args
-  return await invoke<AIMemory[]>('get_all_memories');
+export async function getAllMemories(workspacePath?: string): Promise<AIMemory[]> {
+  return await invoke<AIMemory[]>('get_all_memories', { workspacePath: workspacePath ?? null });
 }
 
  
 /**
  * Add a new AI memory.
  * @param request - Memory data
- * @param _workspacePath - Reserved for future workspace-scoped storage
+ * @param workspacePath - Optional workspace scope (null = user-level, path = project-level)
  */
-export async function addMemory(request: CreateMemoryRequest, _workspacePath?: string): Promise<AIMemory> {
-  // Backend does not support workspace-scoped storage yet — pass only the request
-  return await invoke<AIMemory>('add_memory', { request });
+export async function addMemory(request: CreateMemoryRequest, workspacePath?: string): Promise<AIMemory> {
+  return await invoke<AIMemory>('add_memory', { request, workspacePath: workspacePath ?? null });
 }
 
- 
-export async function updateMemory(request: UpdateMemoryRequest): Promise<boolean> {
-  return await invoke<boolean>('update_memory', { request });
+/**
+ * Update an existing AI memory.
+ * @param request - Memory update data
+ * @param workspacePath - Optional workspace scope
+ */
+export async function updateMemory(request: UpdateMemoryRequest, workspacePath?: string): Promise<boolean> {
+  return await invoke<boolean>('update_memory', { request, workspacePath: workspacePath ?? null });
 }
 
- 
-export async function deleteMemory(id: string): Promise<boolean> {
-  return await invoke<boolean>('delete_memory', { id });
+/**
+ * Delete an AI memory.
+ * @param id - Memory ID
+ * @param workspacePath - Optional workspace scope
+ */
+export async function deleteMemory(id: string, workspacePath?: string): Promise<boolean> {
+  return await invoke<boolean>('delete_memory', { id, workspacePath: workspacePath ?? null });
 }
 
- 
-export async function toggleMemory(id: string): Promise<boolean> {
-  return await invoke<boolean>('toggle_memory', { id });
+/**
+ * Toggle an AI memory's enabled state.
+ * @param id - Memory ID
+ * @param workspacePath - Optional workspace scope
+ */
+export async function toggleMemory(id: string, workspacePath?: string): Promise<boolean> {
+  return await invoke<boolean>('toggle_memory', { id, workspacePath: workspacePath ?? null });
 }
+
+
 
